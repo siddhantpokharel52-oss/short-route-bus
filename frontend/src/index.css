@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --sidebar-width: 260px;
+    --header-height: 64px;
+  }
+
+  * {
+    @apply border-gray-200;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100;
+    font-family: 'Inter', 'Noto Sans Devanagari', system-ui, sans-serif;
+  }
+
+  /* Nepali font support */
+  :lang(ne) {
+    font-family: 'Noto Sans Devanagari', system-ui, sans-serif;
+  }
+
+  /* Smooth scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-gray-300 dark:bg-gray-600;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400 dark:bg-gray-500;
+  }
+}
+
+@layer components {
+  /* Sidebar layout */
+  .sidebar {
+    @apply fixed left-0 top-0 h-full w-[var(--sidebar-width)] overflow-y-auto;
+    @apply bg-white shadow-sm dark:bg-gray-900;
+    @apply border-r border-gray-200 dark:border-gray-700;
+    transition: transform 0.2s ease-in-out;
+  }
+
+  .main-content {
+    @apply ml-[var(--sidebar-width)] min-h-screen;
+    @apply transition-[margin] duration-200;
+  }
+
+  .main-content.sidebar-collapsed {
+    @apply ml-0;
+  }
+
+  /* Card */
+  .card {
+    @apply rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-100;
+    @apply dark:bg-gray-800 dark:ring-gray-700;
+  }
+
+  /* Page header */
+  .page-header {
+    @apply mb-6 flex items-center justify-between;
+  }
+
+  .page-title {
+    @apply text-2xl font-bold text-gray-900 dark:text-white;
+  }
+
+  .page-subtitle {
+    @apply mt-1 text-sm text-gray-500 dark:text-gray-400;
+  }
+
+  /* Status badge dot animation */
+  .live-pulse {
+    @apply relative inline-flex;
+  }
+
+  .live-pulse::after {
+    @apply absolute -right-1 -top-1 h-3 w-3 rounded-full bg-green-500 content-[''];
+    animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+  }
+
+  @keyframes pulse-ring {
+    0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+    70% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+  }
+}

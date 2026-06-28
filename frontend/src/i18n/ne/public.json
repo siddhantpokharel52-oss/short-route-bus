@@ -1,0 +1,92 @@
+{
+  "home": {
+    "title": "काठमाडौं उपत्यका बस सेवा",
+    "subtitle": "नेपालको सार्वजनिक यातायातको लागि रियल-टाइम ट्र्याकिङ",
+    "findRoute": "आफ्नो मार्ग खोज्नुहोस्",
+    "fromStop": "कहाँबाट",
+    "toStop": "कहाँ",
+    "searchButton": "मार्ग खोज्नुहोस्",
+    "liveMap": "लाइभ बस नक्सा",
+    "nearbyStops": "नजिकका स्टपहरू",
+    "viewAll": "सबै मार्गहरू हेर्नुहोस्"
+  },
+  "routes": {
+    "title": "सबै मार्गहरू",
+    "searchPlaceholder": "मार्ग वा स्टपहरू खोज्नुहोस्...",
+    "routeNumber": "मार्ग",
+    "from": "कहाँबाट",
+    "to": "कहाँ",
+    "distance": "दूरी",
+    "fare": "भाडा",
+    "viewStops": "स्टपहरू हेर्नुहोस्",
+    "operatedBy": "सञ्चालक"
+  },
+  "stops": {
+    "title": "बस स्टपहरू",
+    "arrivals": "आगामी आगमनहरू",
+    "noArrivals": "अर्को ६० मिनेटमा कुनै आगमन छैन",
+    "eta": "अनुमानित समय",
+    "minutes": "मिनेट",
+    "vehicle": "सवारी",
+    "route": "मार्ग",
+    "terminal": "टर्मिनल"
+  },
+  "fares": {
+    "title": "भाडा जानकारी",
+    "checkFare": "भाडा जाँच गर्नुहोस्",
+    "fromStop": "कहाँबाट",
+    "toStop": "कहाँ",
+    "fareTypes": "भाडाका प्रकारहरू",
+    "adult": "वयस्क",
+    "student": "विद्यार्थी",
+    "senior": "जेष्ठ नागरिक",
+    "differentlyAbled": "अपाङ्गता भएका",
+    "discountApplied": "{{percent}}% छुट लागू भएको",
+    "payOnline": "अनलाइन भुक्तानी गर्नुहोस्"
+  },
+  "tickets": {
+    "title": "मेरा टिकटहरू",
+    "verifyTicket": "टिकट प्रमाणित गर्नुहोस्",
+    "ticketNumber": "टिकट नम्बर",
+    "verify": "प्रमाणित गर्नुहोस्",
+    "valid": "मान्य टिकट",
+    "invalid": "अमान्य टिकट",
+    "used": "पहिले नै प्रयोग भएको",
+    "expired": "म्याद सकिएको",
+    "passengerName": "यात्री",
+    "route": "मार्ग",
+    "date": "मिति",
+    "fare": "तिरिएको भाडा",
+    "qrScan": "QR कोड स्क्यान गर्नुहोस्"
+  },
+  "complaints": {
+    "title": "गुनासो र प्रतिक्रिया",
+    "subtitle": "सार्वजनिक यातायात सुधार गर्न मद्दत गर्नुहोस्",
+    "addNew": "गुनासो दर्ता गर्नुहोस्",
+    "type": "गुनासोको प्रकार",
+    "description": "विवरण",
+    "vehiclePlate": "सवारी प्लेट नम्बर (वैकल्पिक)",
+    "routeNumber": "मार्ग नम्बर (वैकल्पिक)",
+    "incidentDate": "घटनाको मिति",
+    "submit": "गुनासो पेश गर्नुहोस्",
+    "trackComplaint": "मेरो गुनासो ट्र्याक गर्नुहोस्",
+    "complaintId": "गुनासो आईडी",
+    "status": "स्थिति",
+    "types": {
+      "DRIVER_BEHAVIOR": "चालकको व्यवहार",
+      "CONDUCTOR_BEHAVIOR": "कलेक्टरको व्यवहार",
+      "OVERCHARGING": "अधिक भाडा",
+      "VEHICLE_CONDITION": "सवारीको अवस्था",
+      "PUNCTUALITY": "समयपालनाको समस्या",
+      "SAFETY": "सुरक्षा सम्बन्धी चिन्ता",
+      "OTHER": "अन्य"
+    },
+    "statuses": {
+      "SUBMITTED": "पेश गरिएको",
+      "UNDER_REVIEW": "समीक्षाधीन",
+      "RESOLVED": "समाधान भएको",
+      "CLOSED": "बन्द"
+    },
+    "successMessage": "तपाईंको गुनासो पेश भएको छ। गुनासो आईडी: {{id}}"
+  }
+}

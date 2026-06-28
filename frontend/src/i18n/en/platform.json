@@ -1,0 +1,103 @@
+{
+  "tenants": {
+    "title": "Tenants",
+    "subtitle": "Manage all registered bus operators",
+    "addNew": "Add Tenant",
+    "name": "Company Name",
+    "subdomain": "Subdomain",
+    "plan": "Subscription Plan",
+    "status": "Status",
+    "contactEmail": "Contact Email",
+    "contactPhone": "Contact Phone",
+    "registrationDate": "Registration Date",
+    "activate": "Activate",
+    "suspend": "Suspend",
+    "suspendReason": "Suspension Reason",
+    "plans": {
+      "BASIC": "Basic (8% commission)",
+      "STANDARD": "Standard (6% commission)",
+      "ENTERPRISE": "Enterprise (4% commission)"
+    },
+    "statuses": {
+      "PENDING": "Pending Approval",
+      "ACTIVE": "Active",
+      "SUSPENDED": "Suspended",
+      "DEACTIVATED": "Deactivated"
+    },
+    "documents": {
+      "title": "Company Documents",
+      "companyRegistration": "Company Registration",
+      "taxClearance": "Tax Clearance",
+      "operatingLicense": "Operating License",
+      "insuranceCertificate": "Insurance Certificate",
+      "upload": "Upload Document",
+      "verify": "Verify",
+      "verified": "Verified",
+      "pending": "Pending Verification",
+      "rejected": "Rejected",
+      "expiryDate": "Expiry Date"
+    },
+    "analytics": {
+      "title": "Operator Analytics",
+      "totalRevenue": "Total Revenue",
+      "platformCommission": "Platform Commission",
+      "activeVehicles": "Active Vehicles",
+      "totalTrips": "Total Trips",
+      "totalPassengers": "Total Passengers"
+    }
+  },
+  "routes": {
+    "title": "City Routes",
+    "subtitle": "Manage all public transit routes",
+    "addNew": "Add Route",
+    "routeNumber": "Route Number",
+    "startStop": "Start Stop",
+    "endStop": "End Stop",
+    "totalDistance": "Total Distance (km)",
+    "estimatedDuration": "Estimated Duration (min)",
+    "stops": "Stops",
+    "addStop": "Add Stop",
+    "stopOrder": "Stop Order",
+    "distanceFromPrev": "Distance from Previous (km)",
+    "timeFromPrev": "Time from Previous (min)",
+    "fareMatrix": "Fare Matrix",
+    "routeAssignment": "Assign to Operator",
+    "exclusiveRoute": "Exclusive Assignment",
+    "sharePercentage": "Revenue Share %"
+  },
+  "stops": {
+    "title": "Bus Stops",
+    "subtitle": "All stops across Kathmandu Valley",
+    "addNew": "Add Stop",
+    "nameEn": "Name (English)",
+    "nameNe": "Name (Nepali)",
+    "latitude": "Latitude",
+    "longitude": "Longitude",
+    "amenities": "Amenities",
+    "isTerminal": "Terminal Stop",
+    "isActive": "Active",
+    "district": "District",
+    "ward": "Ward Number"
+  },
+  "smartCards": {
+    "title": "Smart Cards",
+    "subtitle": "NFC transit card management",
+    "cardNumber": "Card Number",
+    "holderName": "Card Holder",
+    "balance": "Balance",
+    "cardType": "Card Type",
+    "isActive": "Active Status",
+    "expiryDate": "Expiry Date",
+    "recharge": "Recharge",
+    "rechargeAmount": "Recharge Amount",
+    "transactions": "Transactions",
+    "lastUsed": "Last Used",
+    "types": {
+      "STANDARD": "Standard",
+      "STUDENT": "Student",
+      "SENIOR": "Senior Citizen",
+      "DIFFERENTLY_ABLED": "Differently Abled",
+      "STAFF": "Staff"
+    }
+  }
+}

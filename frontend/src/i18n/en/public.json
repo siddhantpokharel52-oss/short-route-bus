@@ -1,0 +1,103 @@
+{
+  "home": {
+    "title": "Kathmandu Valley Bus Service",
+    "subtitle": "Real-time tracking for public transit in Nepal",
+    "findRoute": "Find Your Route",
+    "fromStop": "From",
+    "toStop": "To",
+    "searchButton": "Search Routes",
+    "liveMap": "Live Bus Map",
+    "nearbyStops": "Nearby Stops",
+    "viewAll": "View All Routes"
+  },
+  "routes": {
+    "title": "All Routes",
+    "searchPlaceholder": "Search routes or stops...",
+    "routeNumber": "Route",
+    "from": "From",
+    "to": "To",
+    "distance": "Distance",
+    "fare": "Fare",
+    "viewStops": "View Stops",
+    "operatedBy": "Operated by"
+  },
+  "stops": {
+    "title": "Bus Stops",
+    "arrivals": "Upcoming Arrivals",
+    "noArrivals": "No upcoming arrivals in the next 60 minutes",
+    "eta": "ETA",
+    "minutes": "min",
+    "vehicle": "Vehicle",
+    "route": "Route",
+    "terminal": "Terminal"
+  },
+  "fares": {
+    "title": "Fare Information",
+    "checkFare": "Check Fare",
+    "fromStop": "From Stop",
+    "toStop": "To Stop",
+    "fareTypes": "Fare Types",
+    "adult": "Adult",
+    "student": "Student",
+    "senior": "Senior Citizen",
+    "differentlyAbled": "Differently Abled",
+    "discountApplied": "{{percent}}% discount applied",
+    "payOnline": "Pay Online"
+  },
+  "tickets": {
+    "title": "My Tickets",
+    "verifyTicket": "Verify Ticket",
+    "ticketNumber": "Ticket Number",
+    "verify": "Verify",
+    "valid": "Valid Ticket",
+    "invalid": "Invalid Ticket",
+    "used": "Already Used",
+    "expired": "Expired",
+    "passengerName": "Passenger",
+    "route": "Route",
+    "date": "Date",
+    "fare": "Fare Paid",
+    "qrScan": "Scan QR Code"
+  },
+  "complaints": {
+    "title": "Complaints & Feedback",
+    "subtitle": "Help us improve public transport",
+    "addNew": "File Complaint",
+    "type": "Complaint Type",
+    "description": "Description",
+    "vehiclePlate": "Vehicle Plate Number (optional)",
+    "routeNumber": "Route Number (optional)",
+    "incidentDate": "Incident Date",
+    "submit": "Submit Complaint",
+    "trackComplaint": "Track My Complaint",
+    "complaintId": "Complaint ID",
+    "status": "Status",
+    "types": {
+      "DRIVER_BEHAVIOR": "Driver Behavior",
+      "CONDUCTOR_BEHAVIOR": "Collector Behavior",
+      "OVERCHARGING": "Overcharging",
+      "VEHICLE_CONDITION": "Vehicle Condition",
+      "PUNCTUALITY": "Punctuality Issue",
+      "SAFETY": "Safety Concern",
+      "OTHER": "Other"
+    },
+    "statuses": {
+      "SUBMITTED": "Submitted",
+      "UNDER_REVIEW": "Under Review",
+      "RESOLVED": "Resolved",
+      "CLOSED": "Closed"
+    },
+    "successMessage": "Your complaint has been submitted. Complaint ID: {{id}}"
+  },
+  "smartCard": {
+    "title": "Smart Card",
+    "checkBalance": "Check Balance",
+    "cardNumber": "Card Number",
+    "balance": "Balance",
+    "recharge": "Recharge Card",
+    "transactions": "Recent Transactions",
+    "lowBalance": "Low balance! Please recharge.",
+    "howToUse": "How to Use",
+    "tapToPay": "Tap your card at the reader when boarding"
+  }
+}
