@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { Search, UserCheck, UserX, Shield } from 'lucide-react'
 import { Input } from '@components/shared/Input'
 import { Table, Column, Pagination } from '@components/shared/Table'
@@ -20,6 +21,7 @@ interface User {
 }
 
 export default function UsersPage() {
+  const { t } = useTranslation(['common', 'platform'])
   const [search, setSearch] = useState('')
   const [totalCount, setTotalCount] = useState(0)
   const pagination = usePagination(totalCount)
@@ -38,7 +40,7 @@ export default function UsersPage() {
   const columns: Column<User>[] = [
     {
       key: 'full_name_en',
-      header: 'Name',
+      header: t('platform:users.name'),
       render: (u) => (
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 text-primary-700 text-xs font-bold">
@@ -53,7 +55,7 @@ export default function UsersPage() {
     },
     {
       key: 'role',
-      header: 'Role',
+      header: t('platform:users.role'),
       render: (u) => (
         <div className="flex items-center gap-1.5">
           <Shield className="h-3.5 w-3.5 text-gray-400" />
@@ -63,35 +65,35 @@ export default function UsersPage() {
     },
     {
       key: 'tenant_schema',
-      header: 'Operator',
+      header: t('platform:users.operator'),
       render: (u) => u.tenant_schema ? (
         <code className="rounded bg-gray-100 px-2 py-0.5 text-xs dark:bg-gray-700">{u.tenant_schema}</code>
       ) : (
-        <Badge variant="info">Platform</Badge>
+        <Badge variant="info">{t('platform:users.platform')}</Badge>
       ),
     },
     {
       key: 'is_active',
-      header: 'Status',
+      header: t('platform:users.status'),
       render: (u) => (
         <div className="flex items-center gap-1">
           {u.is_active ? (
-            <><UserCheck className="h-4 w-4 text-green-500" /><Badge variant="success">Active</Badge></>
+            <><UserCheck className="h-4 w-4 text-green-500" /><Badge variant="success">{t('common:common.active')}</Badge></>
           ) : (
-            <><UserX className="h-4 w-4 text-red-500" /><Badge variant="danger">Inactive</Badge></>
+            <><UserX className="h-4 w-4 text-red-500" /><Badge variant="danger">{t('common:common.inactive')}</Badge></>
           )}
         </div>
       ),
     },
     {
       key: 'date_joined',
-      header: 'Joined',
+      header: t('platform:users.joined'),
       render: (u) => <DateDisplay date={u.date_joined} />,
     },
     {
       key: 'last_login',
-      header: 'Last Login',
-      render: (u) => u.last_login ? <DateDisplay date={u.last_login} /> : <span className="text-gray-300">Never</span>,
+      header: t('platform:users.lastLogin'),
+      render: (u) => u.last_login ? <DateDisplay date={u.last_login} /> : <span className="text-gray-300">{t('platform:users.never')}</span>,
     },
   ]
 
@@ -99,13 +101,13 @@ export default function UsersPage() {
     <div className="space-y-6">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Platform Users</h1>
-          <p className="page-subtitle">All registered users across the platform</p>
+          <h1 className="page-title">{t('platform:users.title')}</h1>
+          <p className="page-subtitle">{t('platform:users.subtitle')}</p>
         </div>
       </div>
 
       <Input
-        placeholder="Search users by name or email..."
+        placeholder={t('platform:users.searchPlaceholder')}
         leftAddon={<Search className="h-4 w-4" />}
         value={search}
         onChange={(e) => setSearch(e.target.value)}

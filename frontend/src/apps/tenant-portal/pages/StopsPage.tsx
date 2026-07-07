@@ -217,7 +217,7 @@ export default function StopsPage() {
 
   const addStopMutation = useMutation({
     mutationFn: async (form: StopForm) => {
-      if (!pendingStop || !selectedRouteId) throw new Error('No stop placed or route selected')
+      if (!pendingStop || !selectedRouteId) throw new Error(t('stops.noStopOrRoute'))
       const res = await apiClient.post(`/platform/routes/${selectedRouteId}/add-stop/`, {
         name_en: form.name_en,
         name_ne: form.name_ne || '',
@@ -228,7 +228,7 @@ export default function StopsPage() {
       return { ...res.data.data, formData: form }
     },
     onSuccess: (data) => {
-      toast.success(`Stop "${data.formData.name_en}" added!`)
+      toast.success(t('stops.toasts.added', { name: data.formData.name_en }))
       setSavedStops((prev) => [...prev, {
         ...pendingStop!,
         name_en: data.formData.name_en,

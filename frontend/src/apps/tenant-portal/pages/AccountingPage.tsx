@@ -5,12 +5,13 @@ import {
   BookOpen, ChevronDown, Plus, FileText,
   TrendingUp, TrendingDown, BarChart3, CheckCircle, RotateCcw,
   Wallet, Users, Fuel, Wrench, ArrowUpDown, AlertCircle, Ticket,
-  Calendar, Search, X, Printer, Activity, CreditCard, Building2,
+  Search, X, Printer, Activity, CreditCard, Building2,
   Receipt, BadgeCheck, Clock,
 } from 'lucide-react'
 import apiClient from '@services/api'
 import toast from 'react-hot-toast'
 import ChartOfAccountsPanel from './ChartOfAccountsPanel'
+import { NepaliDateInput } from '@components/shared/NepaliDateInput'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -182,10 +183,7 @@ function NewJournalEntryModal({ onClose, onSuccess }: {
           {/* Date + Description */}
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-                <Calendar className="h-3 w-3 inline mr-1" />Date
-              </label>
-              <input type="date" className="input" value={date} onChange={e => setDate(e.target.value)} />
+              <NepaliDateInput label="Date" value={date} onChange={setDate} />
             </div>
             <div className="col-span-2">
               <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
@@ -501,28 +499,23 @@ function NewSalaryModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
 
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wide mb-1.5 text-gray-500 dark:text-gray-400">
-                Period From <span className="text-red-400">*</span>
-              </label>
-              <input
-                type="date" value={form.period_from}
-                onChange={e => set('period_from', e.target.value)}
-                className={`input ${!form.period_from ? 'border-red-200 dark:border-red-800 focus:ring-red-400' : ''}`}
+              <NepaliDateInput
+                label="Period From"
+                required
+                value={form.period_from}
+                onChange={(v) => set('period_from', v)}
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wide mb-1.5 text-gray-500 dark:text-gray-400">
-                Period To <span className="text-red-400">*</span>
-              </label>
-              <input
-                type="date" value={form.period_to}
-                onChange={e => set('period_to', e.target.value)}
-                className={`input ${!form.period_to ? 'border-red-200 dark:border-red-800 focus:ring-red-400' : ''}`}
+              <NepaliDateInput
+                label="Period To"
+                required
+                value={form.period_to}
+                onChange={(v) => set('period_to', v)}
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Payment Date</label>
-              <input type="date" className="input" value={form.payment_date} onChange={e => set('payment_date', e.target.value)} />
+              <NepaliDateInput label="Payment Date" value={form.payment_date} onChange={(v) => set('payment_date', v)} />
             </div>
           </div>
 
@@ -677,18 +670,15 @@ function ReportsPanel({ accounts }: { accounts: COA[] }) {
         {needsRange ? (
           <>
             <div>
-              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">From</label>
-              <input type="date" className="input" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+              <NepaliDateInput label="From" value={dateFrom} onChange={setDateFrom} />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">To</label>
-              <input type="date" className="input" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+              <NepaliDateInput label="To" value={dateTo} onChange={setDateTo} />
             </div>
           </>
         ) : (
           <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">As of Date</label>
-            <input type="date" className="input" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+            <NepaliDateInput label="As of Date" value={dateTo} onChange={setDateTo} />
           </div>
         )}
         {reportType === 'general-ledger' && (

@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 from django.utils import timezone
-from django_tenants.utils import schema_context
+from django_tenants.utils import schema_context, get_public_schema_name
 from .models import Tenant, TenantSubscription, TenantDocument
 from .serializers import (
     TenantSerializer, TenantDetailSerializer, TenantSubscriptionSerializer,
@@ -23,7 +23,10 @@ def api_response(data=None, message="Success", success=True, errors=None, status
 
 
 class TenantViewSet(ModelViewSet):
-    queryset = Tenant.objects.all()
+    # Exclude the public schema tenant — it's platform infrastructure (resolves
+    # localhost/django/nginx domains), not a real bus-operator tenant, and must
+    # never be shown as activatable/suspendable in the onboarding UI.
+    queryset = Tenant.objects.exclude(schema_name=get_public_schema_name())
     permission_classes = [IsSuperAdmin]
     serializer_class = TenantSerializer
     filterset_fields = ["status", "plan_type"]

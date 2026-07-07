@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { Plus, Search, CreditCard, RefreshCw } from 'lucide-react'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
@@ -25,6 +26,7 @@ interface SmartCard {
 }
 
 export default function SmartCardsPage() {
+  const { t } = useTranslation(['common', 'platform'])
   const qc = useQueryClient()
   const { language } = useUiStore()
   const [search, setSearch] = useState('')
@@ -48,7 +50,7 @@ export default function SmartCardsPage() {
     mutationFn: ({ id, amount }: { id: string; amount: number }) =>
       apiClient.post(`/platform/smart-cards/${id}/recharge/`, { amount }).then((r) => r.data),
     onSuccess: () => {
-      toast.success('Card recharged!')
+      toast.success(t('platform:smartCards.toasts.recharged'))
       setRechargeTarget(null)
       setRechargeAmount('')
       qc.invalidateQueries({ queryKey: ['smart-cards'] })
@@ -59,7 +61,7 @@ export default function SmartCardsPage() {
   const columns: Column<SmartCard>[] = [
     {
       key: 'card_number',
-      header: 'Card Number',
+      header: t('platform:smartCards.cardNumber'),
       render: (c) => (
         <div className="flex items-center gap-2">
           <CreditCard className="h-4 w-4 text-primary-500" />
@@ -67,15 +69,15 @@ export default function SmartCardsPage() {
         </div>
       ),
     },
-    { key: 'holder_name', header: 'Holder Name' },
+    { key: 'holder_name', header: t('platform:smartCards.holderName') },
     {
       key: 'card_type',
-      header: 'Type',
+      header: t('platform:smartCards.type'),
       render: (c) => <Badge variant="neutral">{c.card_type}</Badge>,
     },
     {
       key: 'balance',
-      header: 'Balance',
+      header: t('platform:smartCards.balance'),
       render: (c) => (
         <span className={c.balance < 50 ? 'font-bold text-red-600' : 'font-semibold text-green-600'}>
           {formatNPR(c.balance, language as 'en' | 'ne')}
@@ -84,17 +86,17 @@ export default function SmartCardsPage() {
     },
     {
       key: 'expiry_date',
-      header: 'Expiry',
+      header: t('platform:smartCards.expiryDate'),
       render: (c) => <DateDisplay date={c.expiry_date} />,
     },
     {
       key: 'is_active',
-      header: 'Status',
-      render: (c) => <Badge variant={c.is_active ? 'success' : 'neutral'} dot>{c.is_active ? 'Active' : 'Inactive'}</Badge>,
+      header: t('common:common.status'),
+      render: (c) => <Badge variant={c.is_active ? 'success' : 'neutral'} dot>{c.is_active ? t('common:common.active') : t('common:common.inactive')}</Badge>,
     },
     {
       key: 'actions',
-      header: 'Actions',
+      header: t('common:common.actions'),
       render: (c) => (
         <Button
           size="sm"
@@ -102,7 +104,7 @@ export default function SmartCardsPage() {
           leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
           onClick={() => setRechargeTarget(c)}
         >
-          Recharge
+          {t('platform:smartCards.recharge')}
         </Button>
       ),
     },
@@ -112,13 +114,13 @@ export default function SmartCardsPage() {
     <div className="space-y-6">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Smart Cards</h1>
-          <p className="page-subtitle">NFC transit card management</p>
+          <h1 className="page-title">{t('platform:smartCards.title')}</h1>
+          <p className="page-subtitle">{t('platform:smartCards.subtitle')}</p>
         </div>
       </div>
 
       <Input
-        placeholder="Search by card number or holder name..."
+        placeholder={t('platform:smartCards.searchPlaceholder')}
         leftAddon={<Search className="h-4 w-4" />}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
@@ -137,24 +139,24 @@ export default function SmartCardsPage() {
       </div>
 
       {/* Recharge modal */}
-      <Modal open={!!rechargeTarget} onClose={() => setRechargeTarget(null)} title="Recharge Smart Card" size="sm">
+      <Modal open={!!rechargeTarget} onClose={() => setRechargeTarget(null)} title={t('platform:smartCards.rechargeModal.title')} size="sm">
         <div className="space-y-4 p-6">
           <p className="text-sm text-gray-600">
-            Card: <strong>{rechargeTarget?.card_number}</strong> ({rechargeTarget?.holder_name})
+            {t('platform:smartCards.rechargeModal.cardLabel')} <strong>{rechargeTarget?.card_number}</strong> ({rechargeTarget?.holder_name})
           </p>
           <p className="text-sm">
-            Current Balance: <strong className="text-green-600">
+            {t('platform:smartCards.rechargeModal.currentBalance')} <strong className="text-green-600">
               {formatNPR(rechargeTarget?.balance ?? 0, language as 'en' | 'ne')}
             </strong>
           </p>
           <Input
-            label="Recharge Amount (NPR)"
+            label={t('platform:smartCards.rechargeAmount')}
             type="number"
             min="10"
             max="10000"
             value={rechargeAmount}
             onChange={(e) => setRechargeAmount(e.target.value)}
-            placeholder="Enter amount..."
+            placeholder={t('platform:smartCards.rechargeAmountPlaceholder')}
           />
           <div className="flex gap-2">
             {[100, 250, 500, 1000].map((amt) => (
@@ -163,12 +165,12 @@ export default function SmartCardsPage() {
                 className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
                 onClick={() => setRechargeAmount(String(amt))}
               >
-                Rs. {amt}
+                {formatNPR(amt, language as 'en' | 'ne')}
               </button>
             ))}
           </div>
           <div className="flex justify-end gap-3 border-t pt-4">
-            <Button variant="secondary" onClick={() => setRechargeTarget(null)}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setRechargeTarget(null)}>{t('common:common.cancel')}</Button>
             <Button
               loading={rechargeMutation.isPending}
               disabled={!rechargeAmount || Number(rechargeAmount) <= 0}
@@ -177,7 +179,7 @@ export default function SmartCardsPage() {
                 amount: Number(rechargeAmount),
               })}
             >
-              Recharge
+              {t('platform:smartCards.recharge')}
             </Button>
           </div>
         </div>

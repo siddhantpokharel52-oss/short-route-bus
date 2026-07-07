@@ -32,7 +32,7 @@ export default function FaresPage() {
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">
       <h1 className="text-3xl font-bold text-gray-900 mb-2">{t('fares.title')}</h1>
-      <p className="text-gray-500 mb-8">Check fare between any two stops</p>
+      <p className="text-gray-500 mb-8">{t('fares.subtitle')}</p>
 
       {/* Fare calculator */}
       <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm mb-8">
@@ -45,7 +45,7 @@ export default function FaresPage() {
               value={fromStop}
               onChange={(e) => { setFromStop(e.target.value); setQueryEnabled(false) }}
             >
-              <option value="">Select stop...</option>
+              <option value="">{t('fares.selectStop')}</option>
               {(stops ?? []).map((stop: Stop) => (
                 <option key={stop.id} value={stop.id}>{stop.name_en}</option>
               ))}
@@ -61,7 +61,7 @@ export default function FaresPage() {
               value={toStop}
               onChange={(e) => { setToStop(e.target.value); setQueryEnabled(false) }}
             >
-              <option value="">Select stop...</option>
+              <option value="">{t('fares.selectStop')}</option>
               {(stops ?? []).map((stop: Stop) => (
                 <option key={stop.id} value={stop.id}>{stop.name_en}</option>
               ))}
@@ -81,7 +81,7 @@ export default function FaresPage() {
         {fare && (
           <div className="mt-6 rounded-xl bg-primary-50 p-5">
             <p className="text-sm text-gray-500 mb-4">
-              Distance: {fare.distance_km} km
+              {t('fares.distanceLabel', { km: fare.distance_km })}
             </p>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               {[
@@ -98,7 +98,7 @@ export default function FaresPage() {
             </div>
             {fare.peak_hour_surcharge > 0 && (
               <p className="mt-3 text-sm text-orange-600">
-                ⚠️ Peak hour surcharge: +{formatNPR(fare.peak_hour_surcharge, language as 'en' | 'ne')} may apply
+                ⚠️ {t('fares.peakHourSurcharge', { amount: formatNPR(fare.peak_hour_surcharge, language as 'en' | 'ne') })}
               </p>
             )}
           </div>
@@ -107,27 +107,27 @@ export default function FaresPage() {
 
       {/* Fare info table */}
       <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
-        <h2 className="font-semibold text-gray-900 mb-4">Fare Policy</h2>
+        <h2 className="font-semibold text-gray-900 mb-4">{t('fares.policyTitle')}</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b">
-                <th className="py-2 text-left text-gray-500">Passenger Type</th>
-                <th className="py-2 text-right text-gray-500">Discount</th>
+                <th className="py-2 text-left text-gray-500">{t('fares.passengerType')}</th>
+                <th className="py-2 text-right text-gray-500">{t('fares.discount')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {[
-                { type: 'Adult', discount: 'None (base fare)' },
-                { type: 'Student (valid card)', discount: '25% off' },
-                { type: 'Senior Citizen (60+)', discount: '30% off' },
-                { type: 'Differently Abled', discount: '50% off' },
-                { type: 'Smart Card Holder', discount: '5% off + cashless convenience' },
+                { type: t('fares.policy.adultType'), discount: t('fares.policy.adultDiscount'), base: true },
+                { type: t('fares.policy.studentType'), discount: t('fares.policy.studentDiscount'), base: false },
+                { type: t('fares.policy.seniorType'), discount: t('fares.policy.seniorDiscount'), base: false },
+                { type: t('fares.policy.disabledType'), discount: t('fares.policy.disabledDiscount'), base: false },
+                { type: t('fares.policy.smartCardType'), discount: t('fares.policy.smartCardDiscount'), base: false },
               ].map((row) => (
                 <tr key={row.type}>
                   <td className="py-3 text-gray-700">{row.type}</td>
                   <td className="py-3 text-right">
-                    <span className={row.discount === 'None (base fare)' ? 'text-gray-400' : 'font-medium text-green-600'}>
+                    <span className={row.base ? 'text-gray-400' : 'font-medium text-green-600'}>
                       {row.discount}
                     </span>
                   </td>

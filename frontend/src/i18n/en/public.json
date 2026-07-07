@@ -1,4 +1,8 @@
 {
+  "layout": {
+    "subtitleCity": "Kathmandu Valley",
+    "footerFullName": "Kathmandu Valley Bus Management System (KVBMS)"
+  },
   "home": {
     "title": "Kathmandu Valley Bus Service",
     "subtitle": "Real-time tracking for public transit in Nepal",
@@ -8,10 +12,16 @@
     "searchButton": "Search Routes",
     "liveMap": "Live Bus Map",
     "nearbyStops": "Nearby Stops",
-    "viewAll": "View All Routes"
+    "viewAll": "View All Routes",
+    "popularRoutes": "Popular Routes",
+    "quickAccess": "Quick Access",
+    "busesLive": "{{count}} buses live",
+    "routesCountLabel": "{{count}} routes",
+    "operatingHours": "5:30 AM – 10:00 PM"
   },
   "routes": {
     "title": "All Routes",
+    "subtitle": "All public transit routes in Kathmandu Valley",
     "searchPlaceholder": "Search routes or stops...",
     "routeNumber": "Route",
     "from": "From",
@@ -19,34 +29,62 @@
     "distance": "Distance",
     "fare": "Fare",
     "viewStops": "View Stops",
-    "operatedBy": "Operated by"
+    "operatedBy": "Operated by",
+    "stopsCount": "{{count}} stops",
+    "noResults": "No routes found for \"{{search}}\"",
+    "tryDifferentSearch": "Try a different search term"
   },
   "stops": {
     "title": "Bus Stops",
+    "subtitle": "All bus stops in Kathmandu Valley",
+    "searchPlaceholder": "Search stops...",
     "arrivals": "Upcoming Arrivals",
     "noArrivals": "No upcoming arrivals in the next 60 minutes",
     "eta": "ETA",
     "minutes": "min",
     "vehicle": "Vehicle",
     "route": "Route",
-    "terminal": "Terminal"
+    "terminal": "Terminal",
+    "ward": "Ward",
+    "show": "Show",
+    "hide": "Hide"
   },
   "fares": {
     "title": "Fare Information",
+    "subtitle": "Check fare between any two stops",
     "checkFare": "Check Fare",
     "fromStop": "From Stop",
     "toStop": "To Stop",
+    "selectStop": "Select stop...",
     "fareTypes": "Fare Types",
     "adult": "Adult",
     "student": "Student",
     "senior": "Senior Citizen",
     "differentlyAbled": "Differently Abled",
     "discountApplied": "{{percent}}% discount applied",
-    "payOnline": "Pay Online"
+    "payOnline": "Pay Online",
+    "distanceLabel": "Distance: {{km}} km",
+    "peakHourSurcharge": "Peak hour surcharge: +{{amount}} may apply",
+    "policyTitle": "Fare Policy",
+    "passengerType": "Passenger Type",
+    "discount": "Discount",
+    "policy": {
+      "adultType": "Adult",
+      "adultDiscount": "None (base fare)",
+      "studentType": "Student (valid card)",
+      "studentDiscount": "25% off",
+      "seniorType": "Senior Citizen (60+)",
+      "seniorDiscount": "30% off",
+      "disabledType": "Differently Abled",
+      "disabledDiscount": "50% off",
+      "smartCardType": "Smart Card Holder",
+      "smartCardDiscount": "5% off + cashless convenience"
+    }
   },
   "tickets": {
     "title": "My Tickets",
     "verifyTicket": "Verify Ticket",
+    "subtitle": "Enter your ticket number to verify its validity",
     "ticketNumber": "Ticket Number",
     "verify": "Verify",
     "valid": "Valid Ticket",
@@ -57,7 +95,16 @@
     "route": "Route",
     "date": "Date",
     "fare": "Fare Paid",
-    "qrScan": "Scan QR Code"
+    "qrScan": "Scan QR Code",
+    "notFoundToast": "Ticket not found",
+    "notFoundMessage": "No ticket found with number: {{number}}",
+    "howToVerify": "How to verify your ticket",
+    "helpItems": {
+      "enterNumber": "Enter the ticket number shown on your physical ticket or app",
+      "startsWith": "Ticket numbers start with \"TKT-\"",
+      "oneJourney": "Each ticket is valid for one journey only",
+      "showCollector": "Show this verification to the collector when boarding"
+    }
   },
   "complaints": {
     "title": "Complaints & Feedback",
@@ -87,7 +134,29 @@
       "RESOLVED": "Resolved",
       "CLOSED": "Closed"
     },
-    "successMessage": "Your complaint has been submitted. Complaint ID: {{id}}"
+    "successMessage": "Your complaint has been submitted. Complaint ID: {{id}}",
+    "submitFailedToast": "Failed to submit complaint. Please try again.",
+    "notFoundToast": "Complaint not found",
+    "submittedTitle": "Complaint Submitted!",
+    "yourComplaintId": "Your Complaint ID:",
+    "saveIdNote": "Save this ID to track your complaint status",
+    "fileAnother": "File Another Complaint",
+    "selectType": "Select type...",
+    "selectTypeRequired": "Please select a complaint type",
+    "yourName": "Your Name",
+    "phoneNumber": "Phone Number",
+    "minCharsHint": "(min 20 chars)",
+    "descriptionPlaceholder": "Describe what happened in detail...",
+    "trackPlaceholder": "Your complaint ID...",
+    "track": "Track",
+    "typeLabel": "Type",
+    "submittedOn": "Submitted",
+    "validation": {
+      "descriptionMin": "Please provide at least 20 characters",
+      "incidentDateRequired": "Incident date is required",
+      "nameRequired": "Name is required",
+      "phoneRequired": "Valid phone number required"
+    }
   },
   "smartCard": {
     "title": "Smart Card",
@@ -98,6 +167,19 @@
     "transactions": "Recent Transactions",
     "lowBalance": "Low balance! Please recharge.",
     "howToUse": "How to Use",
-    "tapToPay": "Tap your card at the reader when boarding"
+    "tapToPay": "Tap your card at the reader when boarding",
+    "notFoundToast": "Card not found",
+    "enterCardNumber": "Enter card number...",
+    "check": "Check",
+    "cardHolder": "Card Holder",
+    "cardDetails": "Card Details",
+    "expiry": "Expiry",
+    "noTransactions": "No recent transactions",
+    "howToRecharge": "How to recharge your card",
+    "rechargeItems": {
+      "visitAgent": "Visit any KVBMS agent or bus terminal",
+      "useApp": "Use eSewa / Khalti / Fonepay via the app",
+      "limits": "Minimum recharge: Rs. 50 | Maximum: Rs. 10,000"
+    }
   }
 }

@@ -1,4 +1,29 @@
 {
+  "nav": {
+    "dashboard": "ड्यासबोर्ड",
+    "tenantsOnboarding": "अपरेटर सुरुवात",
+    "billing": "बिलिङ",
+    "smartCards": "स्मार्ट कार्डहरू",
+    "users": "प्रयोगकर्ताहरू",
+    "settings": "सेटिङ",
+    "superAdmin": "सुपर एडमिन",
+    "logoutSuccess": "सफलतापूर्वक लगआउट भयो"
+  },
+  "dashboard": {
+    "subtitle": "प्लेटफर्म सिंहावलोकन — काठमाडौं उपत्यका बस सञ्जाल",
+    "activeOperators": "सक्रिय अपरेटरहरू",
+    "todaysTrips": "आजका यात्राहरू",
+    "monthRevenue": "यस महिनाको राजस्व",
+    "pendingAMC": "बाँकी एएमसी",
+    "liveFleetMap": "लाइभ फ्लिट नक्सा — काठमाडौं उपत्यका",
+    "searchTenant": "फ्लिट हेर्न अपरेटर खोज्नुहोस्...",
+    "noTenantsFound": "कुनै अपरेटर फेला परेन",
+    "loadingFleetFor": "{{name}} को फ्लिट लोड हुँदैछ…",
+    "noVehiclesRegistered": "यस अपरेटरका लागि कुनै सवारी दर्ता भएको छैन।",
+    "vehiclesCount": "{{name}} — {{count}} सवारीहरू",
+    "routeLabel": "मार्ग {{code}}",
+    "noRouteAssigned": "कुनै मार्ग तोकिएको छैन"
+  },
   "tenants": {
     "title": "बस अपरेटरहरू",
     "subtitle": "दर्ता भएका सबै बस कम्पनीहरू व्यवस्थापन गर्नुहोस्",
@@ -9,10 +34,12 @@
     "status": "स्थिति",
     "contactEmail": "सम्पर्क इमेल",
     "contactPhone": "सम्पर्क फोन",
+    "contactPerson": "सम्पर्क व्यक्ति",
     "registrationDate": "दर्ता मिति",
     "activate": "सक्रिय गर्नुहोस्",
     "suspend": "निलम्बन गर्नुहोस्",
     "suspendReason": "निलम्बनको कारण",
+    "searchPlaceholder": "अपरेटर खोज्नुहोस्...",
     "plans": {
       "BASIC": "आधारभूत (८% कमिसन)",
       "STANDARD": "मानक (६% कमिसन)",
@@ -26,32 +53,340 @@
     },
     "documents": {
       "title": "कम्पनी कागजातहरू",
+      "companyRegistration": "कम्पनी दर्ता",
+      "taxClearance": "कर चुक्ता प्रमाणपत्र",
+      "operatingLicense": "सञ्चालन इजाजतपत्र",
+      "insuranceCertificate": "बीमा प्रमाणपत्र",
       "upload": "कागजात अपलोड गर्नुहोस्",
       "verify": "प्रमाणित गर्नुहोस्",
       "verified": "प्रमाणित",
       "pending": "प्रमाणीकरण प्रतीक्षित",
       "rejected": "अस्वीकृत",
       "expiryDate": "म्याद सकिने मिति"
+    },
+    "analytics": {
+      "title": "अपरेटर विश्लेषण",
+      "totalRevenue": "कुल राजस्व",
+      "platformCommission": "प्लेटफर्म कमिसन",
+      "activeVehicles": "सक्रिय सवारीहरू",
+      "totalTrips": "कुल यात्राहरू",
+      "totalPassengers": "कुल यात्रीहरू"
+    },
+    "createModal": {
+      "companyName": "कम्पनीको नाम",
+      "subdomainHint": "जस्तै: sajha → sajha.kvbms.com.np",
+      "contactNumber": "सम्पर्क नम्बर",
+      "contactNumberHint": "जस्तै: ९८०१२३४५६७",
+      "emailAddress": "इमेल ठेगाना",
+      "emailHint": "contact@company.com.np",
+      "companyAddress": "कम्पनीको ठेगाना",
+      "addressHint": "जस्तै: नयाँ बानेश्वर, काठमाडौं",
+      "panVat": "प्यान / भ्याट नम्बर",
+      "panVatHint": "जस्तै: १२३४५६७८९",
+      "adminSectionTitle": "अपरेटर एडमिन लगइन (वैकल्पिक)",
+      "adminSectionHint": "अपरेटर कम्पनी एडमिनका लागि लगइन प्रमाणहरू बनाउनुहोस् ताकि उनीहरूले अपरेटर पोर्टलमा पहुँच गर्न सकून्।",
+      "adminFullName": "एडमिनको पूरा नाम",
+      "adminFullNameHint": "जस्तै: राम बहादुर श्रेष्ठ",
+      "adminEmail": "एडमिन इमेल",
+      "adminPassword": "एडमिन पासवर्ड",
+      "adminPasswordHint": "न्यूनतम ८ अक्षर",
+      "required": "आवश्यक"
+    },
+    "credentialsModal": {
+      "title": "अपरेटर सिर्जना भयो — प्रमाणहरू सुरक्षित गर्नुहोस्",
+      "createdSuccess": "✅ {{name}} सफलतापूर्वक सिर्जना भयो!",
+      "shareNote": "यी प्रमाणहरू कम्पनी एडमिनसँग साझा गर्नुहोस्। उनीहरू यहाँ लगइन गर्न सक्छन्",
+      "email": "इमेल:",
+      "password": "पासवर्ड:",
+      "role": "भूमिका:",
+      "done": "सम्पन्न — मैले प्रमाणहरू सुरक्षित गरेको छु"
+    },
+    "suspendModal": {
+      "title": "अपरेटर निलम्बन गर्नुहोस्",
+      "confirm": "{{name}} लाई निलम्बन गर्ने? यसले उनीहरूको सञ्चालन रोक्नेछ।",
+      "reasonPlaceholder": "निलम्बनको कारण..."
+    },
+    "toasts": {
+      "activated": "अपरेटर सक्रिय गरियो!",
+      "suspended": "अपरेटर निलम्बन गरियो",
+      "created": "अपरेटर सिर्जना गरियो!",
+      "copied": "प्रतिलिपि गरियो!"
+    }
+  },
+  "tenantDetail": {
+    "backToOperators": "अपरेटरहरूमा फर्कनुहोस्",
+    "planSuffix": "योजना",
+    "commissionSuffix": "कमिसन",
+    "activateOperator": "अपरेटर सक्रिय गर्नुहोस्",
+    "totalRevenue": "कुल राजस्व",
+    "platformCommission": "प्लेटफर्म कमिसन",
+    "activeVehicles": "सक्रिय सवारीहरू",
+    "totalTrips": "कुल यात्राहरू",
+    "documentsTitle": "कम्पनी कागजातहरू",
+    "uploadDocument": "कागजात अपलोड गर्नुहोस्",
+    "noDocuments": "अहिलेसम्म कुनै कागजात अपलोड भएको छैन।",
+    "uploadedLabel": "अपलोड गरियो:",
+    "expiresLabel": "म्याद सकिने:",
+    "verified": "प्रमाणित",
+    "pending": "प्रतीक्षित",
+    "verify": "प्रमाणित गर्नुहोस्",
+    "view": "हेर्नुहोस्",
+    "contactInfo": "सम्पर्क जानकारी",
+    "email": "इमेल",
+    "phone": "फोन",
+    "subdomain": "सबडोमेन",
+    "registered": "दर्ता भएको",
+    "notFound": "अपरेटर फेला परेन",
+    "toasts": {
+      "documentVerified": "कागजात प्रमाणित भयो!",
+      "activated": "अपरेटर सक्रिय गरियो!",
+      "documentUploaded": "कागजात अपलोड भयो!"
+    }
+  },
+  "billing": {
+    "title": "बिलिङ र सदस्यता",
+    "subtitle": "सबै अपरेटरका लागि मासिक एएमसी-आधारित बिलिङ",
+    "tabs": {
+      "subscriptions": "सदस्यताहरू",
+      "invoices": "बिलहरू",
+      "plans": "एएमसी योजनाहरू",
+      "audit": "लेखा परीक्षण लग"
+    },
+    "table": {
+      "tenant": "अपरेटर",
+      "amcPlan": "एएमसी योजना",
+      "noPlan": "कुनै योजना छैन",
+      "billing": "बिलिङ",
+      "monthly": "मासिक",
+      "status": "स्थिति",
+      "gracePeriod": "(छुट अवधि)",
+      "ends": "समाप्त हुने",
+      "daysLeft": "{{count}} दिन बाँकी",
+      "outstanding": "बाँकी रकम"
+    },
+    "actions": {
+      "generateInvoice": "बिल जेनेरेट गर्नुहोस्",
+      "changeAmcPlan": "एएमसी योजना परिवर्तन गर्नुहोस्",
+      "suspend": "निलम्बन गर्नुहोस्",
+      "activate": "सक्रिय गर्नुहोस्",
+      "renewNow": "अहिले नवीकरण गर्नुहोस्"
+    },
+    "searchPlaceholder": "अपरेटरको नाम वा स्किमाद्वारा खोज्नुहोस्...",
+    "newSubscription": "नयाँ सदस्यता",
+    "createModal": {
+      "title": "नयाँ सदस्यता",
+      "tenant": "अपरेटर",
+      "selectTenant": "— अपरेटर छान्नुहोस् —",
+      "selectTenantRequired": "कृपया एउटा अपरेटर छान्नुहोस्",
+      "amcPlan": "एएमसी योजना",
+      "assignLater": "— पछि तोक्नुहोस् —",
+      "status": "स्थिति",
+      "trial": "ट्रायल",
+      "active": "सक्रिय",
+      "startDate": "सुरु मिति",
+      "endDate": "अन्त्य मिति",
+      "gracePeriodDays": "छुट अवधि (दिन)",
+      "autoRenew": "मासिक स्वतः नवीकरण",
+      "create": "सिर्जना गर्नुहोस्"
+    },
+    "genInvoiceModal": {
+      "title": "बिल जेनेरेट गर्नुहोस् — {{name}}",
+      "periodStart": "अवधि सुरु",
+      "periodEnd": "अवधि अन्त्य",
+      "vatRate": "भ्याट दर (%)",
+      "generate": "जेनेरेट गर्नुहोस्"
+    },
+    "assignPlanModal": {
+      "title": "एएमसी योजना परिवर्तन गर्नुहोस् — {{name}}",
+      "currentPlan": "हालको योजना:",
+      "none": "कुनै छैन",
+      "monthlyAmc": "मासिक एएमसी",
+      "noPlansAvailable": "कुनै एएमसी योजना उपलब्ध छैन। पहिले योजना ट्याबमा एउटा बनाउनुहोस्।",
+      "assignPlan": "योजना तोक्नुहोस्"
+    },
+    "invoicesTable": {
+      "invoiceNumber": "बिल नं.",
+      "tenant": "अपरेटर",
+      "amount": "रकम",
+      "inclVat": "भ्याट {{rate}}% सहित",
+      "status": "स्थिति",
+      "daysLate": "{{count}} दिन ढिलो",
+      "due": "तिर्नुपर्ने",
+      "markPaid": "तिरेको चिन्ह लगाउनुहोस्",
+      "searchPlaceholder": "बिल वा अपरेटर खोज्नुहोस्...",
+      "allStatuses": "सबै स्थितिहरू",
+      "pending": "प्रतीक्षित",
+      "paid": "तिरिएको",
+      "overdue": "म्याद नाघेको",
+      "cancelled": "रद्द गरिएको",
+      "markedPaid": "{{number}} तिरिएको चिन्ह लगाइयो"
+    },
+    "invoiceDetail": {
+      "title": "बिल — {{number}}",
+      "tenant": "अपरेटर",
+      "period": "अवधि",
+      "dueDate": "तिर्नुपर्ने मिति",
+      "status": "स्थिति",
+      "description": "विवरण",
+      "amount": "रकम",
+      "subtotal": "उप-जम्मा",
+      "vat": "भ्याट ({{rate}}%)",
+      "total": "जम्मा"
+    },
+    "plansTab": {
+      "newAmcPlan": "नयाँ एएमसी योजना",
+      "loading": "लोड हुँदैछ…",
+      "monthlyAmc": "मासिक एएमसी",
+      "inactive": "निष्क्रिय",
+      "ofMonthlyRevenue": "मासिक राजस्वको",
+      "perMonthFixed": "प्रति महिना (स्थिर)",
+      "noRateConfigured": "कुनै दर कन्फिगर गरिएको छैन",
+      "noPlansYet": "अहिलेसम्म कुनै एएमसी योजना छैन।",
+      "createFirstPlan": "पहिलो योजना बनाउनुहोस्",
+      "planName": "योजनाको नाम",
+      "planNameHint": "जस्तै: स्ट्यान्डर्ड एएमसी, इन्टरप्राइज एएमसी",
+      "billingModel": "बिलिङ मोडेल",
+      "fixedAmount": "स्थिर रकम (प्रति महिना रु.)",
+      "percentage": "प्रतिशत (मासिक राजस्वको %)",
+      "percentageRate": "प्रतिशत दर (%)",
+      "monthlyAmount": "मासिक रकम (रु.)",
+      "percentageHint": "जस्तै: ६.५",
+      "amountHint": "जस्तै: १५०००",
+      "previewPercentage": "अपरेटरलाई मासिक टिकट राजस्वको {{rate}}% शुल्क लाग्नेछ",
+      "previewFixed": "अपरेटरलाई प्रति महिना रु. {{amount}} शुल्क लाग्नेछ (स्थिर)",
+      "description": "विवरण (वैकल्पिक)",
+      "descriptionPlaceholder": "यस योजनाबारे कुनै टिप्पणी...",
+      "createAmcPlan": "एएमसी योजना सिर्जना गर्नुहोस्",
+      "required": "आवश्यक",
+      "mustBePositive": "० भन्दा बढी हुनुपर्छ"
+    },
+    "auditTab": {
+      "searchPlaceholder": "अपरेटर वा इमेलद्वारा खोज्नुहोस्...",
+      "loading": "लोड हुँदैछ…",
+      "by": "{{email}} द्वारा",
+      "noEntries": "अहिलेसम्म कुनै लेखा परीक्षण प्रविष्टि छैन।"
+    },
+    "toasts": {
+      "subscriptionCreated": "सदस्यता सिर्जना गरियो!",
+      "suspended": "निलम्बन गरियो",
+      "suspendedByAdmin": "एडमिनद्वारा निलम्बन गरियो",
+      "activated": "सक्रिय गरियो",
+      "renewed": "नवीकरण भयो!",
+      "invoiceGenerated": "बिल {{number}} जेनेरेट भयो!",
+      "planAssigned": "एएमसी योजना तोकियो!",
+      "planCreated": "एएमसी योजना सिर्जना भयो!"
     }
   },
   "routes": {
     "title": "सहर मार्गहरू",
+    "subtitle": "सबै सार्वजनिक यातायात मार्गहरू व्यवस्थापन गर्नुहोस्",
     "addNew": "मार्ग थप्नुहोस्",
     "routeNumber": "मार्ग नम्बर",
+    "startStop": "सुरु स्टप",
+    "endStop": "अन्त्य स्टप",
     "totalDistance": "कुल दूरी (किमि)",
     "estimatedDuration": "अनुमानित अवधि (मिनेट)",
-    "stops": "स्टपहरू"
+    "stops": "स्टपहरू",
+    "addStop": "स्टप थप्नुहोस्",
+    "stopOrder": "स्टप क्रम",
+    "distanceFromPrev": "अघिल्लोबाट दूरी (किमि)",
+    "timeFromPrev": "अघिल्लोबाट समय (मिनेट)",
+    "fareMatrix": "भाडा म्याट्रिक्स",
+    "routeAssignment": "अपरेटरलाई तोक्नुहोस्",
+    "exclusiveRoute": "एकल असाइनमेन्ट",
+    "sharePercentage": "राजस्व हिस्सा %"
   },
   "stops": {
     "title": "बस स्टपहरू",
+    "subtitle": "काठमाडौं उपत्यकाभरका सबै स्टपहरू",
     "addNew": "स्टप थप्नुहोस्",
     "nameEn": "नाम (अंग्रेजी)",
-    "nameNe": "नाम (नेपाली)"
+    "nameNe": "नाम (नेपाली)",
+    "latitude": "अक्षांश",
+    "longitude": "देशान्तर",
+    "amenities": "सुविधाहरू",
+    "isTerminal": "टर्मिनल स्टप",
+    "isActive": "सक्रिय",
+    "district": "जिल्ला",
+    "ward": "वडा नम्बर"
   },
   "smartCards": {
     "title": "स्मार्ट कार्डहरू",
+    "subtitle": "एनएफसी यातायात कार्ड व्यवस्थापन",
     "cardNumber": "कार्ड नम्बर",
+    "holderName": "कार्डधारक",
     "balance": "ब्यालेन्स",
-    "recharge": "रिचार्ज"
+    "cardType": "कार्ड प्रकार",
+    "type": "प्रकार",
+    "isActive": "सक्रिय स्थिति",
+    "expiryDate": "म्याद सकिने मिति",
+    "recharge": "रिचार्ज",
+    "rechargeAmount": "रिचार्ज रकम (रु.)",
+    "rechargeAmountPlaceholder": "रकम प्रविष्ट गर्नुहोस्...",
+    "transactions": "कारोबारहरू",
+    "lastUsed": "अन्तिम प्रयोग",
+    "types": {
+      "STANDARD": "मानक",
+      "STUDENT": "विद्यार्थी",
+      "SENIOR": "जेष्ठ नागरिक",
+      "DIFFERENTLY_ABLED": "अपाङ्गता भएका",
+      "STAFF": "कर्मचारी"
+    },
+    "searchPlaceholder": "कार्ड नम्बर वा धारकको नामद्वारा खोज्नुहोस्...",
+    "rechargeModal": {
+      "title": "स्मार्ट कार्ड रिचार्ज गर्नुहोस्",
+      "cardLabel": "कार्ड:",
+      "currentBalance": "हालको ब्यालेन्स:"
+    },
+    "toasts": {
+      "recharged": "कार्ड रिचार्ज भयो!"
+    }
+  },
+  "users": {
+    "title": "प्लेटफर्म प्रयोगकर्ताहरू",
+    "subtitle": "प्लेटफर्मभरका सबै दर्ता भएका प्रयोगकर्ताहरू",
+    "searchPlaceholder": "नाम वा इमेलद्वारा प्रयोगकर्ता खोज्नुहोस्...",
+    "name": "नाम",
+    "role": "भूमिका",
+    "operator": "अपरेटर",
+    "platform": "प्लेटफर्म",
+    "status": "स्थिति",
+    "joined": "सामेल भएको",
+    "lastLogin": "अन्तिम लगइन",
+    "never": "कहिल्यै छैन"
+  },
+  "settings": {
+    "title": "सेटिङ",
+    "displayPreferences": "प्रदर्शन प्राथमिकताहरू",
+    "language": "भाषा",
+    "currentLanguage": "हाल: {{language}}",
+    "calendarSystem": "पात्रो प्रणाली",
+    "currentCalendar": "हाल: {{calendar}}",
+    "gregorian": "ग्रेगोरियन (इ.सं.)",
+    "bikramSambat": "विक्रम सम्वत् (बि.सं.)",
+    "changePassword": "पासवर्ड परिवर्तन गर्नुहोस्",
+    "currentPassword": "हालको पासवर्ड",
+    "newPassword": "नयाँ पासवर्ड",
+    "confirmNewPassword": "नयाँ पासवर्ड पुष्टि गर्नुहोस्",
+    "updatePassword": "पासवर्ड अपडेट गर्नुहोस्",
+    "notificationPreferences": "सूचना प्राथमिकताहरू",
+    "notifications": {
+      "tenantRegistration": "नयाँ अपरेटर दर्ता",
+      "docExpiry": "कागजात म्याद सकिने सूचना",
+      "emergency": "आपतकालीन प्रसारण",
+      "revenue": "राजस्व सीमा सूचना",
+      "maintenance": "प्रणाली मर्मत"
+    },
+    "validation": {
+      "currentPasswordRequired": "हालको पासवर्ड आवश्यक छ",
+      "newPasswordRequired": "नयाँ पासवर्ड आवश्यक छ",
+      "minLength": "न्यूनतम ८ अक्षर",
+      "passwordComplexity": "ठूलो अक्षर, सानो अक्षर र अंक हुनुपर्छ",
+      "confirmRequired": "कृपया नयाँ पासवर्ड पुष्टि गर्नुहोस्",
+      "passwordsMismatch": "पासवर्डहरू मेल खाएनन्"
+    },
+    "toasts": {
+      "passwordChanged": "पासवर्ड सफलतापूर्वक परिवर्तन भयो!"
+    }
   }
 }

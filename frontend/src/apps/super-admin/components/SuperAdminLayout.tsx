@@ -15,12 +15,12 @@ import authService from '@services/authService'
 import toast from 'react-hot-toast'
 
 const navItems = [
-  { to: '/super-admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/super-admin/tenants', icon: Building2, label: 'Tenants Onboarding' },
-  { to: '/super-admin/billing', icon: Receipt, label: 'Billing' },
-  { to: '/super-admin/smart-cards', icon: CreditCard, label: 'Smart Cards' },
-  { to: '/super-admin/users', icon: Users, label: 'Users' },
-  { to: '/super-admin/settings', icon: Settings, label: 'Settings' },
+  { to: '/super-admin/dashboard', icon: LayoutDashboard, labelKey: 'platform:nav.dashboard' },
+  { to: '/super-admin/tenants', icon: Building2, labelKey: 'platform:nav.tenantsOnboarding' },
+  { to: '/super-admin/billing', icon: Receipt, labelKey: 'platform:nav.billing' },
+  { to: '/super-admin/smart-cards', icon: CreditCard, labelKey: 'platform:nav.smartCards' },
+  { to: '/super-admin/users', icon: Users, labelKey: 'platform:nav.users' },
+  { to: '/super-admin/settings', icon: Settings, labelKey: 'platform:nav.settings' },
 ]
 
 interface SuperAdminLayoutProps {
@@ -39,7 +39,7 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
     } catch {}
     storeLogout()
     navigate('/login')
-    toast.success('Logged out successfully')
+    toast.success(t('platform:nav.logoutSuccess'))
   }
 
   return (
@@ -58,7 +58,7 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
           </div>
           <div>
             <p className="text-sm font-bold text-gray-900 dark:text-white">KVBMS</p>
-            <p className="text-xs text-gray-400">Super Admin</p>
+            <p className="text-xs text-gray-400">{t('platform:nav.superAdmin')}</p>
           </div>
         </div>
 
@@ -79,7 +79,7 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
               }
             >
               <item.icon className="h-5 w-5 flex-shrink-0" />
-              {item.label}
+              {t(item.labelKey)}
             </NavLink>
           ))}
         </nav>
@@ -94,12 +94,12 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
               <p className="truncate text-sm font-medium text-gray-900 dark:text-white">
                 {user?.fullName}
               </p>
-              <p className="truncate text-xs text-gray-400">Super Admin</p>
+              <p className="truncate text-xs text-gray-400">{t('platform:nav.superAdmin')}</p>
             </div>
             <button
               onClick={handleLogout}
               className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800"
-              title="Logout"
+              title={t('common:nav.logout')}
             >
               <LogOut className="h-4 w-4" />
             </button>

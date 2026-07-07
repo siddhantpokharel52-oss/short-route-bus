@@ -42,13 +42,13 @@ function MiniStat({
 }
 
 // ── Empty chart placeholder ────────────────────────────────────────────────────
-function ChartEmpty({ height = 220 }: { height?: number }) {
+function ChartEmpty({ height = 220, label }: { height?: number; label: string }) {
   return (
     <div
       className="flex items-center justify-center rounded-xl border-2 border-dashed border-gray-200 text-sm text-gray-400"
       style={{ height }}
     >
-      No data recorded yet
+      {label}
     </div>
   )
 }
@@ -129,9 +129,9 @@ export default function TenantAnalyticsPage() {
 
   function timeSince(date: Date) {
     const sec = Math.floor((Date.now() - date.getTime()) / 1000)
-    if (sec < 10) return 'just now'
-    if (sec < 60) return `${sec}s ago`
-    return `${Math.floor(sec / 60)}m ago`
+    if (sec < 10) return t('analytics.justNow')
+    if (sec < 60) return t('analytics.secondsAgo', { n: sec })
+    return t('analytics.minutesAgo', { n: Math.floor(sec / 60) })
   }
 
   const hasTopRoutes = (kpis?.top_routes?.length ?? 0) > 0
@@ -147,11 +147,11 @@ export default function TenantAnalyticsPage() {
           {lastUpdated ? (
             <p className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
               <Activity className="h-3 w-3 text-green-500" />
-              Updated {timeSince(lastUpdated)} · auto-refreshes every 30 s
+              {t('analytics.updatedAgo', { time: timeSince(lastUpdated) })}
             </p>
           ) : kpiLoading ? (
             <p className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
-              <RefreshCw className="h-3 w-3 animate-spin" /> Loading live data…
+              <RefreshCw className="h-3 w-3 animate-spin" /> {t('analytics.loadingLiveData')}
             </p>
           ) : null}
         </div>
@@ -160,7 +160,7 @@ export default function TenantAnalyticsPage() {
           className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 transition-colors"
         >
           <RefreshCw className="h-3.5 w-3.5" />
-          Refresh now
+          {t('analytics.refreshNow')}
         </button>
       </div>
 
@@ -168,7 +168,7 @@ export default function TenantAnalyticsPage() {
       {kpiError && (
         <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           <ShieldAlert className="h-4 w-4 flex-shrink-0" />
-          Could not load analytics data. The server may be unavailable. Retrying automatically…
+          {t('analytics.loadError')}
         </div>
       )}
 
@@ -183,27 +183,27 @@ export default function TenantAnalyticsPage() {
                 value={`${kpis?.fleet_utilization ?? 0}%`}
                 icon={<Bus className="h-6 w-6" />}
                 trend={kpis?.fleet_util_trend}
-                subtitle={`${kpis?.active_vehicles ?? 0} of ${kpis?.total_vehicles ?? 0} vehicles active`}
+                subtitle={t('analytics.activeOfTotalVehicles', { active: kpis?.active_vehicles ?? 0, total: kpis?.total_vehicles ?? 0 })}
               />
               <StatCard
                 title={t('analytics.onTimePerformance')}
                 value={`${kpis?.on_time_performance ?? 0}%`}
                 icon={<Clock className="h-6 w-6" />}
                 colorClass="text-green-600"
-                subtitle={`${kpis?.trips_completed ?? 0} trips completed today`}
+                subtitle={t('analytics.tripsCompletedToday', { count: kpis?.trips_completed ?? 0 })}
               />
               <StatCard
                 title={t('analytics.passengerCount')}
                 value={(kpis?.total_passengers ?? 0).toLocaleString()}
                 icon={<Users className="h-6 w-6" />}
                 trend={kpis?.passenger_trend}
-                subtitle="Tickets issued today"
+                subtitle={t('analytics.ticketsIssuedToday')}
               />
               <StatCard
                 title={t('analytics.revenuePerTrip')}
                 value={formatNPR(kpis?.avg_revenue_per_trip ?? 0, language as 'en' | 'ne')}
                 icon={<TrendingUp className="h-6 w-6" />}
-                subtitle={`Total: ${formatNPR(kpis?.total_revenue_today ?? 0, language as 'en' | 'ne')}`}
+                subtitle={t('analytics.totalLabel', { amount: formatNPR(kpis?.total_revenue_today ?? 0, language as 'en' | 'ne') })}
               />
             </>
           )}
@@ -214,41 +214,41 @@ export default function TenantAnalyticsPage() {
         ? <Skeleton className="h-24" />
         : (
           <div className="card">
-            <h3 className="mb-3 text-sm font-semibold text-gray-700">Today's Summary</h3>
+            <h3 className="mb-3 text-sm font-semibold text-gray-700">{t('analytics.todaysSummary')}</h3>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               <MiniStat
                 icon={<Bus className="h-4 w-4" />}
-                label="Total Trips"
+                label={t('analytics.totalTrips')}
                 value={kpis?.trips_total ?? 0}
                 color="text-blue-700"
               />
               <MiniStat
                 icon={<CheckCircle2 className="h-4 w-4 text-green-500" />}
-                label="Completed"
+                label={t('analytics.completed')}
                 value={kpis?.trips_completed ?? 0}
                 color="text-green-700"
               />
               <MiniStat
                 icon={<XCircle className="h-4 w-4 text-red-400" />}
-                label="Cancelled"
+                label={t('analytics.cancelled')}
                 value={kpis?.trips_cancelled ?? 0}
                 color="text-red-500"
               />
               <MiniStat
                 icon={<Bus className="h-4 w-4 text-primary-500" />}
-                label="Active Vehicles"
+                label={t('analytics.activeVehicles')}
                 value={`${kpis?.active_vehicles ?? 0} / ${kpis?.total_vehicles ?? 0}`}
                 color="text-primary-700"
               />
               <MiniStat
                 icon={<ShieldAlert className="h-4 w-4 text-orange-400" />}
-                label="Breakdown Rate"
+                label={t('analytics.breakdownRate')}
                 value={`${kpis?.breakdown_rate ?? 0}%`}
                 color={Number(kpis?.breakdown_rate) > 10 ? 'text-red-600' : 'text-orange-600'}
               />
               <MiniStat
                 icon={<Banknote className="h-4 w-4 text-emerald-500" />}
-                label="Revenue Today"
+                label={t('analytics.revenueToday')}
                 value={`NPR ${Number(kpis?.total_revenue_today ?? 0).toLocaleString()}`}
                 color="text-emerald-700"
               />
@@ -261,7 +261,7 @@ export default function TenantAnalyticsPage() {
         {/* Trip + Passenger Trend */}
         <div className="card">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="font-semibold text-gray-800">Daily Trips &amp; Passengers</h3>
+            <h3 className="font-semibold text-gray-800">{t('analytics.dailyTripsPassengers')}</h3>
             <div className="flex gap-0.5 rounded-lg border border-gray-200 bg-gray-50 p-0.5 text-xs">
               {([7, 14, 30] as const).map((d) => (
                 <button
@@ -281,7 +281,7 @@ export default function TenantAnalyticsPage() {
           {trendLoading
             ? <Skeleton className="h-56" />
             : !hasTrend
-            ? <ChartEmpty height={220} />
+            ? <ChartEmpty height={220} label={t('analytics.noData')} />
             : (
               <ResponsiveContainer width="100%" height={220}>
                 <AreaChart data={trend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
@@ -307,11 +307,11 @@ export default function TenantAnalyticsPage() {
                     labelFormatter={fmtDate}
                     formatter={(v: number, name: string) => [
                       v.toLocaleString(),
-                      name === 'trips' ? 'Trips' : 'Passengers',
+                      name === 'trips' ? t('analytics.trips') : t('analytics.passengers'),
                     ]}
                   />
                   <Legend
-                    formatter={(v) => (v === 'trips' ? 'Trips' : 'Passengers')}
+                    formatter={(v) => (v === 'trips' ? t('analytics.trips') : t('analytics.passengers'))}
                     iconType="circle"
                     iconSize={8}
                   />
@@ -334,12 +334,12 @@ export default function TenantAnalyticsPage() {
         <div className="card">
           <h3 className="mb-4 font-semibold text-gray-800">
             {t('analytics.topRoutes')}
-            <span className="ml-1.5 text-xs font-normal text-gray-400">(trips today)</span>
+            <span className="ml-1.5 text-xs font-normal text-gray-400">{t('analytics.tripsToday')}</span>
           </h3>
           {kpiLoading
             ? <Skeleton className="h-56" />
             : !hasTopRoutes
-            ? <ChartEmpty height={220} />
+            ? <ChartEmpty height={220} label={t('analytics.noData')} />
             : (
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart
@@ -350,7 +350,7 @@ export default function TenantAnalyticsPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
                   <YAxis type="category" dataKey="route" tick={{ fontSize: 11 }} width={90} />
-                  <Tooltip formatter={(v: number) => [v, 'Trips']} />
+                  <Tooltip formatter={(v: number) => [v, t('analytics.trips')]} />
                   <Bar dataKey="passengers" name="Trips" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -361,13 +361,13 @@ export default function TenantAnalyticsPage() {
       {/* ── Revenue Trend ─────────────────────────────────────────────────── */}
       <div className="card">
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="font-semibold text-gray-800">Revenue Trend (NPR)</h3>
-          <span className="text-xs text-gray-400">Last {trendDays} days</span>
+          <h3 className="font-semibold text-gray-800">{t('analytics.revenueTrend')}</h3>
+          <span className="text-xs text-gray-400">{t('analytics.lastNDays', { n: trendDays })}</span>
         </div>
         {trendLoading
           ? <Skeleton className="h-44" />
           : !hasRevenue
-          ? <ChartEmpty height={160} />
+          ? <ChartEmpty height={160} label={t('analytics.noData')} />
           : (
             <ResponsiveContainer width="100%" height={160}>
               <AreaChart data={trend} margin={{ top: 4, right: 4, left: 8, bottom: 0 }}>

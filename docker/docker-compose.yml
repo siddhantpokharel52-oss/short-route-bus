@@ -152,7 +152,7 @@ services:
       - static_files:/app/staticfiles:ro
       - media_files:/app/media:ro
     ports:
-      - "80:80"
+      - "8090:80"   # 80 in use by Apache2, 8080 in use by another project's container → expose on 8090
     depends_on:
       - django
       - fastapi

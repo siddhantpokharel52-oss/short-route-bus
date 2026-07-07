@@ -32,7 +32,17 @@
     "accountLocked": "Account locked. Try again in {{minutes}} minutes",
     "twoFactorTitle": "Two-Factor Authentication",
     "twoFactorCode": "Enter 6-digit code from your authenticator app",
-    "verifyButton": "Verify"
+    "verifyButton": "Verify",
+    "welcomeBack": "Welcome back!",
+    "loginFailed": "Login failed",
+    "twoFactorSuccess": "Authentication successful!",
+    "invalidCode": "Invalid code",
+    "stats": {
+      "busOperators": "Bus Operators",
+      "dailyTrips": "Daily Trips",
+      "passengersPerDay": "Passengers/Day",
+      "routesCount": "Routes"
+    }
   },
   "common": {
     "save": "Save",
@@ -72,6 +82,7 @@
     "name": "Name",
     "description": "Description",
     "type": "Type",
+    "role": "Role",
     "category": "Category",
     "all": "All",
     "none": "None",
@@ -110,7 +121,8 @@
     "unauthorized": "You are not authorized to perform this action.",
     "forbidden": "Access denied.",
     "notFound": "Resource not found.",
-    "validationFailed": "Please fix the form errors and try again."
+    "validationFailed": "Please fix the form errors and try again.",
+    "enterCode": "Enter 6-digit code"
   },
   "calendar": {
     "switchToBS": "Switch to BS",

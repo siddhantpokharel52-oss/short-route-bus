@@ -2,6 +2,10 @@ from .base import *
 
 DEBUG = True
 
+# Local dev has no real DNS, so new tenant subdomains must resolve under
+# "*.localhost" (e.g. "test.localhost") instead of the production "*.kvbms.com.np".
+TENANT_BASE_DOMAIN = config("TENANT_BASE_DOMAIN", default="localhost")
+
 INSTALLED_APPS += ["debug_toolbar"]
 
 MIDDLEWARE = ["debug_toolbar.middleware.DebugToolbarMiddleware"] + MIDDLEWARE

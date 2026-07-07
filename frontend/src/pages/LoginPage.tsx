@@ -18,17 +18,8 @@ const TENANT_ROLES = [
   'CONDUCTOR', 'FINANCE_OFFICER', 'HR_OFFICER', 'MAINTENANCE_OFFICER', 'INVENTORY_OFFICER',
 ]
 
-const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-})
-
-const totpSchema = z.object({
-  code: z.string().length(6, 'Enter 6-digit code'),
-})
-
-type LoginForm = z.infer<typeof loginSchema>
-type TotpForm = z.infer<typeof totpSchema>
+type LoginForm = { email: string; password: string }
+type TotpForm = { code: string }
 
 export default function LoginPage() {
   const { t } = useTranslation()
@@ -54,6 +45,15 @@ export default function LoginPage() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const loginSchema = z.object({
+    email: z.string().email(t('errors.invalidEmail')),
+    password: z.string().min(8, t('errors.minLength', { min: 8 })),
+  })
+
+  const totpSchema = z.object({
+    code: z.string().length(6, t('errors.enterCode')),
+  })
+
   const loginForm = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
   })
@@ -67,10 +67,10 @@ export default function LoginPage() {
     try {
       const result = await login(data.email, data.password)
       if (!result.requires2FA) {
-        toast.success('Welcome back!')
+        toast.success(t('auth.welcomeBack'))
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Login failed'
+      const message = err instanceof Error ? err.message : t('auth.loginFailed')
       toast.error(message)
     } finally {
       setIsLoading(false)
@@ -81,9 +81,9 @@ export default function LoginPage() {
     setIsLoading(true)
     try {
       await verify2FA(data.code)
-      toast.success('Authentication successful!')
+      toast.success(t('auth.twoFactorSuccess'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Invalid code'
+      const message = err instanceof Error ? err.message : t('auth.invalidCode')
       toast.error(message)
     } finally {
       setIsLoading(false)
@@ -103,10 +103,10 @@ export default function LoginPage() {
 
         <div className="mt-16 grid grid-cols-2 gap-6 text-center">
           {[
-            { label: 'Bus Operators', value: '12+' },
-            { label: 'Daily Trips', value: '2,400+' },
-            { label: 'Passengers/Day', value: '85,000+' },
-            { label: 'Routes', value: '48' },
+            { label: t('auth.stats.busOperators'), value: '12+' },
+            { label: t('auth.stats.dailyTrips'), value: '2,400+' },
+            { label: t('auth.stats.passengersPerDay'), value: '85,000+' },
+            { label: t('auth.stats.routesCount'), value: '48' },
           ].map((stat) => (
             <div key={stat.label} className="rounded-xl bg-white/10 p-4 backdrop-blur-sm">
               <p className="text-3xl font-bold text-white">{stat.value}</p>

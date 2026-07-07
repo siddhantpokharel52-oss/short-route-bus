@@ -77,7 +77,7 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
     } catch {}
     storeLogout()
     navigate('/login')
-    toast.success('Logged out successfully')
+    toast.success(t('nav.logoutSuccess'))
   }
 
   return (
@@ -108,7 +108,7 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
             <p className="truncate text-sm font-bold text-gray-900 dark:text-white">
               {companyInfo?.company_name
                 ?? user?.tenantSchema?.replace(/_/g, ' ').toUpperCase()
-                ?? 'Operator'}
+                ?? t('nav.operatorFallback')}
             </p>
             <p className="text-xs text-gray-400">{user?.role?.replace(/_/g, ' ')}</p>
           </div>

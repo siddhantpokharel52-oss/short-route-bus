@@ -1,4 +1,29 @@
 {
+  "nav": {
+    "dashboard": "Dashboard",
+    "tenantsOnboarding": "Tenants Onboarding",
+    "billing": "Billing",
+    "smartCards": "Smart Cards",
+    "users": "Users",
+    "settings": "Settings",
+    "superAdmin": "Super Admin",
+    "logoutSuccess": "Logged out successfully"
+  },
+  "dashboard": {
+    "subtitle": "Platform overview — Kathmandu Valley Bus Network",
+    "activeOperators": "Active Operators",
+    "todaysTrips": "Today's Trips",
+    "monthRevenue": "This Month's Revenue",
+    "pendingAMC": "Total Pending AMC",
+    "liveFleetMap": "Live Fleet Map — Kathmandu Valley",
+    "searchTenant": "Search tenant to view fleet...",
+    "noTenantsFound": "No tenants found",
+    "loadingFleetFor": "Loading fleet for {{name}}…",
+    "noVehiclesRegistered": "No vehicles registered for this tenant.",
+    "vehiclesCount": "{{name}} — {{count}} Vehicles",
+    "routeLabel": "Route {{code}}",
+    "noRouteAssigned": "No route assigned"
+  },
   "tenants": {
     "title": "Tenants",
     "subtitle": "Manage all registered bus operators",
@@ -9,10 +34,12 @@
     "status": "Status",
     "contactEmail": "Contact Email",
     "contactPhone": "Contact Phone",
+    "contactPerson": "Contact Person",
     "registrationDate": "Registration Date",
     "activate": "Activate",
     "suspend": "Suspend",
     "suspendReason": "Suspension Reason",
+    "searchPlaceholder": "Search operators...",
     "plans": {
       "BASIC": "Basic (8% commission)",
       "STANDARD": "Standard (6% commission)",
@@ -44,6 +71,210 @@
       "activeVehicles": "Active Vehicles",
       "totalTrips": "Total Trips",
       "totalPassengers": "Total Passengers"
+    },
+    "createModal": {
+      "companyName": "Company Name",
+      "subdomainHint": "e.g. sajha → sajha.kvbms.com.np",
+      "contactNumber": "Contact Number",
+      "contactNumberHint": "e.g. 9801234567",
+      "emailAddress": "Email Address",
+      "emailHint": "contact@company.com.np",
+      "companyAddress": "Company Address",
+      "addressHint": "e.g. New Baneshwor, Kathmandu",
+      "panVat": "PAN / VAT Number",
+      "panVatHint": "e.g. 123456789",
+      "adminSectionTitle": "Tenant Admin Login (optional)",
+      "adminSectionHint": "Create login credentials for the tenant company admin so they can access the Tenant Portal.",
+      "adminFullName": "Admin Full Name",
+      "adminFullNameHint": "e.g. Ram Bahadur Shrestha",
+      "adminEmail": "Admin Email",
+      "adminPassword": "Admin Password",
+      "adminPasswordHint": "Min 8 characters",
+      "required": "Required"
+    },
+    "credentialsModal": {
+      "title": "Tenant Created — Save Credentials",
+      "createdSuccess": "✅ {{name}} created successfully!",
+      "shareNote": "Share these credentials with the company admin. They can log in at",
+      "email": "Email:",
+      "password": "Password:",
+      "role": "Role:",
+      "done": "Done — I've saved the credentials"
+    },
+    "suspendModal": {
+      "title": "Suspend Tenant",
+      "confirm": "Suspend {{name}}? This will halt their operations.",
+      "reasonPlaceholder": "Reason for suspension..."
+    },
+    "toasts": {
+      "activated": "Tenant activated!",
+      "suspended": "Tenant suspended",
+      "created": "Tenant created!",
+      "copied": "Copied!"
+    }
+  },
+  "tenantDetail": {
+    "backToOperators": "Back to Operators",
+    "planSuffix": "Plan",
+    "commissionSuffix": "commission",
+    "activateOperator": "Activate Operator",
+    "totalRevenue": "Total Revenue",
+    "platformCommission": "Platform Commission",
+    "activeVehicles": "Active Vehicles",
+    "totalTrips": "Total Trips",
+    "documentsTitle": "Company Documents",
+    "uploadDocument": "Upload Document",
+    "noDocuments": "No documents uploaded yet.",
+    "uploadedLabel": "Uploaded:",
+    "expiresLabel": "Expires:",
+    "verified": "Verified",
+    "pending": "Pending",
+    "verify": "Verify",
+    "view": "View",
+    "contactInfo": "Contact Information",
+    "email": "Email",
+    "phone": "Phone",
+    "subdomain": "Subdomain",
+    "registered": "Registered",
+    "notFound": "Tenant not found",
+    "toasts": {
+      "documentVerified": "Document verified!",
+      "activated": "Tenant activated!",
+      "documentUploaded": "Document uploaded!"
+    }
+  },
+  "billing": {
+    "title": "Billing & Subscriptions",
+    "subtitle": "Monthly AMC-based billing for all tenants",
+    "tabs": {
+      "subscriptions": "Subscriptions",
+      "invoices": "Invoices",
+      "plans": "AMC Plans",
+      "audit": "Audit Log"
+    },
+    "table": {
+      "tenant": "Tenant",
+      "amcPlan": "AMC Plan",
+      "noPlan": "No plan",
+      "billing": "Billing",
+      "monthly": "Monthly",
+      "status": "Status",
+      "gracePeriod": "(Grace)",
+      "ends": "Ends",
+      "daysLeft": "{{count}}d left",
+      "outstanding": "Outstanding"
+    },
+    "actions": {
+      "generateInvoice": "Generate Invoice",
+      "changeAmcPlan": "Change AMC Plan",
+      "suspend": "Suspend",
+      "activate": "Activate",
+      "renewNow": "Renew now"
+    },
+    "searchPlaceholder": "Search by tenant name or schema...",
+    "newSubscription": "New Subscription",
+    "createModal": {
+      "title": "New Subscription",
+      "tenant": "Tenant",
+      "selectTenant": "— Select a tenant —",
+      "selectTenantRequired": "Please select a tenant",
+      "amcPlan": "AMC Plan",
+      "assignLater": "— Assign later —",
+      "status": "Status",
+      "trial": "Trial",
+      "active": "Active",
+      "startDate": "Start Date",
+      "endDate": "End Date",
+      "gracePeriodDays": "Grace Period (days)",
+      "autoRenew": "Auto-renew monthly",
+      "create": "Create"
+    },
+    "genInvoiceModal": {
+      "title": "Generate Invoice — {{name}}",
+      "periodStart": "Period Start",
+      "periodEnd": "Period End",
+      "vatRate": "VAT Rate (%)",
+      "generate": "Generate"
+    },
+    "assignPlanModal": {
+      "title": "Change AMC Plan — {{name}}",
+      "currentPlan": "Current plan:",
+      "none": "None",
+      "monthlyAmc": "Monthly AMC",
+      "noPlansAvailable": "No AMC plans available. Create one in the Plans tab first.",
+      "assignPlan": "Assign Plan"
+    },
+    "invoicesTable": {
+      "invoiceNumber": "Invoice #",
+      "tenant": "Tenant",
+      "amount": "Amount",
+      "inclVat": "incl. VAT {{rate}}%",
+      "status": "Status",
+      "daysLate": "{{count}}d late",
+      "due": "Due",
+      "markPaid": "Mark Paid",
+      "searchPlaceholder": "Search invoice or tenant...",
+      "allStatuses": "All statuses",
+      "pending": "Pending",
+      "paid": "Paid",
+      "overdue": "Overdue",
+      "cancelled": "Cancelled",
+      "markedPaid": "{{number}} marked as paid"
+    },
+    "invoiceDetail": {
+      "title": "Invoice — {{number}}",
+      "tenant": "Tenant",
+      "period": "Period",
+      "dueDate": "Due Date",
+      "status": "Status",
+      "description": "Description",
+      "amount": "Amount",
+      "subtotal": "Subtotal",
+      "vat": "VAT ({{rate}}%)",
+      "total": "Total"
+    },
+    "plansTab": {
+      "newAmcPlan": "New AMC Plan",
+      "loading": "Loading…",
+      "monthlyAmc": "Monthly AMC",
+      "inactive": "Inactive",
+      "ofMonthlyRevenue": "of monthly revenue",
+      "perMonthFixed": "per month (fixed)",
+      "noRateConfigured": "No rate configured",
+      "noPlansYet": "No AMC plans yet.",
+      "createFirstPlan": "Create First Plan",
+      "planName": "Plan Name",
+      "planNameHint": "e.g. Standard AMC, Enterprise AMC",
+      "billingModel": "Billing Model",
+      "fixedAmount": "Fixed Amount (NPR per month)",
+      "percentage": "Percentage (% of monthly revenue)",
+      "percentageRate": "Percentage Rate (%)",
+      "monthlyAmount": "Monthly Amount (NPR)",
+      "percentageHint": "e.g. 6.5",
+      "amountHint": "e.g. 15000",
+      "previewPercentage": "Tenant will be charged {{rate}}% of their monthly ticket revenue",
+      "previewFixed": "Tenant will be charged NPR {{amount}} per month (fixed)",
+      "description": "Description (optional)",
+      "descriptionPlaceholder": "Any notes about this plan...",
+      "createAmcPlan": "Create AMC Plan",
+      "required": "Required",
+      "mustBePositive": "Must be > 0"
+    },
+    "auditTab": {
+      "searchPlaceholder": "Search by tenant or email...",
+      "loading": "Loading…",
+      "by": "by {{email}}",
+      "noEntries": "No audit entries yet."
+    },
+    "toasts": {
+      "subscriptionCreated": "Subscription created!",
+      "suspended": "Suspended",
+      "suspendedByAdmin": "Suspended by admin",
+      "activated": "Activated",
+      "renewed": "Renewed!",
+      "invoiceGenerated": "Invoice {{number}} generated!",
+      "planAssigned": "AMC plan assigned!",
+      "planCreated": "AMC plan created!"
     }
   },
   "routes": {
@@ -86,10 +317,12 @@
     "holderName": "Card Holder",
     "balance": "Balance",
     "cardType": "Card Type",
+    "type": "Type",
     "isActive": "Active Status",
     "expiryDate": "Expiry Date",
     "recharge": "Recharge",
-    "rechargeAmount": "Recharge Amount",
+    "rechargeAmount": "Recharge Amount (NPR)",
+    "rechargeAmountPlaceholder": "Enter amount...",
     "transactions": "Transactions",
     "lastUsed": "Last Used",
     "types": {
@@ -98,6 +331,62 @@
       "SENIOR": "Senior Citizen",
       "DIFFERENTLY_ABLED": "Differently Abled",
       "STAFF": "Staff"
+    },
+    "searchPlaceholder": "Search by card number or holder name...",
+    "rechargeModal": {
+      "title": "Recharge Smart Card",
+      "cardLabel": "Card:",
+      "currentBalance": "Current Balance:"
+    },
+    "toasts": {
+      "recharged": "Card recharged!"
+    }
+  },
+  "users": {
+    "title": "Platform Users",
+    "subtitle": "All registered users across the platform",
+    "searchPlaceholder": "Search users by name or email...",
+    "name": "Name",
+    "role": "Role",
+    "operator": "Operator",
+    "platform": "Platform",
+    "status": "Status",
+    "joined": "Joined",
+    "lastLogin": "Last Login",
+    "never": "Never"
+  },
+  "settings": {
+    "title": "Settings",
+    "displayPreferences": "Display Preferences",
+    "language": "Language",
+    "currentLanguage": "Current: {{language}}",
+    "calendarSystem": "Calendar System",
+    "currentCalendar": "Current: {{calendar}}",
+    "gregorian": "Gregorian (AD)",
+    "bikramSambat": "Bikram Sambat (BS)",
+    "changePassword": "Change Password",
+    "currentPassword": "Current Password",
+    "newPassword": "New Password",
+    "confirmNewPassword": "Confirm New Password",
+    "updatePassword": "Update Password",
+    "notificationPreferences": "Notification Preferences",
+    "notifications": {
+      "tenantRegistration": "New operator registration",
+      "docExpiry": "Document expiry alerts",
+      "emergency": "Emergency broadcasts",
+      "revenue": "Revenue threshold alerts",
+      "maintenance": "System maintenance"
+    },
+    "validation": {
+      "currentPasswordRequired": "Current password is required",
+      "newPasswordRequired": "New password is required",
+      "minLength": "Minimum 8 characters",
+      "passwordComplexity": "Must contain uppercase, lowercase and number",
+      "confirmRequired": "Please confirm new password",
+      "passwordsMismatch": "Passwords do not match"
+    },
+    "toasts": {
+      "passwordChanged": "Password changed successfully!"
     }
   }
 }

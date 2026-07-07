@@ -30,6 +30,7 @@ urlpatterns = [
     path("api/v1/analytics/", include("backend.apps.analytics.urls")),
     path("api/v1/accounting/", include("backend.apps.accounting.urls")),
     path("api/v1/notifications/", include("backend.apps.notifications.urls")),
+    path("api/v1/rbac/", include("backend.apps.rbac.urls")),
     # Health check
     path("health/", include("backend.apps.users.health_urls")),
     # Prometheus metrics

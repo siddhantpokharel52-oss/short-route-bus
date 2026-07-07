@@ -5,9 +5,12 @@ import { useSearchParams } from 'react-router-dom'
 import { Search, MapPin, Clock, Ruler, Bus } from 'lucide-react'
 import { Input } from '@components/shared/Input'
 import publicService, { Route } from '@services/publicService'
+import { formatNPR } from '@utils/nepaliDate'
+import { useUiStore } from '@store/uiStore'
 
 export default function RoutesPage() {
   const { t } = useTranslation('public')
+  const { language } = useUiStore()
   const [searchParams] = useSearchParams()
   const [search, setSearch] = useState(searchParams.get('q') ?? '')
 
@@ -19,7 +22,7 @@ export default function RoutesPage() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
       <h1 className="text-3xl font-bold text-gray-900 mb-2">{t('routes.title')}</h1>
-      <p className="text-gray-500 mb-6">All public transit routes in Kathmandu Valley</p>
+      <p className="text-gray-500 mb-6">{t('routes.subtitle')}</p>
 
       <Input
         placeholder={t('routes.searchPlaceholder')}
@@ -51,7 +54,7 @@ export default function RoutesPage() {
                   <Bus className="mr-1 h-3.5 w-3.5" />
                   {route.route_number}
                 </span>
-                <span className="text-sm font-semibold text-green-600">Rs. {route.base_fare}</span>
+                <span className="text-sm font-semibold text-green-600">{formatNPR(route.base_fare, language as 'en' | 'ne')}</span>
               </div>
 
               {/* Route name */}
@@ -83,7 +86,7 @@ export default function RoutesPage() {
                 </span>
                 <span className="flex items-center gap-1">
                   <MapPin className="h-3.5 w-3.5" />
-                  {route.stops?.length ?? 0} stops
+                  {t('routes.stopsCount', { count: route.stops?.length ?? 0 })}
                 </span>
               </div>
 
@@ -101,8 +104,8 @@ export default function RoutesPage() {
       {routes?.length === 0 && !isLoading && (
         <div className="text-center py-16 text-gray-400">
           <Bus className="mx-auto h-12 w-12 text-gray-300 mb-4" />
-          <p className="text-lg">No routes found for "{search}"</p>
-          <p className="text-sm">Try a different search term</p>
+          <p className="text-lg">{t('routes.noResults', { search })}</p>
+          <p className="text-sm">{t('routes.tryDifferentSearch')}</p>
         </div>
       )}
     </div>

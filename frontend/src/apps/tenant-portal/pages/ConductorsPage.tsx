@@ -8,6 +8,7 @@ import { NepaliInput } from '@components/shared/NepaliInput'
 import { Table, Column, Pagination } from '@components/shared/Table'
 import { Badge, statusVariant } from '@components/shared/Badge'
 import { Modal } from '@components/shared/Modal'
+import { NepaliDateInput } from '@components/shared/NepaliDateInput'
 import { usePagination } from '@hooks/usePagination'
 import apiClient from '@services/api'
 import toast from 'react-hot-toast'
@@ -623,12 +624,19 @@ export default function ConductorsPage() {
                 </SelectField>
               )}
             />
-            <Input
-              label="Date of Birth"
-              type="date"
-              required
-              error={errors.dob?.message}
-              {...register('dob', { required: 'Date of birth is required' })}
+            <Controller
+              name="dob"
+              control={control}
+              rules={{ required: 'Date of birth is required' }}
+              render={({ field }) => (
+                <NepaliDateInput
+                  label="Date of Birth"
+                  required
+                  error={errors.dob?.message}
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              )}
             />
             <Input
               label="Citizenship Number"
@@ -674,7 +682,13 @@ export default function ConductorsPage() {
             </p>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input label="Date of Joining" type="date" {...register('date_of_joining')} />
+            <Controller
+              name="date_of_joining"
+              control={control}
+              render={({ field }) => (
+                <NepaliDateInput label="Date of Joining" value={field.value} onChange={field.onChange} />
+              )}
+            />
             <SelectField label="Employment Type" {...register('employment_type')}>
               <option value="PERMANENT">Permanent</option>
               <option value="CONTRACT">Contract</option>

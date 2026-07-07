@@ -8,10 +8,11 @@ import { Table, Column, Pagination } from '@components/shared/Table'
 import { Badge } from '@components/shared/Badge'
 import { Modal } from '@components/shared/Modal'
 import { DateDisplay } from '@components/shared/DateDisplay'
+import { NepaliDateInput } from '@components/shared/NepaliDateInput'
 import { usePagination } from '@hooks/usePagination'
 import apiClient from '@services/api'
 import toast from 'react-hot-toast'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 
 interface MaintenanceRecord {
   id: string
@@ -59,13 +60,6 @@ function parseNotes(raw: string | null) {
   return { serviceCenterName, location, contact, cost, freeNotes: freeLines.join('\n').trim() }
 }
 
-const SERVICE_TYPE_LABELS: Record<string, string> = {
-  PERIODIC:   'Routine / Periodic Service',
-  REPAIR:     'Repair',
-  INSPECTION: 'Inspection',
-  EMERGENCY:  'Emergency',
-}
-
 export default function MaintenancePage() {
   const { t } = useTranslation('tenant')
   const qc = useQueryClient()
@@ -93,7 +87,7 @@ export default function MaintenancePage() {
     staleTime: 5 * 60 * 1000,
   })
 
-  const { register, handleSubmit, reset } = useForm<ScheduleForm>({
+  const { register, handleSubmit, reset, control } = useForm<ScheduleForm>({
     defaultValues: { service_type: 'PERIODIC' },
   })
 
@@ -116,7 +110,7 @@ export default function MaintenancePage() {
       }).then((r) => r.data)
     },
     onSuccess: () => {
-      toast.success('Maintenance scheduled!')
+      toast.success(t('maintenance.toasts.scheduled'))
       setShowCreate(false)
       reset()
       qc.invalidateQueries({ queryKey: ['maintenance'] })
@@ -127,7 +121,7 @@ export default function MaintenancePage() {
   const columns: Column<MaintenanceRecord>[] = [
     {
       key: 'vehicle_registration',
-      header: 'Vehicle',
+      header: t('maintenance.vehicle'),
       render: (m) => (
         <span className="font-mono font-bold">
           {m.vehicle_registration || m.vehicle_id}
@@ -137,16 +131,16 @@ export default function MaintenancePage() {
     {
       key: 'service_type',
       header: t('maintenance.maintenanceType'),
-      render: (m) => <Badge variant="neutral">{m.service_type}</Badge>,
+      render: (m) => <Badge variant="neutral">{t(`maintenance.serviceTypeLabels.${m.service_type}`, { defaultValue: m.service_type })}</Badge>,
     },
     {
       key: 'due_date',
-      header: 'Repair Date',
+      header: t('maintenance.repairDate'),
       render: (m) => <DateDisplay date={m.due_date} />,
     },
     {
       key: 'notes',
-      header: 'Notes',
+      header: t('maintenance.notes'),
       render: (m) => m.notes
         ? <span className="max-w-xs truncate text-sm text-gray-600">{m.notes}</span>
         : <span className="text-gray-300">—</span>,
@@ -161,7 +155,7 @@ export default function MaintenancePage() {
                      text-primary-600 hover:bg-primary-50 transition-colors"
         >
           <Eye className="h-3.5 w-3.5" />
-          View
+          {t('maintenance.view')}
         </button>
       ),
     },
@@ -194,14 +188,14 @@ export default function MaintenancePage() {
           {/* Vehicle Registration Number — value is the vehicle UUID */}
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">
-              Vehicle Registration Number <span className="text-red-500">*</span>
+              {t('maintenance.vehicleRegLabel')} <span className="text-red-500">*</span>
             </label>
             <select
               className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
                          focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
               {...register('vehicle_id', { required: true })}
             >
-              <option value="">— Select vehicle —</option>
+              <option value="">{t('maintenance.selectVehicle')}</option>
               {vehicles.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.registration_no}
@@ -218,36 +212,43 @@ export default function MaintenancePage() {
                          focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
               {...register('service_type')}
             >
-              <option value="PERIODIC">Routine / Periodic Service</option>
-              <option value="REPAIR">Repair</option>
-              <option value="INSPECTION">Inspection</option>
-              <option value="EMERGENCY">Emergency</option>
+              <option value="PERIODIC">{t('maintenance.serviceTypeLabels.PERIODIC')}</option>
+              <option value="REPAIR">{t('maintenance.serviceTypeLabels.REPAIR')}</option>
+              <option value="INSPECTION">{t('maintenance.serviceTypeLabels.INSPECTION')}</option>
+              <option value="EMERGENCY">{t('maintenance.serviceTypeLabels.EMERGENCY')}</option>
             </select>
           </div>
 
           {/* Repair Date */}
-          <Input label="Repair Date" type="date" required {...register('due_date', { required: true })} />
+          <Controller
+            name="due_date"
+            control={control}
+            rules={{ required: true }}
+            render={({ field }) => (
+              <NepaliDateInput label={t('maintenance.repairDate')} required value={field.value} onChange={field.onChange} />
+            )}
+          />
 
           {/* Service Center Fields */}
           <Input
-            label="Service Center Name"
+            label={t('maintenance.serviceCenterName')}
             placeholder="e.g. Ratna Motors Service Centre"
             {...register('service_center_name')}
           />
           <Input
-            label="Service Center Location"
+            label={t('maintenance.serviceCenterLocation')}
             placeholder="e.g. Kalanki, Kathmandu"
             {...register('service_center_location')}
           />
           <Input
-            label="Service Center Contact Number"
+            label={t('maintenance.serviceCenterContact')}
             type="tel"
             placeholder="e.g. 01-4XXXXXX"
             {...register('service_center_contact')}
           />
 
           {/* Total Cost */}
-          <Input label="Total Cost (NPR)" type="number" step="0.01" {...register('cost')} />
+          <Input label={t('maintenance.totalCost')} type="number" step="0.01" {...register('cost')} />
 
           {/* Notes */}
           <div>
@@ -261,9 +262,9 @@ export default function MaintenancePage() {
           </div>
 
           <div className="flex justify-end gap-3 border-t pt-4">
-            <Button variant="secondary" type="button" onClick={() => setShowCreate(false)}>Cancel</Button>
+            <Button variant="secondary" type="button" onClick={() => setShowCreate(false)}>{t('common:common.cancel')}</Button>
             <Button type="submit" loading={createMutation.isPending} leftIcon={<Wrench className="h-4 w-4" />}>
-              Schedule
+              {t('maintenance.schedule')}
             </Button>
           </div>
         </form>
@@ -272,7 +273,7 @@ export default function MaintenancePage() {
       <Modal
         open={!!selectedRecord}
         onClose={() => setSelectedRecord(null)}
-        title="Maintenance Details"
+        title={t('maintenance.detailsTitle')}
         size="md"
       >
         {selectedRecord && (() => {
@@ -284,29 +285,29 @@ export default function MaintenancePage() {
               <div className="grid grid-cols-2 gap-0 divide-x divide-gray-100">
                 {/* Left column */}
                 <div className="space-y-5 p-6">
-                  <DetailRow icon={<Car className="h-4 w-4 text-primary-500" />} label="Vehicle">
+                  <DetailRow icon={<Car className="h-4 w-4 text-primary-500" />} label={t('maintenance.vehicle')}>
                     <span className="font-mono font-bold text-gray-900">
                       {selectedRecord.vehicle_registration || selectedRecord.vehicle_id}
                     </span>
                   </DetailRow>
 
-                  <DetailRow icon={<Wrench className="h-4 w-4 text-amber-500" />} label="Maintenance Type">
+                  <DetailRow icon={<Wrench className="h-4 w-4 text-amber-500" />} label={t('maintenance.maintenanceType')}>
                     <Badge variant="neutral">
-                      {SERVICE_TYPE_LABELS[selectedRecord.service_type] ?? selectedRecord.service_type}
+                      {t(`maintenance.serviceTypeLabels.${selectedRecord.service_type}`, { defaultValue: selectedRecord.service_type })}
                     </Badge>
                   </DetailRow>
 
-                  <DetailRow icon={<CalendarDays className="h-4 w-4 text-blue-500" />} label="Repair Date">
+                  <DetailRow icon={<CalendarDays className="h-4 w-4 text-blue-500" />} label={t('maintenance.repairDate')}>
                     <DateDisplay date={selectedRecord.due_date} />
                   </DetailRow>
 
-                  <DetailRow icon={<Clock className="h-4 w-4 text-gray-400" />} label="Created On">
+                  <DetailRow icon={<Clock className="h-4 w-4 text-gray-400" />} label={t('maintenance.createdOn')}>
                     <span className="text-sm text-gray-600">
                       <DateDisplay date={selectedRecord.created_at} />
                     </span>
                   </DetailRow>
 
-                  <DetailRow icon={<Hash className="h-4 w-4 text-gray-400" />} label="Record ID">
+                  <DetailRow icon={<Hash className="h-4 w-4 text-gray-400" />} label={t('maintenance.recordId')}>
                     <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500">
                       {selectedRecord.id.slice(0, 8)}…
                     </code>
@@ -315,25 +316,25 @@ export default function MaintenancePage() {
 
                 {/* Right column — service center info */}
                 <div className="space-y-5 p-6">
-                  <DetailRow icon={<MapPin className="h-4 w-4 text-green-500" />} label="Service Center">
+                  <DetailRow icon={<MapPin className="h-4 w-4 text-green-500" />} label={t('maintenance.serviceCenter')}>
                     {parsed.serviceCenterName
                       ? <span className="font-medium text-gray-900">{parsed.serviceCenterName}</span>
                       : <span className="text-gray-400 italic">—</span>}
                   </DetailRow>
 
-                  <DetailRow icon={<MapPin className="h-4 w-4 text-gray-400" />} label="Location">
+                  <DetailRow icon={<MapPin className="h-4 w-4 text-gray-400" />} label={t('maintenance.location')}>
                     {parsed.location
                       ? <span className="text-gray-700">{parsed.location}</span>
                       : <span className="text-gray-400 italic">—</span>}
                   </DetailRow>
 
-                  <DetailRow icon={<Phone className="h-4 w-4 text-indigo-500" />} label="Contact Number">
+                  <DetailRow icon={<Phone className="h-4 w-4 text-indigo-500" />} label={t('maintenance.contactNumber')}>
                     {parsed.contact
                       ? <span className="text-gray-700">{parsed.contact}</span>
                       : <span className="text-gray-400 italic">—</span>}
                   </DetailRow>
 
-                  <DetailRow icon={<Banknote className="h-4 w-4 text-emerald-500" />} label="Total Cost">
+                  <DetailRow icon={<Banknote className="h-4 w-4 text-emerald-500" />} label={t('maintenance.totalCostLabel')}>
                     {parsed.cost
                       ? <span className="font-semibold text-emerald-700">NPR {Number(parsed.cost).toLocaleString()}</span>
                       : <span className="text-gray-400 italic">—</span>}
@@ -345,7 +346,7 @@ export default function MaintenancePage() {
               {parsed.freeNotes && (
                 <div className="px-6 py-4">
                   <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">
-                    <FileText className="h-3.5 w-3.5" /> Notes
+                    <FileText className="h-3.5 w-3.5" /> {t('maintenance.notes')}
                   </p>
                   <p className="whitespace-pre-wrap text-sm text-gray-700 leading-relaxed">
                     {parsed.freeNotes}
@@ -355,7 +356,7 @@ export default function MaintenancePage() {
 
               {/* Footer */}
               <div className="flex justify-end px-6 py-4">
-                <Button variant="secondary" onClick={() => setSelectedRecord(null)}>Close</Button>
+                <Button variant="secondary" onClick={() => setSelectedRecord(null)}>{t('common:common.close')}</Button>
               </div>
             </div>
           )

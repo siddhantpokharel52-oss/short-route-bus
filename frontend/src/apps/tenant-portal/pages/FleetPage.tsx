@@ -7,6 +7,7 @@ import { Input } from '@components/shared/Input'
 import { Table, Column, Pagination } from '@components/shared/Table'
 import { Badge, statusVariant } from '@components/shared/Badge'
 import { Modal } from '@components/shared/Modal'
+import { NepaliDateInput } from '@components/shared/NepaliDateInput'
 import { usePagination } from '@hooks/usePagination'
 import fleetService, { Vehicle, VehicleCreatePayload, VehicleUpdatePayload } from '@services/fleetService'
 import apiClient from '@services/api'
@@ -499,12 +500,10 @@ export default function FleetPage() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">{t('fleet.labels.insuranceExpiryDate')}</label>
-                  <input
-                    type="date"
+                  <NepaliDateInput
+                    label={t('fleet.labels.insuranceExpiryDate')}
                     value={editInsuranceExpiry}
-                    onChange={(e) => setEditInsuranceExpiry(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    onChange={setEditInsuranceExpiry}
                   />
                 </div>
               </div>
@@ -699,20 +698,32 @@ export default function FleetPage() {
               placeholder="e.g. NIC/VH/2024/001234"
               {...register('insurance_policy_no')}
             />
-            <Input
-              label={t('fleet.labels.insuranceExpiryDate')}
-              type="date"
-              {...register('insurance_expiry_date')}
+            <Controller
+              name="insurance_expiry_date"
+              control={control}
+              render={({ field }) => (
+                <NepaliDateInput
+                  label={t('fleet.labels.insuranceExpiryDate')}
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              )}
             />
             <Input
               label={t('fleet.labels.fitnessCertNo')}
               placeholder="e.g. FIT/2024/KTM/5678"
               {...register('fitness_cert_no')}
             />
-            <Input
-              label={t('fleet.labels.fitnessExpiryDate')}
-              type="date"
-              {...register('fitness_expiry_date')}
+            <Controller
+              name="fitness_expiry_date"
+              control={control}
+              render={({ field }) => (
+                <NepaliDateInput
+                  label={t('fleet.labels.fitnessExpiryDate')}
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              )}
             />
           </div>
 

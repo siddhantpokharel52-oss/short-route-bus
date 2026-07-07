@@ -64,6 +64,11 @@ INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in S
 TENANT_MODEL = "tenants.Tenant"
 TENANT_DOMAIN_MODEL = "tenants.Domain"
 
+# Suffix appended to a tenant's chosen subdomain when creating its Domain record,
+# e.g. subdomain "test" -> "test.{TENANT_BASE_DOMAIN}". Overridden to "localhost"
+# in development so subdomains resolve on a local machine without real DNS.
+TENANT_BASE_DOMAIN = config("TENANT_BASE_DOMAIN", default="kvbms.com.np")
+
 MIDDLEWARE = [
     "django_tenants.middleware.main.TenantMainMiddleware",
     "config.tenant_middleware.TenantSchemaMiddleware",

@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.conf import settings
 from django.utils import timezone
 from django.contrib.auth.password_validation import validate_password
 from .models import Tenant, Domain, TenantSubscription, TenantDocument
@@ -38,6 +39,7 @@ class TenantSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
+        from django.core.management import call_command
         from backend.apps.users.models import User
 
         subdomain = validated_data.pop("subdomain")
@@ -50,9 +52,14 @@ class TenantSerializer(serializers.ModelSerializer):
         tenant.save()  # creates the PostgreSQL schema via auto_create_schema = True
         Domain.objects.create(
             tenant=tenant,
-            domain=f"{subdomain}.kvbms.com.np",
+            domain=f"{subdomain}.{settings.TENANT_BASE_DOMAIN}",
             is_primary=True,
         )
+
+        # Seed the RBAC permission catalogue into the new tenant's schema —
+        # without this, the Roles & Permissions page has nothing to list or
+        # assign until someone manually runs seed_permissions for this tenant.
+        call_command("seed_permissions", schema=schema_name)
 
         # Create a COMPANY_ADMIN user in the public schema for this tenant
         if admin_email:

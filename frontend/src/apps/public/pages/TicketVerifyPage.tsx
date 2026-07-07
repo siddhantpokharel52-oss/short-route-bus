@@ -27,7 +27,7 @@ export default function TicketVerifyPage() {
       setResult(res)
     } catch {
       setError(true)
-      toast.error('Ticket not found')
+      toast.error(t('tickets.notFoundToast'))
     } finally {
       setIsLoading(false)
     }
@@ -40,7 +40,7 @@ export default function TicketVerifyPage() {
           <QrCode className="h-8 w-8" />
         </div>
         <h1 className="text-3xl font-bold text-gray-900">{t('tickets.verifyTicket')}</h1>
-        <p className="mt-2 text-gray-500">Enter your ticket number to verify its validity</p>
+        <p className="mt-2 text-gray-500">{t('tickets.subtitle')}</p>
       </div>
 
       {/* Search */}
@@ -106,18 +106,18 @@ export default function TicketVerifyPage() {
         <div className="rounded-2xl bg-red-50 border border-red-200 p-6 text-center">
           <XCircle className="mx-auto h-8 w-8 text-red-500 mb-2" />
           <p className="text-red-700 font-medium">{t('tickets.invalid')}</p>
-          <p className="text-sm text-red-500">No ticket found with number: {ticketNumber}</p>
+          <p className="text-sm text-red-500">{t('tickets.notFoundMessage', { number: ticketNumber })}</p>
         </div>
       )}
 
       {/* Info */}
       <div className="mt-8 rounded-xl bg-gray-50 p-5 text-sm text-gray-600">
-        <h3 className="font-semibold text-gray-800 mb-2">How to verify your ticket</h3>
+        <h3 className="font-semibold text-gray-800 mb-2">{t('tickets.howToVerify')}</h3>
         <ul className="space-y-1 list-disc list-inside text-gray-500">
-          <li>Enter the ticket number shown on your physical ticket or app</li>
-          <li>Ticket numbers start with "TKT-"</li>
-          <li>Each ticket is valid for one journey only</li>
-          <li>Show this verification to the collector when boarding</li>
+          <li>{t('tickets.helpItems.enterNumber')}</li>
+          <li>{t('tickets.helpItems.startsWith')}</li>
+          <li>{t('tickets.helpItems.oneJourney')}</li>
+          <li>{t('tickets.helpItems.showCollector')}</li>
         </ul>
       </div>
     </div>

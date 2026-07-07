@@ -13,7 +13,9 @@
     "analytics": "विश्लेषण",
     "accounting": "लेखा",
     "rolesPermissions": "भूमिका र अनुमतिहरू",
-    "settings": "सेटिङ्स"
+    "settings": "सेटिङ्स",
+    "logoutSuccess": "सफलतापूर्वक लगआउट भयो",
+    "operatorFallback": "अपरेटर"
   },
   "fleet": {
     "title": "सवारी साधन व्यवस्थापन",
@@ -225,7 +227,18 @@
     "waypointStart": "सुरु",
     "waypointEnd": "अन्त्य",
     "waypointPoint": "बिन्दु {{n}}",
-    "minPoints": "मार्ग कोर्न कम्तिमा २ बिन्दुहरू थप्नुहोस्"
+    "minPoints": "मार्ग कोर्न कम्तिमा २ बिन्दुहरू थप्नुहोस्",
+    "required": "आवश्यक",
+    "toasts": {
+      "created": "मार्ग सिर्जना गरियो!",
+      "createFailed": "मार्ग सिर्जना गर्न असफल भयो",
+      "approved": "मार्ग स्वीकृत भयो!",
+      "approveFailed": "मार्ग स्वीकृत गर्न असफल भयो",
+      "updated": "मार्ग अपडेट गरियो।",
+      "updateFailed": "मार्ग अपडेट गर्न असफल भयो",
+      "deleted": "मार्ग मेटाइयो।",
+      "deleteFailed": "मार्ग मेटाउन असफल भयो"
+    }
   },
   "stops": {
     "title": "बस स्टपहरू",
@@ -273,7 +286,20 @@
     "routesAffected": "यो स्टप {{count}} मार्गमा प्रयोग गरिएको छ — हटाउँदा ती मार्गहरूमा असर पर्न सक्छ।",
     "noMatch": "\"{{query}}\" सँग मिल्ने कुनै स्टप छैन",
     "noStopsFound": "कुनै स्टप फेला परेन। \"स्टप थप्नुहोस्\" मार्फत स्टप थप्नुहोस्।",
-    "loading": "लोड हुँदैछ…"
+    "loading": "लोड हुँदैछ…",
+    "noStopOrRoute": "कुनै स्टप राखिएको छैन वा मार्ग छानिएको छैन",
+    "nameRequired": "स्टपको नाम आवश्यक छ",
+    "removeTooltip": "यो स्टप मार्गबाट हटाउनुहोस्",
+    "toasts": {
+      "added": "स्टप \"{{name}}\" थपियो!",
+      "addFailed": "स्टप थप्न असफल भयो",
+      "removed": "स्टप मार्गबाट हटाइयो।",
+      "removeFailed": "स्टप हटाउन असफल भयो",
+      "updated": "स्टप अपडेट गरियो।",
+      "updateFailed": "स्टप अपडेट गर्न असफल भयो",
+      "deleted": "स्टप मेटाइयो।",
+      "deleteFailed": "स्टप मेटाउन असफल भयो"
+    }
   },
   "dispatch": {
     "title": "डिस्प्याच नियन्त्रण केन्द्र",
@@ -416,7 +442,21 @@
     "completeTrip": "यात्रा पूरा गर्नुहोस्",
     "cancelTrip": "यात्रा रद्द गर्नुहोस्",
     "cancellationReason": "रद्द गर्नुको कारण",
-    "maxHoursWarning": "चालकहरू प्रतिदिन ८ घण्टाभन्दा बढी काम गर्न सक्दैनन् (नेपाल श्रम ऐन २०७४)"
+    "maxHoursWarning": "चालकहरू प्रतिदिन ८ घण्टाभन्दा बढी काम गर्न सक्दैनन् (नेपाल श्रम ऐन २०७४)",
+    "autoScheduleTitle": "यात्रा स्वतः तालिका बनाउनुहोस्",
+    "autoScheduleDesc": "समय तालिका स्लटबाट स्वचालित रूपमा यात्राहरू सिर्जना गर्नुहोस्। प्रति चालक दिनको अधिकतम ८ घण्टा लागू (नेपाल श्रम ऐन २०७४)।",
+    "selectRoute": "— मार्ग छान्नुहोस् —",
+    "dispatchTime": "प्रस्थान समय",
+    "autoSchedule": "स्वतः तालिका",
+    "timetableName": "समय तालिकाको नाम",
+    "routeId": "मार्ग आईडी",
+    "effectiveFrom": "देखि लागू",
+    "effectiveUntil": "सम्म लागू",
+    "ongoing": "जारी",
+    "toasts": {
+      "autoScheduled": "स्वतः तालिका सफलतापूर्वक ट्रिगर भयो!",
+      "autoScheduleFailed": "स्वतः तालिका असफल भयो"
+    }
   },
   "operations": {
     "title": "आजको सञ्चालन",
@@ -598,6 +638,31 @@
       "EMERGENCY": "आपतकालीन",
       "TIRE": "टायर परिवर्तन",
       "OIL": "तेल परिवर्तन"
+    },
+    "vehicle": "सवारी",
+    "repairDate": "मर्मत मिति",
+    "view": "हेर्नुहोस्",
+    "vehicleRegLabel": "सवारी दर्ता नम्बर",
+    "selectVehicle": "— सवारी छान्नुहोस् —",
+    "serviceTypeLabels": {
+      "PERIODIC": "नियमित / आवधिक सर्भिस",
+      "REPAIR": "मर्मत",
+      "INSPECTION": "निरीक्षण",
+      "EMERGENCY": "आपतकालीन"
+    },
+    "serviceCenterName": "सर्भिस सेन्टरको नाम",
+    "serviceCenterLocation": "सर्भिस सेन्टरको स्थान",
+    "serviceCenterContact": "सर्भिस सेन्टर सम्पर्क नम्बर",
+    "totalCost": "कुल लागत (नेरू)",
+    "schedule": "तालिका बनाउनुहोस्",
+    "detailsTitle": "मर्मत विवरण",
+    "serviceCenter": "सर्भिस सेन्टर",
+    "location": "स्थान",
+    "contactNumber": "सम्पर्क नम्बर",
+    "totalCostLabel": "कुल लागत",
+    "recordId": "रेकर्ड आईडी",
+    "toasts": {
+      "scheduled": "मर्मत तालिका बनाइयो!"
     }
   },
   "accounting": {
@@ -706,6 +771,7 @@
   },
   "analytics": {
     "title": "विश्लेषण",
+    "kpis": "मुख्य कार्यसम्पादन सूचकहरू",
     "fleetUtilization": "फ्लिट उपयोग",
     "onTimePerformance": "समयमा सेवा",
     "passengerCount": "यात्री संख्या",
@@ -714,13 +780,84 @@
     "breakdown": "ब्रेकडाउन दर",
     "averageSpeed": "औसत गति",
     "topRoutes": "शीर्ष मार्गहरू",
-    "peakHours": "व्यस्त घण्टा"
+    "peakHours": "व्यस्त घण्टा",
+    "noData": "अहिलेसम्म कुनै डाटा रेकर्ड भएको छैन",
+    "updatedAgo": "{{time}} अपडेट भयो · प्रत्येक ३० सेकेन्डमा स्वतः रिफ्रेस हुन्छ",
+    "justNow": "भर्खरै",
+    "secondsAgo": "{{n}} सेकेन्ड अघि",
+    "minutesAgo": "{{n}} मिनेट अघि",
+    "loadingLiveData": "लाइभ डाटा लोड हुँदैछ…",
+    "refreshNow": "अहिले रिफ्रेस गर्नुहोस्",
+    "loadError": "विश्लेषण डाटा लोड गर्न सकिएन। सर्भर उपलब्ध नहुन सक्छ। स्वचालित रूपमा पुनः प्रयास गर्दै…",
+    "activeOfTotalVehicles": "{{total}} मध्ये {{active}} सवारी सक्रिय",
+    "tripsCompletedToday": "आज {{count}} यात्रा पूरा भयो",
+    "ticketsIssuedToday": "आज जारी गरिएका टिकटहरू",
+    "totalLabel": "जम्मा: {{amount}}",
+    "todaysSummary": "आजको सारांश",
+    "totalTrips": "कुल यात्राहरू",
+    "completed": "पूरा भएको",
+    "cancelled": "रद्द गरिएको",
+    "activeVehicles": "सक्रिय सवारीहरू",
+    "breakdownRate": "ब्रेकडाउन दर",
+    "revenueToday": "आजको राजस्व",
+    "dailyTripsPassengers": "दैनिक यात्रा र यात्रीहरू",
+    "tripsToday": "(आजका यात्राहरू)",
+    "trips": "यात्राहरू",
+    "passengers": "यात्रीहरू",
+    "revenueTrend": "राजस्व प्रवृत्ति (नेरू)",
+    "lastNDays": "अन्तिम {{n}} दिन",
+    "performanceSummary": "कार्यसम्पादन सारांश",
+    "totalDistance": "कुल दूरी"
   },
   "settings": {
     "title": "सेटिङ",
     "subtitle": "कम्पनी प्रोफाइल र प्लेटफर्म कन्फिगरेसन",
     "companyProfile": "कम्पनी प्रोफाइल",
-    "save": "परिवर्तनहरू सुरक्षित गर्नुहोस्"
+    "save": "परिवर्तनहरू सुरक्षित गर्नुहोस्",
+    "companyInformation": "कम्पनी जानकारी",
+    "companyLogo": "कम्पनी लोगो",
+    "logoUploaded": "लोगो अपलोड भयो। परिवर्तन गर्न तस्बिरमा क्लिक गर्नुहोस्।",
+    "logoUploadPrompt": "आफ्नो कम्पनीको लोगो अपलोड गर्नुहोस्। यो साइडबारमा देखिनेछ।",
+    "logoHint": "PNG, JPG वा SVG · अधिकतम २ MB",
+    "changeLogo": "लोगो परिवर्तन गर्नुहोस्",
+    "uploadLogo": "लोगो अपलोड गर्नुहोस्",
+    "discard": "हटाउनुहोस्",
+    "logoTooLarge": "लोगो २ MB भन्दा कम हुनुपर्छ",
+    "companyName": "कम्पनीको नाम",
+    "contactEmail": "सम्पर्क इमेल",
+    "contactPhone": "सम्पर्क फोन",
+    "registrationNo": "दर्ता नम्बर",
+    "panTax": "प्यान / कर नम्बर",
+    "address": "ठेगाना",
+    "displayPreferences": "प्रदर्शन प्राथमिकताहरू",
+    "language": "भाषा",
+    "currentLanguage": "हाल: {{language}}",
+    "calendar": "पात्रो",
+    "currentCalendar": "हाल: {{calendar}}",
+    "gregorian": "ग्रेगोरियन (इ.सं.)",
+    "bikramSambat": "विक्रम सम्वत् (बि.सं.)",
+    "changePassword": "पासवर्ड परिवर्तन गर्नुहोस्",
+    "currentPassword": "हालको पासवर्ड",
+    "newPassword": "नयाँ पासवर्ड",
+    "confirmPassword": "पासवर्ड पुष्टि गर्नुहोस्",
+    "updatePassword": "पासवर्ड अपडेट गर्नुहोस्",
+    "notifications": "सूचनाहरू",
+    "notificationItems": {
+      "documentExpiry": "कागजात म्याद सकिने सूचना",
+      "lowStock": "न्यून स्टक सूचना",
+      "tripCancellation": "यात्रा रद्द सूचना",
+      "maintenanceReminders": "मर्मत सम्भार रिमाइन्डर",
+      "revenueReports": "राजस्व प्रतिवेदन"
+    },
+    "validation": {
+      "minPassword": "न्यूनतम ८ अक्षर",
+      "passwordsMismatch": "पासवर्डहरू मेल खाएनन्"
+    },
+    "toasts": {
+      "companyUpdated": "कम्पनी जानकारी अपडेट भयो!",
+      "companyUpdateFailed": "कम्पनी जानकारी अपडेट गर्न असफल भयो",
+      "passwordUpdated": "पासवर्ड अपडेट भयो!"
+    }
   },
   "roles": {
     "title": "भूमिका र अनुमतिहरू",

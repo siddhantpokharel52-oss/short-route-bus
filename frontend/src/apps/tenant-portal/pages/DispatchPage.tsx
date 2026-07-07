@@ -14,7 +14,7 @@
  */
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import toast from 'react-hot-toast'
 import {
   Plus, Zap, RefreshCw, ArrowLeftRight, XCircle,
@@ -25,10 +25,13 @@ import dispatchService, { DailyAllocation } from '@services/dispatchService'
 import fleetService, { Vehicle } from '@services/fleetService'
 import apiClient, { ApiResponse } from '@services/api'
 import { cn } from '@utils/cn'
-import { formatDate } from '@utils/nepaliDate'
+import { formatDate, toNepaliDigits } from '@utils/nepaliDate'
 import { useUiStore } from '@store/uiStore'
 import { useDateFormatter } from '@hooks/useDateFormatter'
 import { useTranslation } from 'react-i18next'
+import { NepaliDateInput } from '@components/shared/NepaliDateInput'
+import { NepaliTimeInput } from '@components/shared/NepaliTimeInput'
+import { DateDisplay } from '@components/shared/DateDisplay'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface RouteOption { id: string; route_code: string; name_en: string }
@@ -53,6 +56,12 @@ interface GenerateForm {
   headway_minutes: number
   trip_duration_minutes: number
   layover_minutes: number
+}
+
+// ─── Time display helper (Nepali digits when language is 'ne') ────────────────
+function formatShiftTime(hhmm: string, language: string) {
+  const time = hhmm.slice(0, 5)
+  return language === 'ne' ? toNepaliDigits(time) : time
 }
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
@@ -452,7 +461,7 @@ export default function DispatchPage() {
                         {alloc.driver_name || '—'}
                       </td>
                       <td className="px-4 py-3 text-xs font-mono text-gray-600 dark:text-gray-400">
-                        {alloc.shift_start} – {alloc.shift_end}
+                        {formatShiftTime(alloc.shift_start, language)} – {formatShiftTime(alloc.shift_end, language)}
                       </td>
                       <td className="px-4 py-3">
                         <AllocationBadge status={alloc.status} />
@@ -547,33 +556,44 @@ export default function DispatchPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('dispatch.form.date')}</label>
-                <input
-                  type="date"
-                  {...generateForm.register('date')}
-                  className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                <Controller
+                  name="date"
+                  control={generateForm.control}
+                  render={({ field }) => (
+                    <NepaliDateInput
+                      label={t('dispatch.form.date')}
+                      value={field.value}
+                      onChange={field.onChange}
+                    />
+                  )}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  {t('dispatch.form.startTime')}
-                </label>
-                <input
-                  type="time"
-                  {...generateForm.register('operating_start')}
-                  className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                <Controller
+                  name="operating_start"
+                  control={generateForm.control}
+                  render={({ field }) => (
+                    <NepaliTimeInput
+                      label={t('dispatch.form.startTime')}
+                      value={field.value}
+                      onChange={field.onChange}
+                    />
+                  )}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  {t('dispatch.form.endTime')}
-                </label>
-                <input
-                  type="time"
-                  {...generateForm.register('operating_end')}
-                  className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                <Controller
+                  name="operating_end"
+                  control={generateForm.control}
+                  render={({ field }) => (
+                    <NepaliTimeInput
+                      label={t('dispatch.form.endTime')}
+                      value={field.value}
+                      onChange={field.onChange}
+                    />
+                  )}
                 />
               </div>
 
@@ -710,13 +730,16 @@ export default function DispatchPage() {
           <form onSubmit={assignForm.handleSubmit((d) => assignMutation.mutate(d))} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  {t('dispatch.form.date')}
-                </label>
-                <input
-                  type="date"
-                  {...assignForm.register('date')}
-                  className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                <Controller
+                  name="date"
+                  control={assignForm.control}
+                  render={({ field }) => (
+                    <NepaliDateInput
+                      label={t('dispatch.form.date')}
+                      value={field.value}
+                      onChange={field.onChange}
+                    />
+                  )}
                 />
               </div>
               <div>
@@ -765,19 +788,29 @@ export default function DispatchPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('dispatch.form.shiftStart')}</label>
-                <input
-                  type="time"
-                  {...assignForm.register('shift_start')}
-                  className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                <Controller
+                  name="shift_start"
+                  control={assignForm.control}
+                  render={({ field }) => (
+                    <NepaliTimeInput
+                      label={t('dispatch.form.shiftStart')}
+                      value={field.value}
+                      onChange={field.onChange}
+                    />
+                  )}
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t('dispatch.form.shiftEnd')}</label>
-                <input
-                  type="time"
-                  {...assignForm.register('shift_end')}
-                  className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                <Controller
+                  name="shift_end"
+                  control={assignForm.control}
+                  render={({ field }) => (
+                    <NepaliTimeInput
+                      label={t('dispatch.form.shiftEnd')}
+                      value={field.value}
+                      onChange={field.onChange}
+                    />
+                  )}
                 />
               </div>
             </div>
@@ -964,12 +997,12 @@ export default function DispatchPage() {
             <div className="px-6 py-5 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 {[
-                  { label: t('dispatch.form.date'), value: viewTarget.date },
+                  { label: t('dispatch.form.date'), value: <DateDisplay date={viewTarget.date} /> },
                   { label: t('dispatch.form.status'), value: t(`dispatch.status.${viewTarget.status}`, { defaultValue: viewTarget.status }) },
                   { label: t('dispatch.columns.bus'), value: viewTarget.vehicle_registration || '—' },
                   { label: t('dispatch.columns.route'), value: viewTarget.route_name || '—' },
                   { label: t('dispatch.columns.driver'), value: viewTarget.driver_name || '—' },
-                  { label: t('dispatch.columns.shift'), value: `${viewTarget.shift_start.slice(0,5)} – ${viewTarget.shift_end.slice(0,5)}` },
+                  { label: t('dispatch.columns.shift'), value: `${formatShiftTime(viewTarget.shift_start, language)} – ${formatShiftTime(viewTarget.shift_end, language)}` },
                 ].map(({ label, value }) => (
                   <div key={label} className="rounded-xl bg-gray-50 dark:bg-gray-700 px-4 py-3">
                     <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide mb-0.5">{label}</p>
@@ -1086,21 +1119,17 @@ export default function DispatchPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">{t('dispatch.form.shiftStart')}</label>
-                  <input
-                    type="time"
+                  <NepaliTimeInput
+                    label={t('dispatch.form.shiftStart')}
                     value={editShiftStart}
-                    onChange={(e) => setEditShiftStart(e.target.value)}
-                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    onChange={setEditShiftStart}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">{t('dispatch.form.shiftEnd')}</label>
-                  <input
-                    type="time"
+                  <NepaliTimeInput
+                    label={t('dispatch.form.shiftEnd')}
                     value={editShiftEnd}
-                    onChange={(e) => setEditShiftEnd(e.target.value)}
-                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    onChange={setEditShiftEnd}
                   />
                 </div>
               </div>

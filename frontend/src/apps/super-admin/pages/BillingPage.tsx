@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import {
   CreditCard, Plus, Search, Receipt, History,
   CheckCircle2, Clock, RefreshCw, Ban, Play, Settings2,
@@ -11,13 +12,14 @@ import { Table, Column, Pagination } from '@components/shared/Table'
 import { Badge } from '@components/shared/Badge'
 import { Modal } from '@components/shared/Modal'
 import { DateDisplay } from '@components/shared/DateDisplay'
+import { NepaliDateInput } from '@components/shared/NepaliDateInput'
 import { usePagination } from '@hooks/usePagination'
 import billingService, {
   PricingPlan, TenantSubscription, Invoice,
 } from '@services/billingService'
 import tenantService from '@services/tenantService'
 import toast from 'react-hot-toast'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { cn } from '@utils/cn'
 
 // ─── Tab ─────────────────────────────────────────────────────────────────────
@@ -60,21 +62,22 @@ function SelectField({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function BillingPage() {
+  const { t } = useTranslation(['common', 'platform'])
   const [tab, setTab] = useState<Tab>('subscriptions')
 
   const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
-    { key: 'subscriptions', label: 'Subscriptions', icon: CreditCard },
-    { key: 'invoices',      label: 'Invoices',       icon: Receipt },
-    { key: 'plans',         label: 'AMC Plans',      icon: Settings2 },
-    { key: 'audit',         label: 'Audit Log',      icon: History },
+    { key: 'subscriptions', label: t('platform:billing.tabs.subscriptions'), icon: CreditCard },
+    { key: 'invoices',      label: t('platform:billing.tabs.invoices'),       icon: Receipt },
+    { key: 'plans',         label: t('platform:billing.tabs.plans'),      icon: Settings2 },
+    { key: 'audit',         label: t('platform:billing.tabs.audit'),       icon: History },
   ]
 
   return (
     <div className="space-y-6">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Billing & Subscriptions</h1>
-          <p className="page-subtitle">Monthly AMC-based billing for all tenants</p>
+          <h1 className="page-title">{t('platform:billing.title')}</h1>
+          <p className="page-subtitle">{t('platform:billing.subtitle')}</p>
         </div>
       </div>
 
@@ -111,6 +114,7 @@ export default function BillingPage() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function SubscriptionsTab() {
+  const { t } = useTranslation(['common', 'platform'])
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [totalCount, setTotalCount] = useState(0)
@@ -143,7 +147,7 @@ function SubscriptionsTab() {
     staleTime: 5 * 60 * 1000,
   })
 
-  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<Partial<TenantSubscription>>()
+  const { register, handleSubmit, reset, setValue, control, formState: { errors } } = useForm<Partial<TenantSubscription>>()
 
   const handleTenantSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const chosen = tenants.find((t) => t.id === e.target.value)
@@ -155,31 +159,31 @@ function SubscriptionsTab() {
       setValue('tenant_name', '')
     }
   }
-  const { register: regInv, handleSubmit: handleInv, reset: resetInv } = useForm<{
+  const { register: regInv, handleSubmit: handleInv, reset: resetInv, control: controlInv, formState: { errors: errorsInv } } = useForm<{
     period_start: string; period_end: string; tax_rate: string
   }>()
 
   const createMutation = useMutation({
     mutationFn: (d: Partial<TenantSubscription>) => billingService.subscriptions.create(d),
-    onSuccess: () => { toast.success('Subscription created!'); setShowCreate(false); reset(); qc.invalidateQueries({ queryKey: ['billing-subscriptions'] }) },
+    onSuccess: () => { toast.success(t('platform:billing.toasts.subscriptionCreated')); setShowCreate(false); reset(); qc.invalidateQueries({ queryKey: ['billing-subscriptions'] }) },
     onError: (e: Error) => toast.error(e.message),
   })
 
   const suspendMutation = useMutation({
-    mutationFn: (s: TenantSubscription) => billingService.subscriptions.suspend(s.id, 'Suspended by admin'),
-    onSuccess: () => { toast.success('Suspended'); qc.invalidateQueries({ queryKey: ['billing-subscriptions'] }) },
+    mutationFn: (s: TenantSubscription) => billingService.subscriptions.suspend(s.id, t('platform:billing.toasts.suspendedByAdmin')),
+    onSuccess: () => { toast.success(t('platform:billing.toasts.suspended')); qc.invalidateQueries({ queryKey: ['billing-subscriptions'] }) },
     onError: (e: Error) => toast.error(e.message),
   })
 
   const activateMutation = useMutation({
     mutationFn: (id: string) => billingService.subscriptions.activate(id),
-    onSuccess: () => { toast.success('Activated'); qc.invalidateQueries({ queryKey: ['billing-subscriptions'] }) },
+    onSuccess: () => { toast.success(t('platform:billing.toasts.activated')); qc.invalidateQueries({ queryKey: ['billing-subscriptions'] }) },
     onError: (e: Error) => toast.error(e.message),
   })
 
   const renewMutation = useMutation({
     mutationFn: (id: string) => billingService.subscriptions.renew(id),
-    onSuccess: () => { toast.success('Renewed!'); qc.invalidateQueries({ queryKey: ['billing-subscriptions'] }) },
+    onSuccess: () => { toast.success(t('platform:billing.toasts.renewed')); qc.invalidateQueries({ queryKey: ['billing-subscriptions'] }) },
     onError: (e: Error) => toast.error(e.message),
   })
 
@@ -187,7 +191,7 @@ function SubscriptionsTab() {
     mutationFn: ({ id, payload }: { id: string; payload: Record<string, string> }) =>
       billingService.subscriptions.generateInvoice(id, payload),
     onSuccess: (inv) => {
-      toast.success(`Invoice ${inv.invoice_number} generated!`)
+      toast.success(t('platform:billing.toasts.invoiceGenerated', { number: inv.invoice_number }))
       setShowGenInvoice(null); resetInv()
       qc.invalidateQueries({ queryKey: ['billing-invoices'] })
     },
@@ -197,14 +201,14 @@ function SubscriptionsTab() {
   const assignPlanMutation = useMutation({
     mutationFn: ({ id, planId }: { id: string; planId: string }) =>
       billingService.subscriptions.assignPlan(id, planId),
-    onSuccess: () => { toast.success('AMC plan assigned!'); setShowAssignPlan(null); qc.invalidateQueries({ queryKey: ['billing-subscriptions'] }) },
+    onSuccess: () => { toast.success(t('platform:billing.toasts.planAssigned')); setShowAssignPlan(null); qc.invalidateQueries({ queryKey: ['billing-subscriptions'] }) },
     onError: (e: Error) => toast.error(e.message),
   })
 
   const columns: Column<TenantSubscription>[] = [
     {
       key: 'tenant_name',
-      header: 'Tenant',
+      header: t('platform:billing.table.tenant'),
       render: (s) => (
         <div>
           <p className="font-semibold text-gray-900">{s.tenant_name}</p>
@@ -214,40 +218,40 @@ function SubscriptionsTab() {
     },
     {
       key: 'plan_name',
-      header: 'AMC Plan',
+      header: t('platform:billing.table.amcPlan'),
       render: (s) => s.plan_name
         ? <span className="font-medium text-primary-600">{s.plan_name}</span>
-        : <span className="italic text-gray-400 text-sm">No plan</span>,
+        : <span className="italic text-gray-400 text-sm">{t('platform:billing.table.noPlan')}</span>,
     },
     {
       key: 'billing_frequency',
-      header: 'Billing',
-      render: () => <Badge variant="info">Monthly</Badge>,
+      header: t('platform:billing.table.billing'),
+      render: () => <Badge variant="info">{t('platform:billing.table.monthly')}</Badge>,
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('platform:billing.table.status'),
       render: (s) => (
         <Badge variant={subStatusVariant(s.status)} dot>
-          {s.status_display}{s.is_in_grace_period ? ' (Grace)' : ''}
+          {s.status_display}{s.is_in_grace_period ? ` ${t('platform:billing.table.gracePeriod')}` : ''}
         </Badge>
       ),
     },
     {
       key: 'end_date',
-      header: 'Ends',
+      header: t('platform:billing.table.ends'),
       render: (s) => (
         <div>
           <DateDisplay date={s.end_date} />
           {s.days_remaining > 0 && s.days_remaining <= 7 && (
-            <p className="text-xs text-yellow-600">{s.days_remaining}d left</p>
+            <p className="text-xs text-yellow-600">{t('platform:billing.table.daysLeft', { count: s.days_remaining })}</p>
           )}
         </div>
       ),
     },
     {
       key: 'pending_amount',
-      header: 'Outstanding',
+      header: t('platform:billing.table.outstanding'),
       render: (s) => parseFloat(s.pending_amount) > 0
         ? <span className="font-semibold text-red-600">NPR {parseFloat(s.pending_amount).toLocaleString()}</span>
         : <span className="text-gray-300">—</span>,
@@ -257,24 +261,24 @@ function SubscriptionsTab() {
       header: '',
       render: (s) => (
         <div className="flex items-center gap-1">
-          <Button size="sm" variant="ghost" title="Generate Invoice" onClick={() => setShowGenInvoice(s)}>
+          <Button size="sm" variant="ghost" title={t('platform:billing.actions.generateInvoice')} onClick={() => setShowGenInvoice(s)}>
             <Receipt className="h-3.5 w-3.5" />
           </Button>
-          <Button size="sm" variant="ghost" title="Change AMC Plan" onClick={() => setShowAssignPlan(s)}>
+          <Button size="sm" variant="ghost" title={t('platform:billing.actions.changeAmcPlan')} onClick={() => setShowAssignPlan(s)}>
             <Settings2 className="h-3.5 w-3.5" />
           </Button>
           {s.status === 'ACTIVE' && (
-            <Button size="sm" variant="ghost" title="Suspend" onClick={() => suspendMutation.mutate(s)}>
+            <Button size="sm" variant="ghost" title={t('platform:billing.actions.suspend')} onClick={() => suspendMutation.mutate(s)}>
               <Ban className="h-3.5 w-3.5 text-yellow-500" />
             </Button>
           )}
           {(s.status === 'SUSPENDED' || s.status === 'EXPIRED') && (
-            <Button size="sm" variant="ghost" title="Activate" onClick={() => activateMutation.mutate(s.id)}>
+            <Button size="sm" variant="ghost" title={t('platform:billing.actions.activate')} onClick={() => activateMutation.mutate(s.id)}>
               <Play className="h-3.5 w-3.5 text-green-500" />
             </Button>
           )}
           {s.auto_renew && s.status === 'ACTIVE' && s.days_remaining <= 3 && (
-            <Button size="sm" variant="ghost" title="Renew now" onClick={() => renewMutation.mutate(s.id)}>
+            <Button size="sm" variant="ghost" title={t('platform:billing.actions.renewNow')} onClick={() => renewMutation.mutate(s.id)}>
               <RefreshCw className="h-3.5 w-3.5 text-blue-500" />
             </Button>
           )}
@@ -287,14 +291,14 @@ function SubscriptionsTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <Input
-          placeholder="Search by tenant name or schema..."
+          placeholder={t('platform:billing.searchPlaceholder')}
           leftAddon={<Search className="h-4 w-4" />}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-sm"
         />
         <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setShowCreate(true)}>
-          New Subscription
+          {t('platform:billing.newSubscription')}
         </Button>
       </div>
 
@@ -306,7 +310,7 @@ function SubscriptionsTab() {
 
       {/* ── Create Subscription ────────────────────────────────────────────── */}
       <Modal open={showCreate} onClose={() => { setShowCreate(false); reset() }}
-        title="New Subscription" size="md">
+        title={t('platform:billing.createModal.title')} size="md">
         <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-4 p-6">
           {/* Hidden fields — populated by the Tenant dropdown below */}
           <input type="hidden" {...register('tenant_schema', { required: true })} />
@@ -316,48 +320,72 @@ function SubscriptionsTab() {
             <div className="sm:col-span-2">
               <SelectField
                 key={showCreate ? 'open' : 'closed'}
-                label="Tenant"
+                label={t('platform:billing.createModal.tenant')}
                 required
                 onChange={handleTenantSelect}
                 defaultValue=""
               >
-                <option value="" disabled>— Select a tenant —</option>
-                {tenants.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({t.schema_name})
+                <option value="" disabled>{t('platform:billing.createModal.selectTenant')}</option>
+                {tenants.map((tn) => (
+                  <option key={tn.id} value={tn.id}>
+                    {tn.name} ({tn.schema_name})
                   </option>
                 ))}
               </SelectField>
               {errors.tenant_schema && (
-                <p className="mt-1 text-xs text-red-600">Please select a tenant</p>
+                <p className="mt-1 text-xs text-red-600">{t('platform:billing.createModal.selectTenantRequired')}</p>
               )}
             </div>
-            <SelectField label="AMC Plan" {...register('plan')}>
-              <option value="">— Assign later —</option>
+            <SelectField label={t('platform:billing.createModal.amcPlan')} {...register('plan')}>
+              <option value="">{t('platform:billing.createModal.assignLater')}</option>
               {(plans as PricingPlan[]).map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </SelectField>
-            <SelectField label="Status" required {...register('status', { required: true })}>
-              <option value="TRIAL">Trial</option>
-              <option value="ACTIVE">Active</option>
+            <SelectField label={t('platform:billing.createModal.status')} required {...register('status', { required: true })}>
+              <option value="TRIAL">{t('platform:billing.createModal.trial')}</option>
+              <option value="ACTIVE">{t('platform:billing.createModal.active')}</option>
             </SelectField>
-            <Input label="Start Date" type="date" required
-              {...register('start_date', { required: true })} />
-            <Input label="End Date" type="date" required
-              {...register('end_date', { required: true })} />
-            <Input label="Grace Period (days)" type="number" min={0}
+            <Controller
+              name="start_date"
+              control={control}
+              rules={{ required: true }}
+              render={({ field }) => (
+                <NepaliDateInput
+                  label={t('platform:billing.createModal.startDate')}
+                  required
+                  error={errors.start_date ? t('platform:tenants.createModal.required') : undefined}
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              )}
+            />
+            <Controller
+              name="end_date"
+              control={control}
+              rules={{ required: true }}
+              render={({ field }) => (
+                <NepaliDateInput
+                  label={t('platform:billing.createModal.endDate')}
+                  required
+                  error={errors.end_date ? t('platform:tenants.createModal.required') : undefined}
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              )}
+            />
+            <Input label={t('platform:billing.createModal.gracePeriodDays')} type="number" min={0}
               placeholder="7" {...register('grace_period_days')} />
             <div className="flex items-center gap-3 pt-6">
               <input type="checkbox" id="auto_renew" {...register('auto_renew')} defaultChecked
                 className="h-4 w-4 rounded border-gray-300 text-primary-600" />
-              <label htmlFor="auto_renew" className="text-sm text-gray-700">Auto-renew monthly</label>
+              <label htmlFor="auto_renew" className="text-sm text-gray-700">{t('platform:billing.createModal.autoRenew')}</label>
             </div>
           </div>
           <div className="flex justify-end gap-3 border-t pt-4">
-            <Button variant="secondary" type="button" onClick={() => { setShowCreate(false); reset() }}>Cancel</Button>
+            <Button variant="secondary" type="button" onClick={() => { setShowCreate(false); reset() }}>{t('common:common.cancel')}</Button>
             <Button type="submit" loading={createMutation.isPending} leftIcon={<Plus className="h-4 w-4" />}>
-              Create
+              {t('platform:billing.createModal.create')}
             </Button>
           </div>
         </form>
@@ -365,20 +393,46 @@ function SubscriptionsTab() {
 
       {/* ── Generate Invoice ───────────────────────────────────────────────── */}
       <Modal open={!!showGenInvoice} onClose={() => { setShowGenInvoice(null); resetInv() }}
-        title={`Generate Invoice — ${showGenInvoice?.tenant_name}`} size="sm">
+        title={t('platform:billing.genInvoiceModal.title', { name: showGenInvoice?.tenant_name })} size="sm">
         <form onSubmit={handleInv((d) =>
           genInvoiceMutation.mutate({ id: showGenInvoice!.id, payload: d as Record<string, string> })
         )} className="space-y-4 p-6">
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Period Start" type="date" required {...regInv('period_start', { required: true })} />
-            <Input label="Period End" type="date" required {...regInv('period_end', { required: true })} />
+            <Controller
+              name="period_start"
+              control={controlInv}
+              rules={{ required: true }}
+              render={({ field }) => (
+                <NepaliDateInput
+                  label={t('platform:billing.genInvoiceModal.periodStart')}
+                  required
+                  error={errorsInv.period_start ? t('platform:tenants.createModal.required') : undefined}
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              )}
+            />
+            <Controller
+              name="period_end"
+              control={controlInv}
+              rules={{ required: true }}
+              render={({ field }) => (
+                <NepaliDateInput
+                  label={t('platform:billing.genInvoiceModal.periodEnd')}
+                  required
+                  error={errorsInv.period_end ? t('platform:tenants.createModal.required') : undefined}
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              )}
+            />
           </div>
-          <Input label="VAT Rate (%)" type="number" step="0.01" placeholder="13"
+          <Input label={t('platform:billing.genInvoiceModal.vatRate')} type="number" step="0.01" placeholder="13"
             {...regInv('tax_rate')} />
           <div className="flex justify-end gap-3 border-t pt-4">
-            <Button variant="secondary" type="button" onClick={() => { setShowGenInvoice(null); resetInv() }}>Cancel</Button>
+            <Button variant="secondary" type="button" onClick={() => { setShowGenInvoice(null); resetInv() }}>{t('common:common.cancel')}</Button>
             <Button type="submit" loading={genInvoiceMutation.isPending} leftIcon={<Receipt className="h-4 w-4" />}>
-              Generate
+              {t('platform:billing.genInvoiceModal.generate')}
             </Button>
           </div>
         </form>
@@ -405,13 +459,14 @@ function AssignPlanModal({ sub, plans, onClose, onAssign, loading }: {
   onAssign: (planId: string) => void
   loading: boolean
 }) {
+  const { t } = useTranslation(['common', 'platform'])
   const [selected, setSelected] = useState<string>(sub.plan ?? '')
 
   return (
-    <Modal open onClose={onClose} title={`Change AMC Plan — ${sub.tenant_name}`} size="md">
+    <Modal open onClose={onClose} title={t('platform:billing.assignPlanModal.title', { name: sub.tenant_name })} size="md">
       <div className="space-y-4 p-6">
         <p className="text-sm text-gray-500">
-          Current plan: <strong>{sub.plan_name ?? 'None'}</strong>
+          {t('platform:billing.assignPlanModal.currentPlan')} <strong>{sub.plan_name ?? t('platform:billing.assignPlanModal.none')}</strong>
         </p>
         <div className="space-y-2">
           {(plans as PricingPlan[]).filter((p) => p.is_active).map((p) => {
@@ -431,7 +486,7 @@ function AssignPlanModal({ sub, plans, onClose, onAssign, loading }: {
               >
                 <div>
                   <p className="font-semibold text-gray-900">{p.name}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Monthly AMC</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{t('platform:billing.assignPlanModal.monthlyAmc')}</p>
                 </div>
                 {rule && (
                   <div className={cn(
@@ -449,14 +504,14 @@ function AssignPlanModal({ sub, plans, onClose, onAssign, loading }: {
           })}
           {plans.filter((p) => p.is_active).length === 0 && (
             <p className="text-center text-sm text-gray-400 py-4">
-              No AMC plans available. Create one in the Plans tab first.
+              {t('platform:billing.assignPlanModal.noPlansAvailable')}
             </p>
           )}
         </div>
         <div className="flex justify-end gap-3 border-t pt-4">
-          <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
+          <Button variant="secondary" type="button" onClick={onClose}>{t('common:common.cancel')}</Button>
           <Button loading={loading} disabled={!selected} onClick={() => selected && onAssign(selected)}>
-            Assign Plan
+            {t('platform:billing.assignPlanModal.assignPlan')}
           </Button>
         </div>
       </div>
@@ -469,6 +524,7 @@ function AssignPlanModal({ sub, plans, onClose, onAssign, loading }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function InvoicesTab() {
+  const { t } = useTranslation(['common', 'platform'])
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -491,14 +547,14 @@ function InvoicesTab() {
 
   const markPaidMutation = useMutation({
     mutationFn: (id: string) => billingService.invoices.markPaid(id),
-    onSuccess: (inv) => { toast.success(`${inv.invoice_number} marked as paid`); qc.invalidateQueries({ queryKey: ['billing-invoices'] }) },
+    onSuccess: (inv) => { toast.success(t('platform:billing.invoicesTable.markedPaid', { number: inv.invoice_number })); qc.invalidateQueries({ queryKey: ['billing-invoices'] }) },
     onError: (e: Error) => toast.error(e.message),
   })
 
   const columns: Column<Invoice>[] = [
     {
       key: 'invoice_number',
-      header: 'Invoice #',
+      header: t('platform:billing.invoicesTable.invoiceNumber'),
       render: (inv) => (
         <button className="font-mono text-sm font-bold text-primary-600 hover:underline"
           onClick={() => setDetail(inv)}>
@@ -508,41 +564,43 @@ function InvoicesTab() {
     },
     {
       key: 'tenant_name',
-      header: 'Tenant',
+      header: t('platform:billing.invoicesTable.tenant'),
       render: (inv) => (
         <div>
           <p className="font-medium text-gray-900">{inv.tenant_name}</p>
-          <p className="text-xs text-gray-400">{inv.billing_period_start} → {inv.billing_period_end}</p>
+          <p className="text-xs text-gray-400">
+            <DateDisplay date={inv.billing_period_start} /> → <DateDisplay date={inv.billing_period_end} />
+          </p>
         </div>
       ),
     },
     {
       key: 'total_amount',
-      header: 'Amount',
+      header: t('platform:billing.invoicesTable.amount'),
       render: (inv) => (
         <div>
           <p className="font-bold">NPR {parseFloat(inv.total_amount).toLocaleString()}</p>
           {parseFloat(inv.tax_amount) > 0 && (
-            <p className="text-xs text-gray-400">incl. VAT {inv.tax_rate}%</p>
+            <p className="text-xs text-gray-400">{t('platform:billing.invoicesTable.inclVat', { rate: inv.tax_rate })}</p>
           )}
         </div>
       ),
     },
     {
       key: 'payment_status',
-      header: 'Status',
+      header: t('platform:billing.invoicesTable.status'),
       render: (inv) => (
         <div className="flex items-center gap-2">
           <Badge variant={invoiceStatusVariant(inv.payment_status)} dot>
             {inv.payment_status_display}
           </Badge>
-          {inv.is_overdue && <span className="text-xs text-red-500">{inv.days_overdue}d late</span>}
+          {inv.is_overdue && <span className="text-xs text-red-500">{t('platform:billing.invoicesTable.daysLate', { count: inv.days_overdue })}</span>}
         </div>
       ),
     },
     {
       key: 'due_date',
-      header: 'Due',
+      header: t('platform:billing.invoicesTable.due'),
       render: (inv) => <DateDisplay date={inv.due_date} />,
     },
     {
@@ -554,7 +612,7 @@ function InvoicesTab() {
             leftIcon={<CheckCircle2 className="h-3.5 w-3.5 text-green-600" />}
             onClick={() => markPaidMutation.mutate(inv.id)}
             loading={markPaidMutation.isPending}>
-            Mark Paid
+            {t('platform:billing.invoicesTable.markPaid')}
           </Button>
         ) : null
       ),
@@ -564,15 +622,15 @@ function InvoicesTab() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <Input placeholder="Search invoice or tenant..." leftAddon={<Search className="h-4 w-4" />}
+        <Input placeholder={t('platform:billing.invoicesTable.searchPlaceholder')} leftAddon={<Search className="h-4 w-4" />}
           value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
           className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
-          <option value="">All statuses</option>
-          <option value="PENDING">Pending</option>
-          <option value="PAID">Paid</option>
-          <option value="OVERDUE">Overdue</option>
-          <option value="CANCELLED">Cancelled</option>
+          <option value="">{t('platform:billing.invoicesTable.allStatuses')}</option>
+          <option value="PENDING">{t('platform:billing.invoicesTable.pending')}</option>
+          <option value="PAID">{t('platform:billing.invoicesTable.paid')}</option>
+          <option value="OVERDUE">{t('platform:billing.invoicesTable.overdue')}</option>
+          <option value="CANCELLED">{t('platform:billing.invoicesTable.cancelled')}</option>
         </select>
       </div>
 
@@ -588,17 +646,18 @@ function InvoicesTab() {
 }
 
 function InvoiceDetailModal({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
+  const { t } = useTranslation(['common', 'platform'])
   return (
-    <Modal open onClose={onClose} title={`Invoice — ${invoice.invoice_number}`} size="md">
+    <Modal open onClose={onClose} title={t('platform:billing.invoiceDetail.title', { number: invoice.invoice_number })} size="md">
       <div className="space-y-5 p-6">
         <div className="grid grid-cols-2 gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4 text-sm">
-          <div><p className="text-xs font-medium uppercase text-gray-400">Tenant</p>
+          <div><p className="text-xs font-medium uppercase text-gray-400">{t('platform:billing.invoiceDetail.tenant')}</p>
             <p className="font-semibold">{invoice.tenant_name}</p></div>
-          <div><p className="text-xs font-medium uppercase text-gray-400">Period</p>
-            <p className="font-medium">{invoice.billing_period_start} → {invoice.billing_period_end}</p></div>
-          <div><p className="text-xs font-medium uppercase text-gray-400">Due Date</p>
+          <div><p className="text-xs font-medium uppercase text-gray-400">{t('platform:billing.invoiceDetail.period')}</p>
+            <p className="font-medium"><DateDisplay date={invoice.billing_period_start} /> → <DateDisplay date={invoice.billing_period_end} /></p></div>
+          <div><p className="text-xs font-medium uppercase text-gray-400">{t('platform:billing.invoiceDetail.dueDate')}</p>
             <DateDisplay date={invoice.due_date} /></div>
-          <div><p className="text-xs font-medium uppercase text-gray-400">Status</p>
+          <div><p className="text-xs font-medium uppercase text-gray-400">{t('platform:billing.invoiceDetail.status')}</p>
             <Badge variant={invoiceStatusVariant(invoice.payment_status)} dot>
               {invoice.payment_status_display}
             </Badge></div>
@@ -609,8 +668,8 @@ function InvoiceDetailModal({ invoice, onClose }: { invoice: Invoice; onClose: (
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-xs uppercase text-gray-500">
               <tr>
-                <th className="px-4 py-2.5 text-left">Description</th>
-                <th className="px-4 py-2.5 text-right">Amount</th>
+                <th className="px-4 py-2.5 text-left">{t('platform:billing.invoiceDetail.description')}</th>
+                <th className="px-4 py-2.5 text-right">{t('platform:billing.invoiceDetail.amount')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -629,20 +688,20 @@ function InvoiceDetailModal({ invoice, onClose }: { invoice: Invoice; onClose: (
         {/* Totals */}
         <div className="ml-auto max-w-[220px] space-y-1 text-sm">
           <div className="flex justify-between text-gray-600">
-            <span>Subtotal</span><span>NPR {parseFloat(invoice.subtotal).toLocaleString()}</span>
+            <span>{t('platform:billing.invoiceDetail.subtotal')}</span><span>NPR {parseFloat(invoice.subtotal).toLocaleString()}</span>
           </div>
           {parseFloat(invoice.tax_amount) > 0 && (
             <div className="flex justify-between text-gray-600">
-              <span>VAT ({invoice.tax_rate}%)</span>
+              <span>{t('platform:billing.invoiceDetail.vat', { rate: invoice.tax_rate })}</span>
               <span>NPR {parseFloat(invoice.tax_amount).toLocaleString()}</span>
             </div>
           )}
           <div className="flex justify-between border-t pt-1 text-base font-bold text-gray-900">
-            <span>Total</span><span>NPR {parseFloat(invoice.total_amount).toLocaleString()}</span>
+            <span>{t('platform:billing.invoiceDetail.total')}</span><span>NPR {parseFloat(invoice.total_amount).toLocaleString()}</span>
           </div>
         </div>
 
-        <div className="flex justify-end"><Button variant="secondary" onClick={onClose}>Close</Button></div>
+        <div className="flex justify-end"><Button variant="secondary" onClick={onClose}>{t('common:common.close')}</Button></div>
       </div>
     </Modal>
   )
@@ -660,6 +719,7 @@ interface PlanForm {
 }
 
 function PlansTab() {
+  const { t } = useTranslation(['common', 'platform'])
   const qc = useQueryClient()
   const [showCreate, setShowCreate] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
@@ -700,7 +760,7 @@ function PlansTab() {
       return plan
     },
     onSuccess: () => {
-      toast.success('AMC plan created!')
+      toast.success(t('platform:billing.toasts.planCreated'))
       setShowCreate(false)
       reset()
       qc.invalidateQueries({ queryKey: ['billing-plans'] })
@@ -713,11 +773,11 @@ function PlansTab() {
     <div className="space-y-4">
       <div className="flex justify-end">
         <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setShowCreate(true)}>
-          New AMC Plan
+          {t('platform:billing.plansTab.newAmcPlan')}
         </Button>
       </div>
 
-      {isLoading && <p className="text-sm text-gray-400">Loading…</p>}
+      {isLoading && <p className="text-sm text-gray-400">{t('platform:billing.plansTab.loading')}</p>}
 
       {/* Plans grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -730,9 +790,9 @@ function PlansTab() {
               <div className="flex items-start justify-between">
                 <div>
                   <p className="font-semibold text-gray-900">{plan.name}</p>
-                  <Badge variant="info" className="mt-1">Monthly AMC</Badge>
+                  <Badge variant="info" className="mt-1">{t('platform:billing.plansTab.monthlyAmc')}</Badge>
                 </div>
-                {!plan.is_active && <Badge variant="neutral">Inactive</Badge>}
+                {!plan.is_active && <Badge variant="neutral">{t('platform:billing.plansTab.inactive')}</Badge>}
               </div>
 
               {/* Rate pill */}
@@ -755,12 +815,12 @@ function PlansTab() {
                       'text-xs mt-0.5',
                       isPercent ? 'text-purple-500' : 'text-green-500'
                     )}>
-                      {isPercent ? 'of monthly revenue' : 'per month (fixed)'}
+                      {isPercent ? t('platform:billing.plansTab.ofMonthlyRevenue') : t('platform:billing.plansTab.perMonthFixed')}
                     </p>
                   </div>
                 </div>
               ) : (
-                <p className="text-sm italic text-gray-400">No rate configured</p>
+                <p className="text-sm italic text-gray-400">{t('platform:billing.plansTab.noRateConfigured')}</p>
               )}
 
               {plan.description && (
@@ -773,43 +833,43 @@ function PlansTab() {
         {!isLoading && plans.length === 0 && (
           <div className="col-span-full rounded-xl border-2 border-dashed border-gray-200 p-10 text-center">
             <CreditCard className="mx-auto mb-3 h-10 w-10 text-gray-300" />
-            <p className="text-gray-500">No AMC plans yet.</p>
-            <Button className="mt-4" onClick={() => setShowCreate(true)}>Create First Plan</Button>
+            <p className="text-gray-500">{t('platform:billing.plansTab.noPlansYet')}</p>
+            <Button className="mt-4" onClick={() => setShowCreate(true)}>{t('platform:billing.plansTab.createFirstPlan')}</Button>
           </div>
         )}
       </div>
 
       {/* ── Create AMC Plan Modal — single form ─────────────────────────────── */}
       <Modal open={showCreate} onClose={() => { setShowCreate(false); reset() }}
-        title="New AMC Plan" size="sm">
+        title={t('platform:billing.plansTab.newAmcPlan')} size="sm">
         <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-4 p-6">
           <Input
-            label="Plan Name"
+            label={t('platform:billing.plansTab.planName')}
             required
-            placeholder="e.g. Standard AMC, Enterprise AMC"
+            placeholder={t('platform:billing.plansTab.planNameHint')}
             error={errors.name?.message}
-            {...register('name', { required: 'Required' })}
+            {...register('name', { required: t('platform:billing.plansTab.required') })}
           />
 
           {/* Billing Model dropdown — the key selector */}
           <SelectField
-            label="Billing Model"
+            label={t('platform:billing.plansTab.billingModel')}
             required
             {...register('billing_model', { required: true })}
           >
-            <option value="FIXED_AMOUNT">Fixed Amount (NPR per month)</option>
-            <option value="PERCENTAGE">Percentage (% of monthly revenue)</option>
+            <option value="FIXED_AMOUNT">{t('platform:billing.plansTab.fixedAmount')}</option>
+            <option value="PERCENTAGE">{t('platform:billing.plansTab.percentage')}</option>
           </SelectField>
 
           {/* Rate */}
           <Input
-            label={billingModel === 'PERCENTAGE' ? 'Percentage Rate (%)' : 'Monthly Amount (NPR)'}
+            label={billingModel === 'PERCENTAGE' ? t('platform:billing.plansTab.percentageRate') : t('platform:billing.plansTab.monthlyAmount')}
             type="number"
             step="0.01"
             required
-            placeholder={billingModel === 'PERCENTAGE' ? 'e.g. 6.5' : 'e.g. 15000'}
+            placeholder={billingModel === 'PERCENTAGE' ? t('platform:billing.plansTab.percentageHint') : t('platform:billing.plansTab.amountHint')}
             error={errors.rate?.message}
-            {...register('rate', { required: 'Required', min: { value: 0.01, message: 'Must be > 0' } })}
+            {...register('rate', { required: t('platform:billing.plansTab.required'), min: { value: 0.01, message: t('platform:billing.plansTab.mustBePositive') } })}
           />
 
           {/* Live preview */}
@@ -819,22 +879,22 @@ function PlansTab() {
               billingModel === 'PERCENTAGE' ? 'bg-purple-50 text-purple-700' : 'bg-green-50 text-green-700'
             )}>
               {billingModel === 'PERCENTAGE'
-                ? <>Tenant will be charged <strong>{watch('rate')}%</strong> of their monthly ticket revenue</>
-                : <>Tenant will be charged <strong>NPR {parseFloat(watch('rate') || '0').toLocaleString()}</strong> per month (fixed)</>
+                ? t('platform:billing.plansTab.previewPercentage', { rate: watch('rate') })
+                : t('platform:billing.plansTab.previewFixed', { amount: parseFloat(watch('rate') || '0').toLocaleString() })
               }
             </div>
           )}
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Description (optional)</label>
+            <label className="mb-1 block text-sm font-medium text-gray-700">{t('platform:billing.plansTab.description')}</label>
             <textarea rows={2} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              placeholder="Any notes about this plan..." {...register('description')} />
+              placeholder={t('platform:billing.plansTab.descriptionPlaceholder')} {...register('description')} />
           </div>
 
           <div className="flex justify-end gap-3 border-t pt-4">
-            <Button variant="secondary" type="button" onClick={() => { setShowCreate(false); reset() }}>Cancel</Button>
+            <Button variant="secondary" type="button" onClick={() => { setShowCreate(false); reset() }}>{t('common:common.cancel')}</Button>
             <Button type="submit" loading={createMutation.isPending} leftIcon={<Plus className="h-4 w-4" />}>
-              Create AMC Plan
+              {t('platform:billing.plansTab.createAmcPlan')}
             </Button>
           </div>
         </form>
@@ -848,6 +908,7 @@ function PlansTab() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function AuditTab() {
+  const { t } = useTranslation(['common', 'platform'])
   const [search, setSearch] = useState('')
   const [totalCount, setTotalCount] = useState(0)
   const pagination = usePagination(totalCount)
@@ -871,10 +932,10 @@ function AuditTab() {
 
   return (
     <div className="space-y-4">
-      <Input placeholder="Search by tenant or email..." leftAddon={<Search className="h-4 w-4" />}
+      <Input placeholder={t('platform:billing.auditTab.searchPlaceholder')} leftAddon={<Search className="h-4 w-4" />}
         value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-sm" />
       <div className="card divide-y divide-gray-100 p-0">
-        {isLoading && <div className="p-6 text-center text-sm text-gray-400">Loading…</div>}
+        {isLoading && <div className="p-6 text-center text-sm text-gray-400">{t('platform:billing.auditTab.loading')}</div>}
         {logs.map((log) => (
           <div key={log.id} className="flex items-start gap-4 px-5 py-4">
             <History className="mt-0.5 h-4 w-4 shrink-0 text-gray-300" />
@@ -883,7 +944,7 @@ function AuditTab() {
                 <Badge variant={actionVariant(log.action) as 'neutral'}>{log.action_display}</Badge>
                 <code className="text-xs text-gray-500">{log.tenant_schema}</code>
                 {log.performed_by_email && (
-                  <span className="text-xs text-gray-400">by {log.performed_by_email}</span>
+                  <span className="text-xs text-gray-400">{t('platform:billing.auditTab.by', { email: log.performed_by_email })}</span>
                 )}
               </div>
               {Object.keys(log.details).length > 0 && (
@@ -897,12 +958,12 @@ function AuditTab() {
               )}
             </div>
             <time className="shrink-0 text-xs text-gray-400">
-              {new Date(log.created_at).toLocaleString()}
+              <DateDisplay date={log.created_at} />
             </time>
           </div>
         ))}
         {!isLoading && logs.length === 0 && (
-          <div className="p-8 text-center text-sm text-gray-400">No audit entries yet.</div>
+          <div className="p-8 text-center text-sm text-gray-400">{t('platform:billing.auditTab.noEntries')}</div>
         )}
         <div className="p-3">
           <Pagination page={pagination.page} totalPages={pagination.totalPages}

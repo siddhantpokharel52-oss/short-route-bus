@@ -1,4 +1,8 @@
 {
+  "layout": {
+    "subtitleCity": "काठमाडौं उपत्यका",
+    "footerFullName": "काठमाडौं उपत्यका बस व्यवस्थापन प्रणाली (काभमस)"
+  },
   "home": {
     "title": "काठमाडौं उपत्यका बस सेवा",
     "subtitle": "नेपालको सार्वजनिक यातायातको लागि रियल-टाइम ट्र्याकिङ",
@@ -8,10 +12,16 @@
     "searchButton": "मार्ग खोज्नुहोस्",
     "liveMap": "लाइभ बस नक्सा",
     "nearbyStops": "नजिकका स्टपहरू",
-    "viewAll": "सबै मार्गहरू हेर्नुहोस्"
+    "viewAll": "सबै मार्गहरू हेर्नुहोस्",
+    "popularRoutes": "लोकप्रिय मार्गहरू",
+    "quickAccess": "छिटो पहुँच",
+    "busesLive": "{{count}} बस लाइभ",
+    "routesCountLabel": "{{count}} मार्गहरू",
+    "operatingHours": "बिहान ५:३० – राति १०:००"
   },
   "routes": {
     "title": "सबै मार्गहरू",
+    "subtitle": "काठमाडौं उपत्यकाका सबै सार्वजनिक यातायात मार्गहरू",
     "searchPlaceholder": "मार्ग वा स्टपहरू खोज्नुहोस्...",
     "routeNumber": "मार्ग",
     "from": "कहाँबाट",
@@ -19,34 +29,62 @@
     "distance": "दूरी",
     "fare": "भाडा",
     "viewStops": "स्टपहरू हेर्नुहोस्",
-    "operatedBy": "सञ्चालक"
+    "operatedBy": "सञ्चालक",
+    "stopsCount": "{{count}} स्टपहरू",
+    "noResults": "खोजिएको \"{{search}}\" का लागि कुनै मार्ग फेला परेन",
+    "tryDifferentSearch": "फरक खोजी शब्द प्रयास गर्नुहोस्"
   },
   "stops": {
     "title": "बस स्टपहरू",
+    "subtitle": "काठमाडौं उपत्यकाका सबै बस स्टपहरू",
+    "searchPlaceholder": "स्टपहरू खोज्नुहोस्...",
     "arrivals": "आगामी आगमनहरू",
     "noArrivals": "अर्को ६० मिनेटमा कुनै आगमन छैन",
     "eta": "अनुमानित समय",
     "minutes": "मिनेट",
     "vehicle": "सवारी",
     "route": "मार्ग",
-    "terminal": "टर्मिनल"
+    "terminal": "टर्मिनल",
+    "ward": "वडा",
+    "show": "देखाउनुहोस्",
+    "hide": "लुकाउनुहोस्"
   },
   "fares": {
     "title": "भाडा जानकारी",
+    "subtitle": "कुनै पनि दुई स्टपहरू बीचको भाडा जाँच गर्नुहोस्",
     "checkFare": "भाडा जाँच गर्नुहोस्",
     "fromStop": "कहाँबाट",
     "toStop": "कहाँ",
+    "selectStop": "स्टप छान्नुहोस्...",
     "fareTypes": "भाडाका प्रकारहरू",
     "adult": "वयस्क",
     "student": "विद्यार्थी",
     "senior": "जेष्ठ नागरिक",
     "differentlyAbled": "अपाङ्गता भएका",
     "discountApplied": "{{percent}}% छुट लागू भएको",
-    "payOnline": "अनलाइन भुक्तानी गर्नुहोस्"
+    "payOnline": "अनलाइन भुक्तानी गर्नुहोस्",
+    "distanceLabel": "दूरी: {{km}} किमी",
+    "peakHourSurcharge": "व्यस्त समय अतिरिक्त शुल्क: +{{amount}} लाग्न सक्छ",
+    "policyTitle": "भाडा नीति",
+    "passengerType": "यात्री प्रकार",
+    "discount": "छुट",
+    "policy": {
+      "adultType": "वयस्क",
+      "adultDiscount": "छैन (आधार भाडा)",
+      "studentType": "विद्यार्थी (मान्य कार्ड)",
+      "studentDiscount": "२५% छुट",
+      "seniorType": "जेष्ठ नागरिक (६०+)",
+      "seniorDiscount": "३०% छुट",
+      "disabledType": "अपाङ्गता भएका",
+      "disabledDiscount": "५०% छुट",
+      "smartCardType": "स्मार्ट कार्ड धारक",
+      "smartCardDiscount": "५% छुट + नगदरहित सुविधा"
+    }
   },
   "tickets": {
     "title": "मेरा टिकटहरू",
     "verifyTicket": "टिकट प्रमाणित गर्नुहोस्",
+    "subtitle": "तपाईंको टिकटको मान्यता प्रमाणित गर्न टिकट नम्बर प्रविष्ट गर्नुहोस्",
     "ticketNumber": "टिकट नम्बर",
     "verify": "प्रमाणित गर्नुहोस्",
     "valid": "मान्य टिकट",
@@ -57,7 +95,16 @@
     "route": "मार्ग",
     "date": "मिति",
     "fare": "तिरिएको भाडा",
-    "qrScan": "QR कोड स्क्यान गर्नुहोस्"
+    "qrScan": "QR कोड स्क्यान गर्नुहोस्",
+    "notFoundToast": "टिकट फेला परेन",
+    "notFoundMessage": "नम्बर भएको कुनै टिकट फेला परेन: {{number}}",
+    "howToVerify": "आफ्नो टिकट कसरी प्रमाणित गर्ने",
+    "helpItems": {
+      "enterNumber": "आफ्नो भौतिक टिकट वा एपमा देखाइएको टिकट नम्बर प्रविष्ट गर्नुहोस्",
+      "startsWith": "टिकट नम्बरहरू \"TKT-\" बाट सुरु हुन्छन्",
+      "oneJourney": "प्रत्येक टिकट एक यात्राको लागि मात्र मान्य हुन्छ",
+      "showCollector": "चढ्दा यो प्रमाणीकरण कलेक्टरलाई देखाउनुहोस्"
+    }
   },
   "complaints": {
     "title": "गुनासो र प्रतिक्रिया",
@@ -87,6 +134,52 @@
       "RESOLVED": "समाधान भएको",
       "CLOSED": "बन्द"
     },
-    "successMessage": "तपाईंको गुनासो पेश भएको छ। गुनासो आईडी: {{id}}"
+    "successMessage": "तपाईंको गुनासो पेश भएको छ। गुनासो आईडी: {{id}}",
+    "submitFailedToast": "गुनासो पेश गर्न असफल भयो। कृपया पुनः प्रयास गर्नुहोस्।",
+    "notFoundToast": "गुनासो फेला परेन",
+    "submittedTitle": "गुनासो पेश गरियो!",
+    "yourComplaintId": "तपाईंको गुनासो आईडी:",
+    "saveIdNote": "आफ्नो गुनासो स्थिति ट्र्याक गर्न यो आईडी सुरक्षित गर्नुहोस्",
+    "fileAnother": "अर्को गुनासो दर्ता गर्नुहोस्",
+    "selectType": "प्रकार छान्नुहोस्...",
+    "selectTypeRequired": "कृपया गुनासोको प्रकार छान्नुहोस्",
+    "yourName": "तपाईंको नाम",
+    "phoneNumber": "फोन नम्बर",
+    "minCharsHint": "(न्यूनतम २० अक्षर)",
+    "descriptionPlaceholder": "के भयो विस्तारमा वर्णन गर्नुहोस्...",
+    "trackPlaceholder": "तपाईंको गुनासो आईडी...",
+    "track": "ट्र्याक गर्नुहोस्",
+    "typeLabel": "प्रकार",
+    "submittedOn": "पेश गरिएको",
+    "validation": {
+      "descriptionMin": "कृपया कम्तिमा २० अक्षर उपलब्ध गराउनुहोस्",
+      "incidentDateRequired": "घटनाको मिति आवश्यक छ",
+      "nameRequired": "नाम आवश्यक छ",
+      "phoneRequired": "मान्य फोन नम्बर आवश्यक छ"
+    }
+  },
+  "smartCard": {
+    "title": "स्मार्ट कार्ड",
+    "checkBalance": "ब्यालेन्स जाँच गर्नुहोस्",
+    "cardNumber": "कार्ड नम्बर",
+    "balance": "ब्यालेन्स",
+    "recharge": "कार्ड रिचार्ज गर्नुहोस्",
+    "transactions": "हालैका कारोबारहरू",
+    "lowBalance": "न्यून ब्यालेन्स! कृपया रिचार्ज गर्नुहोस्।",
+    "howToUse": "कसरी प्रयोग गर्ने",
+    "tapToPay": "चढ्दा आफ्नो कार्ड रिडरमा ट्याप गर्नुहोस्",
+    "notFoundToast": "कार्ड फेला परेन",
+    "enterCardNumber": "कार्ड नम्बर प्रविष्ट गर्नुहोस्...",
+    "check": "जाँच गर्नुहोस्",
+    "cardHolder": "कार्डधारक",
+    "cardDetails": "कार्ड विवरण",
+    "expiry": "म्याद सकिने मिति",
+    "noTransactions": "हालैका कुनै कारोबार छैन",
+    "howToRecharge": "आफ्नो कार्ड कसरी रिचार्ज गर्ने",
+    "rechargeItems": {
+      "visitAgent": "कुनै पनि काभमस एजेन्ट वा बस टर्मिनलमा जानुहोस्",
+      "useApp": "एपमार्फत इसेवा / खल्ती / फोनपे प्रयोग गर्नुहोस्",
+      "limits": "न्यूनतम रिचार्ज: रु. ५० | अधिकतम: रु. १०,०००"
+    }
   }
 }

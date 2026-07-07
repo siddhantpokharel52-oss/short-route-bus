@@ -35,7 +35,7 @@ const VEHICLE_TYPE_EMOJI: Record<string, string> = {
 }
 
 export default function DashboardPage() {
-  const { t } = useTranslation()
+  const { t } = useTranslation(['common', 'platform'])
   const { language } = useUiStore()
 
   // Tenant search state
@@ -126,26 +126,26 @@ export default function DashboardPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">{t('nav.dashboard')}</h1>
-          <p className="page-subtitle">Platform overview — Kathmandu Valley Bus Network</p>
+          <p className="page-subtitle">{t('platform:dashboard.subtitle')}</p>
         </div>
       </div>
 
       {/* Stats grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Active Operators"
+          title={t('platform:dashboard.activeOperators')}
           value={isLoading ? '—' : `${stats?.active_tenants ?? 0}/${stats?.total_tenants ?? 0}`}
           icon={<Building2 className="h-6 w-6" />}
           trend={2}
         />
         <StatCard
-          title="Today's Trips"
+          title={t('platform:dashboard.todaysTrips')}
           value={isLoading ? '—' : (stats?.total_trips_today ?? 0).toLocaleString()}
           icon={<Bus className="h-6 w-6" />}
           trend={5}
         />
         <StatCard
-          title="This Month's Revenue"
+          title={t('platform:dashboard.monthRevenue')}
           value={billingSummary
             ? formatNPR(parseFloat(billingSummary.monthly_revenue), language as 'en' | 'ne')
             : '—'}
@@ -153,7 +153,7 @@ export default function DashboardPage() {
           colorClass="text-green-600"
         />
         <StatCard
-          title="Total Pending AMC"
+          title={t('platform:dashboard.pendingAMC')}
           value={billingSummary
             ? formatNPR(parseFloat(billingSummary.total_pending_amc), language as 'en' | 'ne')
             : '—'}
@@ -167,7 +167,7 @@ export default function DashboardPage() {
         {/* Map header with tenant search */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Live Fleet Map — Kathmandu Valley
+            {t('platform:dashboard.liveFleetMap')}
           </h2>
 
           {/* Tenant search combobox */}
@@ -192,7 +192,7 @@ export default function DashboardPage() {
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search tenant to view fleet..."
+                  placeholder={t('platform:dashboard.searchTenant')}
                   value={tenantSearch}
                   onChange={(e) => { setTenantSearch(e.target.value); setDropdownOpen(true) }}
                   onFocus={() => setDropdownOpen(true)}
@@ -207,7 +207,7 @@ export default function DashboardPage() {
             {dropdownOpen && !selectedTenant && (
               <div className="absolute left-0 top-full z-50 mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-xl">
                 {filteredTenants.length === 0 ? (
-                  <p className="px-4 py-3 text-sm text-gray-400">No tenants found</p>
+                  <p className="px-4 py-3 text-sm text-gray-400">{t('platform:dashboard.noTenantsFound')}</p>
                 ) : (
                   <ul className="max-h-52 overflow-y-auto divide-y divide-gray-50 py-1">
                     {filteredTenants.map((tenant) => (
@@ -242,15 +242,15 @@ export default function DashboardPage() {
             {fleetLoading ? (
               <div className="flex items-center gap-2 text-sm text-gray-400">
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-400 border-t-transparent" />
-                Loading fleet for {selectedTenant.name}…
+                {t('platform:dashboard.loadingFleetFor', { name: selectedTenant.name })}
               </div>
             ) : tenantFleet.length === 0 ? (
-              <p className="text-sm text-gray-400 italic">No vehicles registered for this tenant.</p>
+              <p className="text-sm text-gray-400 italic">{t('platform:dashboard.noVehiclesRegistered')}</p>
             ) : (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-semibold text-gray-700">
-                    {selectedTenant.name} — {tenantFleet.length} Vehicles
+                    {t('platform:dashboard.vehiclesCount', { name: selectedTenant.name, count: tenantFleet.length })}
                   </p>
                   <div className="flex gap-2">
                     {Object.keys(fleetByType).map((type) => (
@@ -276,10 +276,10 @@ export default function DashboardPage() {
                         </p>
                         {vehicle.route_code ? (
                           <p className="text-xs text-primary-600 font-medium">
-                            Route {vehicle.route_code}
+                            {t('platform:dashboard.routeLabel', { code: vehicle.route_code })}
                           </p>
                         ) : (
-                          <p className="text-xs text-gray-400 italic">No route assigned</p>
+                          <p className="text-xs text-gray-400 italic">{t('platform:dashboard.noRouteAssigned')}</p>
                         )}
                         <Badge
                           variant={vehicle.status === 'ACTIVE' ? 'success' : vehicle.status === 'IN_MAINTENANCE' ? 'warning' : 'neutral'}

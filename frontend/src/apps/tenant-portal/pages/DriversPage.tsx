@@ -9,6 +9,7 @@ import { Table, Column, Pagination } from '@components/shared/Table'
 import { Badge, statusVariant } from '@components/shared/Badge'
 import { Modal } from '@components/shared/Modal'
 import { DateDisplay } from '@components/shared/DateDisplay'
+import { NepaliDateInput } from '@components/shared/NepaliDateInput'
 import { usePagination } from '@hooks/usePagination'
 import apiClient from '@services/api'
 import toast from 'react-hot-toast'
@@ -564,12 +565,10 @@ export default function DriversPage() {
               </div>
 
               <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm font-medium text-gray-700">License Expiry Date</label>
-                <input
-                  type="date"
+                <NepaliDateInput
+                  label="License Expiry Date"
                   value={editLicenseExpiry}
-                  onChange={(e) => setEditLicenseExpiry(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  onChange={setEditLicenseExpiry}
                 />
               </div>
             </div>
@@ -657,12 +656,19 @@ export default function DriversPage() {
                 </SelectField>
               )}
             />
-            <Input
-              label="Date of Birth"
-              type="date"
-              required
-              error={errors.dob?.message}
-              {...register('dob', { required: 'Date of birth is required' })}
+            <Controller
+              name="dob"
+              control={control}
+              rules={{ required: 'Date of birth is required' }}
+              render={({ field }) => (
+                <NepaliDateInput
+                  label="Date of Birth"
+                  required
+                  error={errors.dob?.message}
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              )}
             />
             <Input
               label="Citizenship Number"
@@ -725,17 +731,26 @@ export default function DriversPage() {
                 </SelectField>
               )}
             />
-            <Input
-              label="Issue Date"
-              type="date"
-              {...register('license_issue_date')}
+            <Controller
+              name="license_issue_date"
+              control={control}
+              render={({ field }) => (
+                <NepaliDateInput label="Issue Date" value={field.value} onChange={field.onChange} />
+              )}
             />
-            <Input
-              label="Expiry Date"
-              type="date"
-              required
-              error={errors.license_expiry?.message}
-              {...register('license_expiry', { required: 'License expiry is required' })}
+            <Controller
+              name="license_expiry"
+              control={control}
+              rules={{ required: 'License expiry is required' }}
+              render={({ field }) => (
+                <NepaliDateInput
+                  label="Expiry Date"
+                  required
+                  error={errors.license_expiry?.message}
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              )}
             />
             <div className="sm:col-span-2">
               <Input
@@ -754,10 +769,12 @@ export default function DriversPage() {
             </p>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input
-              label="Date of Joining"
-              type="date"
-              {...register('date_of_joining')}
+            <Controller
+              name="date_of_joining"
+              control={control}
+              render={({ field }) => (
+                <NepaliDateInput label="Date of Joining" value={field.value} onChange={field.onChange} />
+              )}
             />
             <Input
               label="Years of Driving Experience"
@@ -807,10 +824,12 @@ export default function DriversPage() {
                 <option key={bg} value={bg}>{bg}</option>
               ))}
             </SelectField>
-            <Input
-              label="Last Medical Check-up Date"
-              type="date"
-              {...register('last_medical_checkup_date')}
+            <Controller
+              name="last_medical_checkup_date"
+              control={control}
+              render={({ field }) => (
+                <NepaliDateInput label="Last Medical Check-up Date" value={field.value} onChange={field.onChange} />
+              )}
             />
             <div className="sm:col-span-2">
               <label className="mb-1 block text-sm font-medium text-gray-700">

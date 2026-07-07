@@ -39,7 +39,7 @@ export default function SmartCardPage() {
       const { data } = await axios.get(`/public-api/smart-cards/${cardNumber}/`)
       setCardInfo(data)
     } catch {
-      toast.error('Card not found')
+      toast.error(t('smartCard.notFoundToast'))
       setCardInfo(null)
     } finally {
       setIsLoading(false)
@@ -61,14 +61,14 @@ export default function SmartCardPage() {
         <h2 className="font-semibold text-gray-900 mb-4">{t('smartCard.checkBalance')}</h2>
         <div className="flex gap-3">
           <Input
-            placeholder="Enter card number..."
+            placeholder={t('smartCard.enterCardNumber')}
             value={cardNumber}
             onChange={(e) => setCardNumber(e.target.value)}
             leftAddon={<Search className="h-4 w-4" />}
             className="flex-1"
           />
           <Button onClick={handleCheck} loading={isLoading} disabled={!cardNumber}>
-            Check
+            {t('smartCard.check')}
           </Button>
         </div>
       </div>
@@ -87,11 +87,11 @@ export default function SmartCardPage() {
               </p>
               <div className="flex items-end justify-between">
                 <div>
-                  <p className="text-primary-200 text-xs">Card Holder</p>
+                  <p className="text-primary-200 text-xs">{t('smartCard.cardHolder')}</p>
                   <p className="font-semibold">{cardInfo.holder_name}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-primary-200 text-xs">Balance</p>
+                  <p className="text-primary-200 text-xs">{t('smartCard.balance')}</p>
                   <p className="text-2xl font-bold">
                     {formatNPR(cardInfo.balance, language as 'en' | 'ne')}
                   </p>
@@ -103,18 +103,18 @@ export default function SmartCardPage() {
           {/* Card details */}
           <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">Card Details</h3>
+              <h3 className="font-semibold">{t('smartCard.cardDetails')}</h3>
               <Badge variant={cardInfo.is_active ? 'success' : 'danger'} dot>
-                {cardInfo.is_active ? 'Active' : 'Inactive'}
+                {cardInfo.is_active ? t('common:common.active') : t('common:common.inactive')}
               </Badge>
             </div>
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <dt className="text-gray-400">Type</dt>
+                <dt className="text-gray-400">{t('common:common.type')}</dt>
                 <dd className="font-medium">{cardInfo.card_type}</dd>
               </div>
               <div>
-                <dt className="text-gray-400">Expiry</dt>
+                <dt className="text-gray-400">{t('smartCard.expiry')}</dt>
                 <dd className="font-medium"><DateDisplay date={cardInfo.expiry_date} /></dd>
               </div>
             </dl>
@@ -131,7 +131,7 @@ export default function SmartCardPage() {
           <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
             <h3 className="font-semibold mb-4">{t('smartCard.transactions')}</h3>
             {cardInfo.last_transactions?.length === 0 ? (
-              <p className="text-sm text-gray-400">No recent transactions</p>
+              <p className="text-sm text-gray-400">{t('smartCard.noTransactions')}</p>
             ) : (
               <div className="divide-y divide-gray-50">
                 {cardInfo.last_transactions?.map((tx) => (
@@ -154,11 +154,11 @@ export default function SmartCardPage() {
 
           {/* Recharge note */}
           <div className="rounded-xl bg-primary-50 p-4 text-sm text-primary-700">
-            <p className="font-medium mb-1">How to recharge your card</p>
+            <p className="font-medium mb-1">{t('smartCard.howToRecharge')}</p>
             <ul className="text-primary-600 space-y-1 list-disc list-inside text-xs">
-              <li>Visit any KVBMS agent or bus terminal</li>
-              <li>Use eSewa / Khalti / Fonepay via the app</li>
-              <li>Minimum recharge: Rs. 50 | Maximum: Rs. 10,000</li>
+              <li>{t('smartCard.rechargeItems.visitAgent')}</li>
+              <li>{t('smartCard.rechargeItems.useApp')}</li>
+              <li>{t('smartCard.rechargeItems.limits')}</li>
             </ul>
           </div>
         </div>

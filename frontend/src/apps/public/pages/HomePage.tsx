@@ -6,9 +6,12 @@ import { Search, Bus, MapPin, Clock, ChevronRight } from 'lucide-react'
 import { Button } from '@components/shared/Button'
 import { LiveMap } from '@components/domain/LiveMap'
 import publicService, { Route } from '@services/publicService'
+import { formatNPR } from '@utils/nepaliDate'
+import { useUiStore } from '@store/uiStore'
 
 export default function HomePage() {
   const { t } = useTranslation('public')
+  const { language } = useUiStore()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
 
@@ -59,9 +62,9 @@ export default function HomePage() {
           {/* Stats */}
           <div className="mt-12 flex flex-wrap justify-center gap-8">
             {[
-              { icon: <Bus className="h-5 w-5" />, label: `${liveVehicles?.length ?? 0} buses live` },
-              { icon: <MapPin className="h-5 w-5" />, label: '48 routes' },
-              { icon: <Clock className="h-5 w-5" />, label: '5:30 AM – 10:00 PM' },
+              { icon: <Bus className="h-5 w-5" />, label: t('home.busesLive', { count: liveVehicles?.length ?? 0 }) },
+              { icon: <MapPin className="h-5 w-5" />, label: t('home.routesCountLabel', { count: 48 }) },
+              { icon: <Clock className="h-5 w-5" />, label: t('home.operatingHours') },
             ].map((item) => (
               <div key={item.label} className="flex items-center gap-2 text-primary-100">
                 {item.icon}
@@ -82,7 +85,7 @@ export default function HomePage() {
         {/* Routes */}
         <section>
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Popular Routes</h2>
+            <h2 className="text-2xl font-bold text-gray-900">{t('home.popularRoutes')}</h2>
             <a href="/routes" className="flex items-center gap-1 text-primary-600 text-sm font-medium hover:underline">
               {t('home.viewAll')} <ChevronRight className="h-4 w-4" />
             </a>
@@ -99,7 +102,7 @@ export default function HomePage() {
                   <span className="inline-flex items-center rounded-full bg-primary-100 px-3 py-1 text-sm font-bold text-primary-700">
                     {route.route_number}
                   </span>
-                  <span className="text-sm text-gray-400">Rs. {route.base_fare}</span>
+                  <span className="text-sm text-gray-400">{formatNPR(route.base_fare, language as 'en' | 'ne')}</span>
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -123,7 +126,7 @@ export default function HomePage() {
 
         {/* Quick links */}
         <section>
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">Quick Access</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">{t('home.quickAccess')}</h2>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
             {[
               { to: '/routes', icon: '🗺️', label: t('routes.title') },

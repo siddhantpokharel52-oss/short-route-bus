@@ -8,7 +8,8 @@ import { DateDisplay } from '@components/shared/DateDisplay'
 import schedulingService, { Timetable } from '@services/schedulingService'
 import apiClient from '@services/api'
 import toast from 'react-hot-toast'
-import { Input } from '@components/shared/Input'
+import { NepaliDateInput } from '@components/shared/NepaliDateInput'
+import { NepaliTimeInput } from '@components/shared/NepaliTimeInput'
 import { useState } from 'react'
 
 interface Route {
@@ -41,33 +42,33 @@ export default function SchedulingPage() {
   const autoScheduleMutation = useMutation({
     mutationFn: () => schedulingService.timetables.autoSchedule(selectedRoute, scheduleDate, dispatchTime),
     onSuccess: (result) => {
-      toast.success(result.message || 'Auto-scheduling triggered successfully!')
+      toast.success(result.message || t('scheduling.toasts.autoScheduled'))
       qc.invalidateQueries({ queryKey: ['today-trips'] })
     },
     onError: (err: unknown) => {
       const e = err as { response?: { data?: { message?: string } } }
-      toast.error(e?.response?.data?.message || (err as Error).message || 'Auto-schedule failed')
+      toast.error(e?.response?.data?.message || (err as Error).message || t('scheduling.toasts.autoScheduleFailed'))
     },
   })
 
   const columns: Column<Timetable>[] = [
-    { key: 'name', header: 'Timetable Name' },
-    { key: 'route_id', header: 'Route ID',
-      render: (t) => <code className="text-xs">{t.route_id}</code> },
+    { key: 'name', header: t('scheduling.timetableName') },
+    { key: 'route_id', header: t('scheduling.routeId'),
+      render: (row) => <code className="text-xs">{row.route_id}</code> },
     {
       key: 'effective_from',
-      header: 'Effective From',
-      render: (t) => <DateDisplay date={t.effective_from} />,
+      header: t('scheduling.effectiveFrom'),
+      render: (row) => <DateDisplay date={row.effective_from} />,
     },
     {
       key: 'effective_until',
-      header: 'Effective Until',
-      render: (t) => t.effective_until ? <DateDisplay date={t.effective_until} /> : <span className="text-gray-400">Ongoing</span>,
+      header: t('scheduling.effectiveUntil'),
+      render: (row) => row.effective_until ? <DateDisplay date={row.effective_until} /> : <span className="text-gray-400">{t('scheduling.ongoing')}</span>,
     },
     {
       key: 'is_active',
-      header: 'Status',
-      render: (t) => <Badge variant={t.is_active ? 'success' : 'neutral'} dot>{t.is_active ? 'Active' : 'Inactive'}</Badge>,
+      header: t('common:common.status'),
+      render: (row) => <Badge variant={row.is_active ? 'success' : 'neutral'} dot>{row.is_active ? t('common:common.active') : t('common:common.inactive')}</Badge>,
     },
   ]
 
@@ -81,17 +82,16 @@ export default function SchedulingPage() {
       <div className="card">
         <h2 className="mb-4 flex items-center gap-2 font-semibold">
           <Calendar className="h-5 w-5 text-primary-600" />
-          Auto Schedule Trips
+          {t('scheduling.autoScheduleTitle')}
         </h2>
         <p className="mb-4 text-sm text-gray-500">
-          Automatically generate trips from timetable slots.
-          Max 8 hours/day per driver enforced (Nepal Labour Act 2074).
+          {t('scheduling.autoScheduleDesc')}
         </p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_1fr_1fr_auto] items-end">
           {/* Route */}
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">
-              Route <span className="text-red-500">*</span>
+              {t('scheduling.route')} <span className="text-red-500">*</span>
             </label>
             <select
               value={selectedRoute}
@@ -99,7 +99,7 @@ export default function SchedulingPage() {
               className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
                          focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
             >
-              <option value="">— Select a route —</option>
+              <option value="">{t('scheduling.selectRoute')}</option>
               {routes.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.route_code ? `${r.route_code} — ` : ''}{r.name_en}
@@ -109,28 +109,20 @@ export default function SchedulingPage() {
           </div>
 
           {/* Date */}
-          <Input
-            label="Date"
-            type="date"
+          <NepaliDateInput
+            label={t('common:common.date')}
             required
             value={scheduleDate}
-            onChange={(e) => setScheduleDate(e.target.value)}
+            onChange={setScheduleDate}
           />
 
           {/* Dispatch Time */}
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Dispatch Time <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="time"
-              required
-              value={dispatchTime}
-              onChange={(e) => setDispatchTime(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
-                         focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-            />
-          </div>
+          <NepaliTimeInput
+            label={t('scheduling.dispatchTime')}
+            required
+            value={dispatchTime}
+            onChange={setDispatchTime}
+          />
 
           {/* Button */}
           <Button
@@ -139,7 +131,7 @@ export default function SchedulingPage() {
             loading={autoScheduleMutation.isPending}
             disabled={!selectedRoute || !dispatchTime}
           >
-            Auto Schedule
+            {t('scheduling.autoSchedule')}
           </Button>
         </div>
       </div>

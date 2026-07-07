@@ -14,9 +14,11 @@ from .serializers import (
     JournalEntrySerializer,
     SalaryPaymentSerializer,
 )
+from backend.apps.users.permissions import IsFinanceRole
 
 
 class ChartOfAccountViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsFinanceRole]
     queryset = ChartOfAccount.objects.filter(is_active=True).order_by("code")
     serializer_class = ChartOfAccountSerializer
     filter_backends = [filters.SearchFilter]
@@ -134,6 +136,7 @@ class ChartOfAccountViewSet(viewsets.ModelViewSet):
 
 
 class JournalEntryViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsFinanceRole]
     queryset = JournalEntry.objects.prefetch_related("lines__account").all()
     serializer_class = JournalEntrySerializer
     filter_backends = [filters.SearchFilter]
@@ -211,6 +214,7 @@ class JournalEntryViewSet(viewsets.ModelViewSet):
 
 
 class SalaryPaymentViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsFinanceRole]
     queryset = SalaryPayment.objects.all()
     serializer_class = SalaryPaymentSerializer
     filter_backends = [filters.SearchFilter]
@@ -242,6 +246,7 @@ class GeneralLedgerView(APIView):
     GET /accounting/reports/general-ledger/
     Params: account_id, date_from, date_to
     """
+    permission_classes = [IsFinanceRole]
 
     def get(self, request):
         params = request.query_params
@@ -287,6 +292,7 @@ class TrialBalanceView(APIView):
     GET /accounting/reports/trial-balance/
     Params: date (defaults to today)
     """
+    permission_classes = [IsFinanceRole]
 
     def get(self, request):
         as_of = request.query_params.get("date", str(timezone.now().date()))
@@ -329,6 +335,7 @@ class ProfitLossView(APIView):
     GET /accounting/reports/profit-loss/
     Params: date_from, date_to
     """
+    permission_classes = [IsFinanceRole]
 
     def get(self, request):
         params = request.query_params
@@ -399,6 +406,7 @@ class BalanceSheetView(APIView):
     GET /accounting/reports/balance-sheet/
     Params: date (defaults to today)
     """
+    permission_classes = [IsFinanceRole]
 
     def get(self, request):
         as_of = request.query_params.get("date", str(timezone.now().date()))
@@ -467,6 +475,7 @@ class CashFlowView(APIView):
     Params: date_from, date_to
     Simple indirect method: operating cash = net profit + non-cash items.
     """
+    permission_classes = [IsFinanceRole]
 
     def get(self, request):
         params = request.query_params
@@ -554,6 +563,7 @@ class CashFlowView(APIView):
 
 class IncomeByRouteView(APIView):
     """GET /accounting/reports/income-by-route/"""
+    permission_classes = [IsFinanceRole]
 
     def get(self, request):
         params = request.query_params
@@ -584,6 +594,7 @@ class IncomeByRouteView(APIView):
 
 class ExpenseAnalysisView(APIView):
     """GET /accounting/reports/expense-analysis/"""
+    permission_classes = [IsFinanceRole]
 
     def get(self, request):
         params = request.query_params
@@ -624,6 +635,7 @@ class DashboardSummaryView(APIView):
     GET /accounting/dashboard/
     Quick KPIs: total revenue MTD, total expenses MTD, net profit, cash balance.
     """
+    permission_classes = [IsFinanceRole]
 
     def get(self, request):
         today = timezone.now().date()

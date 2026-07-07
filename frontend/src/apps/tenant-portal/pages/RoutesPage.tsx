@@ -125,7 +125,7 @@ export default function RoutesPage() {
       })
     },
     onSuccess: () => {
-      toast.success('Route created!')
+      toast.success(t('routes.toasts.created'))
       setShowCreate(false)
       setWaypoints([])
       reset()
@@ -140,7 +140,7 @@ export default function RoutesPage() {
         const val = res.errors[firstKey]
         toast.error(Array.isArray(val) ? String(val[0]) : String(val))
       } else {
-        toast.error(res?.message || (err as Error).message || 'Failed to create route')
+        toast.error(res?.message || (err as Error).message || t('routes.toasts.createFailed'))
       }
     },
   })
@@ -148,13 +148,13 @@ export default function RoutesPage() {
   const approveMutation = useMutation({
     mutationFn: (id: string) => apiClient.post(`/platform/routes/${id}/approve/`),
     onSuccess: () => {
-      toast.success('Route approved!')
+      toast.success(t('routes.toasts.approved'))
       qc.invalidateQueries({ queryKey: ['routes'] })
     },
     onError: (err: unknown) => {
       const e = err as { response?: { status?: number; data?: { message?: string } } }
       if (e?.response?.status === 403) return
-      toast.error(e?.response?.data?.message || 'Failed to approve route')
+      toast.error(e?.response?.data?.message || t('routes.toasts.approveFailed'))
     },
   })
 
@@ -173,28 +173,28 @@ export default function RoutesPage() {
         name_ne: editNameNe,
       }),
     onSuccess: () => {
-      toast.success('Route updated.')
+      toast.success(t('routes.toasts.updated'))
       setEditTarget(null)
       qc.invalidateQueries({ queryKey: ['routes'] })
     },
     onError: (err: unknown) => {
       const e = err as { response?: { status?: number; data?: { message?: string } } }
       if (e?.response?.status === 403) return
-      toast.error(e?.response?.data?.message || 'Failed to update route')
+      toast.error(e?.response?.data?.message || t('routes.toasts.updateFailed'))
     },
   })
 
   const deleteRouteMutation = useMutation({
     mutationFn: (id: string) => apiClient.delete(`/platform/routes/${id}/`),
     onSuccess: () => {
-      toast.success('Route deleted.')
+      toast.success(t('routes.toasts.deleted'))
       setDeleteTarget(null)
       qc.invalidateQueries({ queryKey: ['routes'] })
     },
     onError: (err: unknown) => {
       const e = err as { response?: { status?: number; data?: { message?: string } } }
       if (e?.response?.status === 403) return
-      toast.error(e?.response?.data?.message || 'Failed to delete route')
+      toast.error(e?.response?.data?.message || t('routes.toasts.deleteFailed'))
     },
   })
 
@@ -504,14 +504,14 @@ export default function RoutesPage() {
                 label={`${t('routes.editCodeLabel')} *`}
                 placeholder="e.g. 23, 37A"
                 error={errors.route_code?.message}
-                {...register('route_code', { required: 'Required' })}
+                {...register('route_code', { required: t('routes.required') })}
               />
               <div className="sm:col-span-2">
                 <Input
                   label={`${t('routes.editNameEnLabel')} *`}
                   placeholder="e.g. Ratnapark — Kalanki"
                   error={errors.name_en?.message}
-                  {...register('name_en', { required: 'Required' })}
+                  {...register('name_en', { required: t('routes.required') })}
                 />
               </div>
               <NepaliInput

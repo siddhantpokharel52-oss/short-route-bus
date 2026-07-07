@@ -36,7 +36,7 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
               </div>
               <div className="hidden sm:block">
                 <p className="text-sm font-bold text-gray-900">KVBMS</p>
-                <p className="text-xs text-gray-500">Kathmandu Valley</p>
+                <p className="text-xs text-gray-500">{t('public:layout.subtitleCity')}</p>
               </div>
             </Link>
 
@@ -114,7 +114,7 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
       <footer className="mt-16 border-t border-gray-200 bg-white py-8">
         <div className="mx-auto max-w-7xl px-4 text-center text-sm text-gray-400">
           <p>© 2081 BS / 2024 AD काठमाडौं उपत्यका सार्वजनिक यातायात व्यवस्थापन प्रणाली</p>
-          <p className="mt-1">Kathmandu Valley Bus Management System (KVBMS)</p>
+          <p className="mt-1">{t('public:layout.footerFullName')}</p>
         </div>
       </footer>
     </div>

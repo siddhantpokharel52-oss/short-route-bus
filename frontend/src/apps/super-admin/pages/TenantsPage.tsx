@@ -53,7 +53,7 @@ export default function TenantsPage() {
   const activateMutation = useMutation({
     mutationFn: (id: string) => tenantService.activate(id),
     onSuccess: () => {
-      toast.success('Tenant activated!')
+      toast.success(t('platform:tenants.toasts.activated'))
       qc.invalidateQueries({ queryKey: ['tenants'] })
     },
     onError: (err: Error) => toast.error(err.message),
@@ -63,7 +63,7 @@ export default function TenantsPage() {
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       tenantService.suspend(id, reason),
     onSuccess: () => {
-      toast.success('Tenant suspended')
+      toast.success(t('platform:tenants.toasts.suspended'))
       setSuspendTarget(null)
       setSuspendReason('')
       qc.invalidateQueries({ queryKey: ['tenants'] })
@@ -76,7 +76,7 @@ export default function TenantsPage() {
   const createMutation = useMutation({
     mutationFn: (payload: CreateTenantForm) => tenantService.create(payload),
     onSuccess: (result) => {
-      toast.success('Tenant created!')
+      toast.success(t('platform:tenants.toasts.created'))
       setShowCreate(false)
       reset()
       qc.invalidateQueries({ queryKey: ['tenants'] })
@@ -122,7 +122,7 @@ export default function TenantsPage() {
     },
     {
       key: 'contact_name',
-      header: 'Contact Person',
+      header: t('platform:tenants.contactPerson'),
       render: (row) => (
         <div>
           {row.contact_name && <p className="text-sm font-medium text-gray-800">{row.contact_name}</p>}
@@ -150,7 +150,7 @@ export default function TenantsPage() {
               onClick={() => activateMutation.mutate(row.id)}
               loading={activateMutation.isPending}
             >
-              Activate
+              {t('platform:tenants.activate')}
             </Button>
           )}
           {row.status === 'ACTIVE' && (
@@ -160,7 +160,7 @@ export default function TenantsPage() {
               leftIcon={<Ban className="h-3.5 w-3.5 text-red-600" />}
               onClick={() => setSuspendTarget(row)}
             >
-              Suspend
+              {t('platform:tenants.suspend')}
             </Button>
           )}
         </div>
@@ -183,7 +183,7 @@ export default function TenantsPage() {
       {/* Search */}
       <div className="flex gap-3">
         <Input
-          placeholder={`${t('common:common.search')} operators...`}
+          placeholder={t('platform:tenants.searchPlaceholder')}
           leftAddon={<Search className="h-4 w-4" />}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -210,37 +210,37 @@ export default function TenantsPage() {
       {/* Create modal */}
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title={t('platform:tenants.addNew')} size="md">
         <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-4 p-6">
-          <Input label="Company Name" required error={errors.name?.message}
-            {...register('name', { required: 'Required' })} />
-          <Input label="Subdomain" required placeholder="e.g. sajha → sajha.kvbms.com.np"
+          <Input label={t('platform:tenants.createModal.companyName')} required error={errors.name?.message}
+            {...register('name', { required: t('platform:tenants.createModal.required') })} />
+          <Input label={t('platform:tenants.subdomain')} required placeholder={t('platform:tenants.createModal.subdomainHint')}
             error={errors.subdomain?.message}
-            {...register('subdomain', { required: 'Required' })} />
+            {...register('subdomain', { required: t('platform:tenants.createModal.required') })} />
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input
-              label="Contact Number"
+              label={t('platform:tenants.createModal.contactNumber')}
               type="tel"
-              placeholder="e.g. 9801234567"
+              placeholder={t('platform:tenants.createModal.contactNumberHint')}
               {...register('contact_phone')}
             />
             <Input
-              label="Email Address"
+              label={t('platform:tenants.createModal.emailAddress')}
               type="email"
               required
-              placeholder="contact@company.com.np"
+              placeholder={t('platform:tenants.createModal.emailHint')}
               error={errors.contact_email?.message}
-              {...register('contact_email', { required: 'Required' })}
+              {...register('contact_email', { required: t('platform:tenants.createModal.required') })}
             />
             <div className="sm:col-span-2">
               <Input
-                label="Company Address"
-                placeholder="e.g. New Baneshwor, Kathmandu"
+                label={t('platform:tenants.createModal.companyAddress')}
+                placeholder={t('platform:tenants.createModal.addressHint')}
                 {...register('address')}
               />
             </div>
             <Input
-              label="PAN / VAT Number"
-              placeholder="e.g. 123456789"
+              label={t('platform:tenants.createModal.panVat')}
+              placeholder={t('platform:tenants.createModal.panVatHint')}
               {...register('pan_vat_number')}
             />
           </div>
@@ -249,42 +249,45 @@ export default function TenantsPage() {
           <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
             <div className="mb-3 flex items-center gap-2">
               <KeyRound className="h-4 w-4 text-blue-600" />
-              <p className="text-sm font-semibold text-blue-800">Tenant Admin Login (optional)</p>
+              <p className="text-sm font-semibold text-blue-800">{t('platform:tenants.createModal.adminSectionTitle')}</p>
             </div>
-            <p className="mb-3 text-xs text-blue-600">Create login credentials for the tenant company admin so they can access the Tenant Portal.</p>
+            <p className="mb-3 text-xs text-blue-600">{t('platform:tenants.createModal.adminSectionHint')}</p>
             <div className="space-y-3">
-              <Input label="Admin Full Name" placeholder="e.g. Ram Bahadur Shrestha" {...register('admin_full_name')} />
-              <Input label="Admin Email" type="email" placeholder="admin@sajha.com.np" {...register('admin_email')} />
-              <Input label="Admin Password" type="text" placeholder="Min 8 characters" {...register('admin_password')} />
+              <Input label={t('platform:tenants.createModal.adminFullName')} placeholder={t('platform:tenants.createModal.adminFullNameHint')} {...register('admin_full_name')} />
+              <Input label={t('platform:tenants.createModal.adminEmail')} type="email" placeholder="admin@sajha.com.np" {...register('admin_email')} />
+              <Input label={t('platform:tenants.createModal.adminPassword')} type="text" placeholder={t('platform:tenants.createModal.adminPasswordHint')} {...register('admin_password')} />
             </div>
           </div>
 
           <div className="flex justify-end gap-3 border-t pt-4">
-            <Button variant="secondary" onClick={() => setShowCreate(false)} type="button">Cancel</Button>
-            <Button type="submit" loading={createMutation.isPending}>Create Tenant</Button>
+            <Button variant="secondary" onClick={() => setShowCreate(false)} type="button">{t('common:common.cancel')}</Button>
+            <Button type="submit" loading={createMutation.isPending}>{t('platform:tenants.addNew')}</Button>
           </div>
         </form>
       </Modal>
 
       {/* Credentials modal — shown after successful creation */}
-      <Modal open={!!newTenantCreds} onClose={() => setNewTenantCreds(null)} title="Tenant Created — Save Credentials" size="sm">
+      <Modal open={!!newTenantCreds} onClose={() => setNewTenantCreds(null)} title={t('platform:tenants.credentialsModal.title')} size="sm">
         {newTenantCreds?.admin_credentials && (
           <div className="space-y-4 p-6">
             <div className="rounded-lg border border-green-200 bg-green-50 p-4">
               <p className="mb-3 text-sm font-semibold text-green-800">
-                ✅ {newTenantCreds.name} created successfully!
+                {t('platform:tenants.credentialsModal.createdSuccess', { name: newTenantCreds.name })}
               </p>
               <p className="mb-4 text-xs text-green-600">
-                Share these credentials with the company admin. They can log in at{' '}
-                <strong>localhost:3001/login</strong>
+                {t('platform:tenants.credentialsModal.shareNote')}{' '}
+                <strong>
+                  {(newTenantCreds.domains?.find((d) => d.is_primary) ?? newTenantCreds.domains?.[0])?.domain}
+                  {window.location.port ? `:${window.location.port}` : ''}/login
+                </strong>
               </p>
               <div className="space-y-2 rounded-lg bg-white p-3 font-mono text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-500">Email:</span>
+                  <span className="text-gray-500">{t('platform:tenants.credentialsModal.email')}</span>
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{newTenantCreds.admin_credentials.email}</span>
                     <button
-                      onClick={() => { navigator.clipboard.writeText(newTenantCreds!.admin_credentials!.email); toast.success('Copied!') }}
+                      onClick={() => { navigator.clipboard.writeText(newTenantCreds!.admin_credentials!.email); toast.success(t('platform:tenants.toasts.copied')) }}
                       className="text-gray-400 hover:text-gray-600"
                     >
                       <Copy className="h-3.5 w-3.5" />
@@ -292,11 +295,11 @@ export default function TenantsPage() {
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-500">Password:</span>
+                  <span className="text-gray-500">{t('platform:tenants.credentialsModal.password')}</span>
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{newTenantCreds.admin_credentials.password}</span>
                     <button
-                      onClick={() => { navigator.clipboard.writeText(newTenantCreds!.admin_credentials!.password); toast.success('Copied!') }}
+                      onClick={() => { navigator.clipboard.writeText(newTenantCreds!.admin_credentials!.password); toast.success(t('platform:tenants.toasts.copied')) }}
                       className="text-gray-400 hover:text-gray-600"
                     >
                       <Copy className="h-3.5 w-3.5" />
@@ -304,21 +307,21 @@ export default function TenantsPage() {
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-500">Role:</span>
+                  <span className="text-gray-500">{t('platform:tenants.credentialsModal.role')}</span>
                   <span className="font-medium text-blue-600">COMPANY_ADMIN</span>
                 </div>
               </div>
             </div>
-            <Button className="w-full" onClick={() => setNewTenantCreds(null)}>Done — I've saved the credentials</Button>
+            <Button className="w-full" onClick={() => setNewTenantCreds(null)}>{t('platform:tenants.credentialsModal.done')}</Button>
           </div>
         )}
       </Modal>
 
       {/* Suspend modal */}
-      <Modal open={!!suspendTarget} onClose={() => setSuspendTarget(null)} title="Suspend Tenant" size="sm">
+      <Modal open={!!suspendTarget} onClose={() => setSuspendTarget(null)} title={t('platform:tenants.suspendModal.title')} size="sm">
         <div className="space-y-4 p-6">
           <p className="text-sm text-gray-600">
-            Suspend <strong>{suspendTarget?.name}</strong>? This will halt their operations.
+            {t('platform:tenants.suspendModal.confirm', { name: suspendTarget?.name })}
           </p>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">
@@ -329,7 +332,7 @@ export default function TenantsPage() {
               rows={3}
               value={suspendReason}
               onChange={(e) => setSuspendReason(e.target.value)}
-              placeholder="Reason for suspension..."
+              placeholder={t('platform:tenants.suspendModal.reasonPlaceholder')}
             />
           </div>
           <div className="flex justify-end gap-3">
@@ -342,7 +345,7 @@ export default function TenantsPage() {
               onClick={() => suspendTarget && suspendMutation.mutate({ id: suspendTarget.id, reason: suspendReason })}
               disabled={!suspendReason.trim()}
             >
-              Suspend
+              {t('platform:tenants.suspend')}
             </Button>
           </div>
         </div>

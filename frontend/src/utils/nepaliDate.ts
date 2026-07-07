@@ -165,15 +165,27 @@ export function bsToAD(bsDate: BSDate): Date {
   return result
 }
 
-const BS_MONTHS_EN = [
+export const BS_MONTHS_EN = [
   'Baisakh', 'Jestha', 'Ashadh', 'Shrawan', 'Bhadra', 'Ashwin',
   'Kartik', 'Mangsir', 'Poush', 'Magh', 'Falgun', 'Chaitra',
 ]
 
-const BS_MONTHS_NE = [
+export const BS_MONTHS_NE = [
   'बैशाख', 'जेठ', 'असार', 'साउन', 'भदौ', 'असोज',
   'कार्तिक', 'मंसिर', 'पुस', 'माघ', 'फागुन', 'चैत',
 ]
+
+/** Number of days in a given BS year/month (1-12), per the lookup table above. */
+export function daysInBSMonth(year: number, month: number): number {
+  const idx = year - BS_START_YEAR
+  if (idx < 0 || idx >= BS_MONTH_DAYS.length) throw new Error('BS year out of supported range')
+  return BS_MONTH_DAYS[idx][month - 1]
+}
+
+/** Min/max BS years covered by the lookup table. */
+export function getBSYearRange(): { min: number; max: number } {
+  return { min: BS_START_YEAR, max: BS_START_YEAR + BS_MONTH_DAYS.length - 1 }
+}
 
 const NEPALI_DIGITS = ['०', '१', '२', '३', '४', '५', '६', '७', '८', '९']
 

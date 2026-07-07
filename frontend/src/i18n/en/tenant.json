@@ -13,7 +13,9 @@
     "analytics": "Analytics",
     "accounting": "Accounting",
     "rolesPermissions": "Roles & Permissions",
-    "settings": "Settings"
+    "settings": "Settings",
+    "logoutSuccess": "Logged out successfully",
+    "operatorFallback": "Operator"
   },
   "fleet": {
     "title": "Fleet Management",
@@ -225,7 +227,18 @@
     "waypointStart": "Start",
     "waypointEnd": "End",
     "waypointPoint": "Point {{n}}",
-    "minPoints": "Add at least 2 points to draw a route"
+    "minPoints": "Add at least 2 points to draw a route",
+    "required": "Required",
+    "toasts": {
+      "created": "Route created!",
+      "createFailed": "Failed to create route",
+      "approved": "Route approved!",
+      "approveFailed": "Failed to approve route",
+      "updated": "Route updated.",
+      "updateFailed": "Failed to update route",
+      "deleted": "Route deleted.",
+      "deleteFailed": "Failed to delete route"
+    }
   },
   "stops": {
     "title": "Bus Stops",
@@ -273,7 +286,20 @@
     "routesAffected": "This stop is used by {{count}} route(s) — removing it may affect those routes.",
     "noMatch": "No stops match \"{{query}}\"",
     "noStopsFound": "No stops found. Add stops via \"Add Stop\".",
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "noStopOrRoute": "No stop placed or route selected",
+    "nameRequired": "Stop name is required",
+    "removeTooltip": "Remove this stop from route",
+    "toasts": {
+      "added": "Stop \"{{name}}\" added!",
+      "addFailed": "Failed to add stop",
+      "removed": "Stop removed from route.",
+      "removeFailed": "Failed to remove stop",
+      "updated": "Stop updated.",
+      "updateFailed": "Failed to update stop",
+      "deleted": "Stop deleted.",
+      "deleteFailed": "Failed to delete stop"
+    }
   },
   "dispatch": {
     "title": "Dispatcher Control Center",
@@ -416,7 +442,21 @@
     "completeTrip": "Complete Trip",
     "cancelTrip": "Cancel Trip",
     "cancellationReason": "Cancellation Reason",
-    "maxHoursWarning": "Drivers cannot work more than 8 hours per day (Nepal Labour Act 2074)"
+    "maxHoursWarning": "Drivers cannot work more than 8 hours per day (Nepal Labour Act 2074)",
+    "autoScheduleTitle": "Auto Schedule Trips",
+    "autoScheduleDesc": "Automatically generate trips from timetable slots. Max 8 hours/day per driver enforced (Nepal Labour Act 2074).",
+    "selectRoute": "— Select a route —",
+    "dispatchTime": "Dispatch Time",
+    "autoSchedule": "Auto Schedule",
+    "timetableName": "Timetable Name",
+    "routeId": "Route ID",
+    "effectiveFrom": "Effective From",
+    "effectiveUntil": "Effective Until",
+    "ongoing": "Ongoing",
+    "toasts": {
+      "autoScheduled": "Auto-scheduling triggered successfully!",
+      "autoScheduleFailed": "Auto-schedule failed"
+    }
   },
   "operations": {
     "title": "Today's Operations",
@@ -603,6 +643,31 @@
       "EMERGENCY": "Emergency",
       "TIRE": "Tire Change",
       "OIL": "Oil Change"
+    },
+    "vehicle": "Vehicle",
+    "repairDate": "Repair Date",
+    "view": "View",
+    "vehicleRegLabel": "Vehicle Registration Number",
+    "selectVehicle": "— Select vehicle —",
+    "serviceTypeLabels": {
+      "PERIODIC": "Routine / Periodic Service",
+      "REPAIR": "Repair",
+      "INSPECTION": "Inspection",
+      "EMERGENCY": "Emergency"
+    },
+    "serviceCenterName": "Service Center Name",
+    "serviceCenterLocation": "Service Center Location",
+    "serviceCenterContact": "Service Center Contact Number",
+    "totalCost": "Total Cost (NPR)",
+    "schedule": "Schedule",
+    "detailsTitle": "Maintenance Details",
+    "serviceCenter": "Service Center",
+    "location": "Location",
+    "contactNumber": "Contact Number",
+    "totalCostLabel": "Total Cost",
+    "recordId": "Record ID",
+    "toasts": {
+      "scheduled": "Maintenance scheduled!"
     }
   },
   "accounting": {
@@ -745,13 +810,84 @@
     "breakdown": "Breakdown Rate",
     "averageSpeed": "Average Speed",
     "topRoutes": "Top Performing Routes",
-    "peakHours": "Peak Hours"
+    "peakHours": "Peak Hours",
+    "noData": "No data recorded yet",
+    "updatedAgo": "Updated {{time}} · auto-refreshes every 30 s",
+    "justNow": "just now",
+    "secondsAgo": "{{n}}s ago",
+    "minutesAgo": "{{n}}m ago",
+    "loadingLiveData": "Loading live data…",
+    "refreshNow": "Refresh now",
+    "loadError": "Could not load analytics data. The server may be unavailable. Retrying automatically…",
+    "activeOfTotalVehicles": "{{active}} of {{total}} vehicles active",
+    "tripsCompletedToday": "{{count}} trips completed today",
+    "ticketsIssuedToday": "Tickets issued today",
+    "totalLabel": "Total: {{amount}}",
+    "todaysSummary": "Today's Summary",
+    "totalTrips": "Total Trips",
+    "completed": "Completed",
+    "cancelled": "Cancelled",
+    "activeVehicles": "Active Vehicles",
+    "breakdownRate": "Breakdown Rate",
+    "revenueToday": "Revenue Today",
+    "dailyTripsPassengers": "Daily Trips & Passengers",
+    "tripsToday": "(trips today)",
+    "trips": "Trips",
+    "passengers": "Passengers",
+    "revenueTrend": "Revenue Trend (NPR)",
+    "lastNDays": "Last {{n}} days",
+    "performanceSummary": "Performance Summary",
+    "totalDistance": "Total Distance"
   },
   "settings": {
     "title": "Settings",
     "subtitle": "Company profile and platform configuration",
     "companyProfile": "Company Profile",
-    "save": "Save Changes"
+    "save": "Save Changes",
+    "companyInformation": "Company Information",
+    "companyLogo": "Company Logo",
+    "logoUploaded": "Logo uploaded. Click the image to change.",
+    "logoUploadPrompt": "Upload your company logo. It will appear in the sidebar.",
+    "logoHint": "PNG, JPG or SVG · max 2 MB",
+    "changeLogo": "Change logo",
+    "uploadLogo": "Upload logo",
+    "discard": "Discard",
+    "logoTooLarge": "Logo must be under 2 MB",
+    "companyName": "Company Name",
+    "contactEmail": "Contact Email",
+    "contactPhone": "Contact Phone",
+    "registrationNo": "Registration No.",
+    "panTax": "PAN / Tax Number",
+    "address": "Address",
+    "displayPreferences": "Display Preferences",
+    "language": "Language",
+    "currentLanguage": "Current: {{language}}",
+    "calendar": "Calendar",
+    "currentCalendar": "Current: {{calendar}}",
+    "gregorian": "Gregorian (AD)",
+    "bikramSambat": "Bikram Sambat (BS)",
+    "changePassword": "Change Password",
+    "currentPassword": "Current Password",
+    "newPassword": "New Password",
+    "confirmPassword": "Confirm Password",
+    "updatePassword": "Update Password",
+    "notifications": "Notifications",
+    "notificationItems": {
+      "documentExpiry": "Document expiry alerts",
+      "lowStock": "Low stock alerts",
+      "tripCancellation": "Trip cancellation alerts",
+      "maintenanceReminders": "Maintenance reminders",
+      "revenueReports": "Revenue reports"
+    },
+    "validation": {
+      "minPassword": "Min 8 characters",
+      "passwordsMismatch": "Passwords do not match"
+    },
+    "toasts": {
+      "companyUpdated": "Company info updated!",
+      "companyUpdateFailed": "Failed to update company info",
+      "passwordUpdated": "Password updated!"
+    }
   },
   "roles": {
     "title": "Roles & Permissions",

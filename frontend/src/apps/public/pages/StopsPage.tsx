@@ -29,17 +29,17 @@ function StopCard({ stop }: { stop: Stop }) {
             <p className="text-sm text-gray-500">{stop.name_ne}</p>
           </div>
         </div>
-        {stop.is_terminal && <Badge variant="info">Terminal</Badge>}
+        {stop.is_terminal && <Badge variant="info">{t('stops.terminal')}</Badge>}
       </div>
 
-      <p className="text-xs text-gray-400 mb-4">{stop.district}{stop.ward_number && `, Ward ${stop.ward_number}`}</p>
+      <p className="text-xs text-gray-400 mb-4">{stop.district}{stop.ward_number && `, ${t('stops.ward')} ${stop.ward_number}`}</p>
 
       <button
         onClick={() => setShowArrivals(!showArrivals)}
         className="flex items-center gap-2 text-sm text-primary-600 hover:underline"
       >
         <Clock className="h-4 w-4" />
-        {showArrivals ? 'Hide' : 'Show'} {t('stops.arrivals')}
+        {showArrivals ? t('stops.hide') : t('stops.show')} {t('stops.arrivals')}
       </button>
 
       {showArrivals && (
@@ -85,10 +85,10 @@ export default function StopsPage() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
       <h1 className="text-3xl font-bold text-gray-900 mb-2">{t('stops.title')}</h1>
-      <p className="text-gray-500 mb-6">All bus stops in Kathmandu Valley</p>
+      <p className="text-gray-500 mb-6">{t('stops.subtitle')}</p>
 
       <Input
-        placeholder="Search stops..."
+        placeholder={t('stops.searchPlaceholder')}
         leftAddon={<Search className="h-4 w-4" />}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
