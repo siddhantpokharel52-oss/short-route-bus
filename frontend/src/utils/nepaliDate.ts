@@ -113,10 +113,6 @@ const AD_REF_DAY = 14
 
 /** Convert Gregorian (AD) date to Bikram Sambat (BS). */
 export function adToBS(adDate: Date): BSDate {
-  const adYear = adDate.getFullYear()
-  const adMonth = adDate.getMonth() + 1 // 1-based
-  const adDay = adDate.getDate()
-
   // Total days from reference
   const refDate = new Date(AD_REF_YEAR, AD_REF_MONTH - 1, AD_REF_DAY)
   const diffDays = Math.floor((adDate.getTime() - refDate.getTime()) / (1000 * 60 * 60 * 24))

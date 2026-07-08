@@ -90,6 +90,7 @@ const SelectField = forwardRef<
 })
 
 function SourceBadge({ source }: { source: string }) {
+  const { t } = useTranslation('tenant')
   if (source === 'POS') {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
@@ -100,7 +101,7 @@ function SourceBadge({ source }: { source: string }) {
   if (source === 'MOBILE') {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
-        <Smartphone className="h-3 w-3" /> Mobile
+        <Smartphone className="h-3 w-3" /> {t('ticketing.mobileSource')}
       </span>
     )
   }
@@ -132,7 +133,7 @@ function TicketReceipt({
         <div className="bg-primary-600 px-5 py-3 text-center text-white">
           <div className="flex items-center justify-center gap-2 text-sm font-bold">
             <Ticket className="h-4 w-4" />
-            <span>BUS TICKET</span>
+            <span>{t('ticketing.busTicket')}</span>
           </div>
           <p className="mt-0.5 font-mono text-lg font-extrabold tracking-wider">
             {ticket.ticket_uid}
@@ -143,14 +144,14 @@ function TicketReceipt({
         <div className="px-5 py-4">
           <div className="flex items-center gap-2">
             <div className="flex-1">
-              <p className="text-xs text-gray-400 uppercase tracking-wide">From</p>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">{t('ticketing.from')}</p>
               <p className="font-semibold text-gray-900 text-sm">
                 {ticket.from_stop_name ?? '—'}
               </p>
             </div>
             <ArrowRight className="h-5 w-5 flex-shrink-0 text-primary-400" />
             <div className="flex-1 text-right">
-              <p className="text-xs text-gray-400 uppercase tracking-wide">To</p>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">{t('ticketing.to')}</p>
               <p className="font-semibold text-gray-900 text-sm">
                 {ticket.to_stop_name ?? '—'}
               </p>
@@ -165,18 +166,18 @@ function TicketReceipt({
               </span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Price</span>
+              <span className="text-gray-500">{t('ticketing.price')}</span>
               <span className="font-bold text-primary-700 text-base">
                 {formatNPR(Number(ticket.fare_paid), language as 'en' | 'ne')}
               </span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Payment</span>
+              <span className="text-gray-500">{t('ticketing.payment')}</span>
               <span className="font-medium">{ticket.payment_method}</span>
             </div>
             {ticket.passenger_name && (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Passenger</span>
+                <span className="text-gray-500">{t('ticketing.passenger')}</span>
                 <span className="font-medium text-gray-800">{ticket.passenger_name}</span>
               </div>
             )}
@@ -191,14 +192,14 @@ function TicketReceipt({
               alt="Ticket QR"
               className="h-32 w-32 rounded-lg"
             />
-            <p className="text-xs text-gray-400">Scan to verify</p>
+            <p className="text-xs text-gray-400">{t('ticketing.scanToVerify')}</p>
           </div>
         )}
 
         {/* Footer */}
         <div className="bg-gray-50 px-5 py-2 text-center">
           <p className="text-xs text-gray-400">
-            Valid until today midnight &nbsp;•&nbsp; <span className="text-primary-600 font-medium">KVBMS</span>
+            {t('ticketing.validUntil')} &nbsp;•&nbsp; <span className="text-primary-600 font-medium">KVBMS</span>
           </p>
         </div>
       </div>
@@ -211,14 +212,14 @@ function TicketReceipt({
           leftIcon={<Printer className="h-4 w-4" />}
           onClick={() => window.print()}
         >
-          Print
+          {t('ticketing.print')}
         </Button>
         <Button
           className="flex-1"
           leftIcon={<RotateCcw className="h-4 w-4" />}
           onClick={onNewTicket}
         >
-          New Ticket
+          {t('ticketing.newTicket')}
         </Button>
       </div>
     </div>
@@ -277,7 +278,7 @@ export default function TicketingPage() {
   // ── Form ─────────────────────────────────────────────────────────────────
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<PosForm>({
     defaultValues: { payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '' },
-    mode: 'onChange',        // validate on every change — errors clear as soon as user fixes them
+    mode: 'onChange',
     reValidateMode: 'onChange',
   })
 
@@ -289,8 +290,6 @@ export default function TicketingPage() {
     setValue('to_stop_id', '')
   }, [watchedRouteId, setValue])
 
-  // Fetch stops for the selected route from GET /platform/routes/{id}/stops/
-  // That action uses api_response() → response body: { success, data: [...], meta }
   const {
     data: routeStops = [],
     isLoading: stopsLoading,
@@ -303,7 +302,7 @@ export default function TicketingPage() {
     },
     enabled: !!watchedRouteId,
     staleTime: 5 * 60 * 1000,
-    retry: 0,   // don't retry on 404 (endpoint may need server restart)
+    retry: 0,
   })
 
   const issueMutation = useMutation({
@@ -325,7 +324,7 @@ export default function TicketingPage() {
     onError: (err: unknown) => {
       const e = err as { response?: { status?: number; data?: { message?: string; errors?: Record<string, unknown> } } }
       if (e?.response?.status === 403) {
-        toast.error('You do not have permission to issue tickets')
+        toast.error(t('ticketing.noPermission'))
         return
       }
       const res = e?.response?.data
@@ -334,7 +333,7 @@ export default function TicketingPage() {
         const val = res.errors[firstKey]
         toast.error(`${firstKey}: ${Array.isArray(val) ? String(val[0]) : String(val)}`)
       } else {
-        toast.error(res?.message || (err as Error).message || 'Failed to issue ticket')
+        toast.error(res?.message || (err as Error).message || t('ticketing.issueError'))
       }
     },
   })
@@ -344,7 +343,7 @@ export default function TicketingPage() {
       const result = await publicService.verifyTicket(verifyTicketNum)
       setVerifyResult(result)
     } catch {
-      toast.error('Ticket not found or already used')
+      toast.error(t('ticketing.ticketNotFound'))
       setVerifyResult(null)
     }
   }
@@ -353,6 +352,15 @@ export default function TicketingPage() {
     setShowPos(false)
     setIssuedTicket(null)
     reset({ payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '', fare_paid: '', passenger_name: '' })
+  }
+
+  // helper: stop dropdown placeholder based on loading/error state
+  const stopPlaceholder = () => {
+    if (!watchedRouteId) return t('ticketing.selectStop')
+    if (stopsLoading) return t('ticketing.loadingStops')
+    if (stopsError) return t('ticketing.stopsError')
+    if (routeStops.length === 0) return t('ticketing.noStops')
+    return t('ticketing.selectStop')
   }
 
   // ── Columns ───────────────────────────────────────────────────────────────
@@ -422,19 +430,19 @@ export default function TicketingPage() {
     },
     {
       key: 'status',
-      header: t('common.status'),
+      header: t('common:common.status'),
       render: (tk) => <Badge variant={statusVariant(tk.status)} dot>{tk.status}</Badge>,
     },
     {
       key: 'qr_code',
-      header: 'QR',
+      header: t('ticketing.qrCode'),
       render: (tk) => tk.qr_code
         ? (
           <button
             onClick={() => setSelectedTicket(tk)}
             className="flex items-center gap-1 text-xs text-primary-600 hover:underline"
           >
-            <QrCode className="h-3.5 w-3.5" />{t('common.view')}
+            <QrCode className="h-3.5 w-3.5" />{t('common:common.view')}
           </button>
         )
         : <span className="text-gray-300">—</span>,
@@ -484,10 +492,10 @@ export default function TicketingPage() {
         ))}
       </div>
 
-      {/* Search + source filter */}
+      {/* Search */}
       <div className="flex flex-wrap items-center gap-3">
         <Input
-          placeholder="Search ticket ID or passenger…"
+          placeholder={t('ticketing.searchPlaceholder')}
           leftAddon={<Search className="h-4 w-4" />}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -516,7 +524,7 @@ export default function TicketingPage() {
       <Modal
         open={showPos}
         onClose={handleClosePOS}
-        title={issuedTicket ? '🎫 Ticket Issued' : 'Issue Ticket — POS'}
+        title={issuedTicket ? `🎫 ${t('ticketing.ticketIssued')}` : t('ticketing.issueTicketTitle')}
         size="md"
       >
         {issuedTicket ? (
@@ -529,13 +537,13 @@ export default function TicketingPage() {
             onSubmit={handleSubmit((d) => issueMutation.mutate(d))}
             className="space-y-5 p-6"
           >
-            {/* Step 1 — Route */}
+            {/* Route */}
             <SelectField
-              label="Route"
+              label={t('ticketing.route')}
               required
-              {...register('route_id', { required: 'Select a route' })}
+              {...register('route_id', { required: t('ticketing.routeRequired') })}
             >
-              <option value="">— Select route —</option>
+              <option value="">{t('ticketing.selectRoute')}</option>
               {routes.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.route_code} — {r.name_en}
@@ -546,38 +554,26 @@ export default function TicketingPage() {
               <p className="text-xs text-red-500 -mt-3">{errors.route_id.message}</p>
             )}
 
-            {/* Step 2 — From / To (only active once a route is chosen) */}
+            {/* From / To stops */}
             <div className="grid grid-cols-2 gap-4">
               <SelectField
-                label="From (Bus Stop)"
+                label={t('ticketing.fromBusStop')}
                 required
                 disabled={!watchedRouteId || stopsLoading}
-                {...register('from_stop_id', { required: 'Select origin stop' })}
+                {...register('from_stop_id', { required: t('ticketing.originRequired') })}
               >
-                <option value="">
-                  {!watchedRouteId ? '— Select stop —'
-                    : stopsLoading ? 'Loading stops…'
-                    : stopsError ? '⚠ Could not load stops'
-                    : routeStops.length === 0 ? '— No stops on this route —'
-                    : '— Select stop —'}
-                </option>
+                <option value="">{stopPlaceholder()}</option>
                 {routeStops.map((s) => (
                   <option key={s.route_stop_id} value={s.stop_id}>{s.name_en}</option>
                 ))}
               </SelectField>
               <SelectField
-                label="To (Bus Stop)"
+                label={t('ticketing.toBusStop')}
                 required
                 disabled={!watchedRouteId || stopsLoading}
-                {...register('to_stop_id', { required: 'Select destination stop' })}
+                {...register('to_stop_id', { required: t('ticketing.destinationRequired') })}
               >
-                <option value="">
-                  {!watchedRouteId ? '— Select stop —'
-                    : stopsLoading ? 'Loading stops…'
-                    : stopsError ? '⚠ Could not load stops'
-                    : routeStops.length === 0 ? '— No stops on this route —'
-                    : '— Select stop —'}
-                </option>
+                <option value="">{stopPlaceholder()}</option>
                 {routeStops.map((s) => (
                   <option key={s.route_stop_id} value={s.stop_id}>{s.name_en}</option>
                 ))}
@@ -591,7 +587,7 @@ export default function TicketingPage() {
 
             {/* Price */}
             <Input
-              label="Price (NPR)"
+              label={t('ticketing.priceNPR')}
               type="number"
               min="1"
               step="0.01"
@@ -599,24 +595,24 @@ export default function TicketingPage() {
               placeholder="e.g. 35"
               error={errors.fare_paid?.message}
               {...register('fare_paid', {
-                required: 'Price is required',
-                min: { value: 1, message: 'Price must be at least NPR 1' },
+                required: t('ticketing.priceRequired'),
+                min: { value: 1, message: t('ticketing.priceMin') },
               })}
             />
 
             {/* Payment method */}
-            <SelectField label="Payment Method" required {...register('payment_method')}>
-              <option value="CASH">Cash</option>
-              <option value="ESEWA">eSewa</option>
-              <option value="KHALTI">Khalti</option>
-              <option value="FONEPAY">Fonepay</option>
-              <option value="SMART_CARD">Smart Card</option>
-              <option value="CONNECTIPS">ConnectIPS</option>
+            <SelectField label={t('ticketing.paymentMethod')} required {...register('payment_method')}>
+              <option value="CASH">{t('ticketing.paymentMethods.CASH')}</option>
+              <option value="ESEWA">{t('ticketing.paymentMethods.ESEWA')}</option>
+              <option value="KHALTI">{t('ticketing.paymentMethods.KHALTI')}</option>
+              <option value="FONEPAY">{t('ticketing.paymentMethods.FONEPAY')}</option>
+              <option value="SMART_CARD">{t('ticketing.paymentMethods.SMART_CARD')}</option>
+              <option value="CONNECTIPS">{t('ticketing.paymentMethods.CONNECTIPS')}</option>
             </SelectField>
 
             {/* Passenger Name (optional) */}
             <Input
-              label="Passenger Name (Optional)"
+              label={t('ticketing.passengerOptional')}
               placeholder="e.g. Hari Prasad Adhikari"
               {...register('passenger_name')}
             />
@@ -625,22 +621,21 @@ export default function TicketingPage() {
             <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-2.5 flex items-center gap-2">
               <Monitor className="h-4 w-4 text-blue-500 flex-shrink-0" />
               <p className="text-xs text-blue-700">
-                This ticket will be tagged as <strong>POS Machine</strong> issued.
-                Tickets from the mobile app are tagged automatically.
+                {t('ticketing.posNote')}
               </p>
             </div>
 
             {/* Actions */}
             <div className="flex justify-end gap-3 border-t pt-4">
               <Button variant="secondary" type="button" onClick={handleClosePOS}>
-                Cancel
+                {t('common:common.cancel')}
               </Button>
               <Button
                 type="submit"
                 loading={issueMutation.isPending}
                 leftIcon={<Ticket className="h-4 w-4" />}
               >
-                Issue Ticket
+                {t('ticketing.issueTicket')}
               </Button>
             </div>
           </form>
@@ -651,19 +646,19 @@ export default function TicketingPage() {
       <Modal
         open={showVerify}
         onClose={() => { setShowVerify(false); setVerifyResult(null); setVerifyTicketNum('') }}
-        title="Verify Ticket"
+        title={t('ticketing.verifyTicket')}
         size="sm"
       >
         <div className="space-y-4 p-6">
           <div className="flex gap-2">
             <Input
-              placeholder="TKT-xxxxxxxxxxxx"
+              placeholder={t('ticketing.verifyPlaceholder')}
               value={verifyTicketNum}
               onChange={(e) => setVerifyTicketNum(e.target.value.toUpperCase())}
               className="flex-1 font-mono"
             />
             <Button onClick={handleVerify} disabled={!verifyTicketNum}>
-              Verify
+              {t('ticketing.verifyButton')}
             </Button>
           </div>
           {verifyResult && (
@@ -685,25 +680,27 @@ export default function TicketingPage() {
                     verifyResult.is_valid ? 'text-green-700' : 'text-red-700'
                   }`}
                 >
-                  {verifyResult.is_valid ? 'VALID — Ticket marked as used' : `INVALID — ${verifyResult.status}`}
+                  {verifyResult.is_valid
+                    ? t('ticketing.validResult')
+                    : `${t('ticketing.invalidResult')} — ${verifyResult.status}`}
                 </span>
               </div>
               {verifyResult.is_valid && (
                 <dl className="text-sm space-y-1.5">
                   {verifyResult.passenger_name && (
                     <div className="flex justify-between">
-                      <dt className="text-gray-500">Passenger</dt>
+                      <dt className="text-gray-500">{t('ticketing.passenger_label')}</dt>
                       <dd className="font-medium">{verifyResult.passenger_name}</dd>
                     </div>
                   )}
                   {verifyResult.route && (
                     <div className="flex justify-between">
-                      <dt className="text-gray-500">Route</dt>
+                      <dt className="text-gray-500">{t('ticketing.route_label')}</dt>
                       <dd>{verifyResult.route}</dd>
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <dt className="text-gray-500">Fare</dt>
+                    <dt className="text-gray-500">{t('ticketing.fare_label')}</dt>
                     <dd className="font-semibold">{formatNPR(verifyResult.fare, 'en')}</dd>
                   </div>
                 </dl>
@@ -717,14 +714,14 @@ export default function TicketingPage() {
       <Modal
         open={!!selectedTicket}
         onClose={() => setSelectedTicket(null)}
-        title="Ticket QR Code"
+        title={t('ticketing.ticketQR')}
         size="sm"
       >
         {selectedTicket?.qr_code && (
           <div className="flex flex-col items-center gap-3 p-6">
             <img
               src={`data:image/png;base64,${selectedTicket.qr_code}`}
-              alt="Ticket QR Code"
+              alt={t('ticketing.ticketQR')}
               className="h-44 w-44 rounded-xl border border-gray-100 shadow"
             />
             <code className="font-mono text-sm font-bold text-gray-700">

@@ -1,8 +1,11 @@
+import re
 from rest_framework import serializers
 from django.conf import settings
 from django.utils import timezone
 from django.contrib.auth.password_validation import validate_password
 from .models import Tenant, Domain, TenantSubscription, TenantDocument
+
+_SUBDOMAIN_RE = re.compile(r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$')
 
 
 class DomainSerializer(serializers.ModelSerializer):
@@ -28,6 +31,19 @@ class TenantSerializer(serializers.ModelSerializer):
             "admin_email", "admin_password", "admin_full_name",
         ]
         read_only_fields = ["id", "schema_name", "status", "created_at", "updated_at"]
+
+    def validate_subdomain(self, value):
+        value = value.strip().lower()
+        if not _SUBDOMAIN_RE.match(value):
+            raise serializers.ValidationError(
+                "Subdomain must use only lowercase letters, numbers, and hyphens "
+                "(no dots, ports, spaces, or special characters). "
+                "Example: 'top' or 'sajha-yatayat'."
+            )
+        schema_name = value.replace("-", "_")
+        if Tenant.objects.filter(schema_name=schema_name).exists():
+            raise serializers.ValidationError(f"Subdomain '{value}' is already taken.")
+        return value
 
     def validate(self, data):
         admin_email = data.get("admin_email", "").strip()

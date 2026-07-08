@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Plus, Search, Check, Ban, ExternalLink, Copy, KeyRound } from 'lucide-react'
@@ -17,6 +17,7 @@ import { useForm } from 'react-hook-form'
 interface CreateTenantForm {
   name: string
   subdomain: string
+  plan_type: 'BASIC' | 'STANDARD' | 'ENTERPRISE'
   contact_phone: string
   contact_email: string
   address: string
@@ -71,7 +72,20 @@ export default function TenantsPage() {
     onError: (err: Error) => toast.error(err.message),
   })
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<CreateTenantForm>()
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<CreateTenantForm>({
+    defaultValues: { plan_type: 'BASIC' },
+  })
+
+  const subdomainValue = watch('subdomain') ?? ''
+  const baseDomain = import.meta.env.VITE_BASE_DOMAIN || 'localhost'
+  const port = window.location.port ? `:${window.location.port}` : ''
+  const previewLoginUrl = subdomainValue.trim()
+    ? `${window.location.protocol}//${subdomainValue.trim().toLowerCase()}.${baseDomain}${port}/login`
+    : null
+
+  const sanitizeSubdomain = useCallback((value: string) =>
+    value.toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/^-+|-+$/g, ''),
+  [])
 
   const createMutation = useMutation({
     mutationFn: (payload: CreateTenantForm) => tenantService.create(payload),
@@ -212,9 +226,42 @@ export default function TenantsPage() {
         <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-4 p-6">
           <Input label={t('platform:tenants.createModal.companyName')} required error={errors.name?.message}
             {...register('name', { required: t('platform:tenants.createModal.required') })} />
-          <Input label={t('platform:tenants.subdomain')} required placeholder={t('platform:tenants.createModal.subdomainHint')}
-            error={errors.subdomain?.message}
-            {...register('subdomain', { required: t('platform:tenants.createModal.required') })} />
+          <div>
+            <Input
+              label={t('platform:tenants.subdomain')}
+              required
+              placeholder="top"
+              error={errors.subdomain?.message}
+              {...register('subdomain', {
+                required: t('platform:tenants.createModal.required'),
+                pattern: {
+                  value: /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/,
+                  message: 'Only lowercase letters, numbers, and hyphens — no dots or ports.',
+                },
+                onChange: (e) => {
+                  e.target.value = sanitizeSubdomain(e.target.value)
+                },
+              })}
+            />
+            {previewLoginUrl && !errors.subdomain && (
+              <p className="mt-1.5 text-xs text-gray-500">
+                Login URL:{' '}
+                <span className="font-mono font-medium text-primary-600">{previewLoginUrl}</span>
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Plan Type</label>
+            <select
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+              {...register('plan_type', { required: true })}
+            >
+              <option value="BASIC">Basic</option>
+              <option value="STANDARD">Standard</option>
+              <option value="ENTERPRISE">Enterprise</option>
+            </select>
+          </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input
@@ -274,13 +321,33 @@ export default function TenantsPage() {
               <p className="mb-3 text-sm font-semibold text-green-800">
                 {t('platform:tenants.credentialsModal.createdSuccess', { name: newTenantCreds.name })}
               </p>
-              <p className="mb-4 text-xs text-green-600">
-                {t('platform:tenants.credentialsModal.shareNote')}{' '}
-                <strong>
-                  {(newTenantCreds.domains?.find((d) => d.is_primary) ?? newTenantCreds.domains?.[0])?.domain}
-                  {window.location.port ? `:${window.location.port}` : ''}/login
-                </strong>
-              </p>
+              {(() => {
+                const domain = (newTenantCreds.domains?.find((d) => d.is_primary) ?? newTenantCreds.domains?.[0])?.domain ?? ''
+                const port = window.location.port ? `:${window.location.port}` : ''
+                const loginUrl = `${window.location.protocol}//${domain}${port}/login`
+                return (
+                  <div className="mb-4">
+                    <p className="mb-1 text-xs text-green-600">{t('platform:tenants.credentialsModal.shareNote')}</p>
+                    <div className="flex items-center gap-2 rounded bg-green-100 px-3 py-2">
+                      <a
+                        href={loginUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex-1 break-all font-mono text-xs font-semibold text-green-800 underline"
+                      >
+                        {loginUrl}
+                      </a>
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(loginUrl); toast.success(t('platform:tenants.toasts.copied')) }}
+                        className="shrink-0 text-green-600 hover:text-green-800"
+                        title="Copy URL"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )
+              })()}
               <div className="space-y-2 rounded-lg bg-white p-3 font-mono text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">{t('platform:tenants.credentialsModal.email')}</span>

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import {
   CreditCard, Plus, Search, Receipt, History,
-  CheckCircle2, Clock, RefreshCw, Ban, Play, Settings2,
+  CheckCircle2, RefreshCw, Ban, Play, Settings2,
   DollarSign, Percent,
 } from 'lucide-react'
 import { Button } from '@components/shared/Button'
@@ -188,7 +188,7 @@ function SubscriptionsTab() {
   })
 
   const genInvoiceMutation = useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: Record<string, string> }) =>
+    mutationFn: ({ id, payload }: { id: string; payload: { period_start: string; period_end: string; tax_rate?: string; late_fee?: string } }) =>
       billingService.subscriptions.generateInvoice(id, payload),
     onSuccess: (inv) => {
       toast.success(t('platform:billing.toasts.invoiceGenerated', { number: inv.invoice_number }))
@@ -395,7 +395,7 @@ function SubscriptionsTab() {
       <Modal open={!!showGenInvoice} onClose={() => { setShowGenInvoice(null); resetInv() }}
         title={t('platform:billing.genInvoiceModal.title', { name: showGenInvoice?.tenant_name })} size="sm">
         <form onSubmit={handleInv((d) =>
-          genInvoiceMutation.mutate({ id: showGenInvoice!.id, payload: d as Record<string, string> })
+          genInvoiceMutation.mutate({ id: showGenInvoice!.id, payload: d })
         )} className="space-y-4 p-6">
           <div className="grid grid-cols-2 gap-4">
             <Controller

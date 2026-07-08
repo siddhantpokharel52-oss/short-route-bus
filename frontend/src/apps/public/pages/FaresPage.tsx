@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { ArrowRight, DollarSign } from 'lucide-react'
 import { Button } from '@components/shared/Button'
-import publicService, { Stop, FareInfo } from '@services/publicService'
+import publicService, { Stop } from '@services/publicService'
 import { formatNPR } from '@utils/nepaliDate'
 import { useUiStore } from '@store/uiStore'
 

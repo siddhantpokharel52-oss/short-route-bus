@@ -40,7 +40,6 @@ export default function DashboardPage() {
   })
 
   const inProgressTrips = todayTrips?.filter((t: Trip) => t.status === 'IN_PROGRESS') ?? []
-  const scheduledTrips = todayTrips?.filter((t: Trip) => t.status === 'SCHEDULED') ?? []
 
   return (
     <div className="space-y-6">

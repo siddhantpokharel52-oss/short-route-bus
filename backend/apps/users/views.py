@@ -16,19 +16,59 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
 
     def post(self, request, *args, **kwargs):
+        tenant_slug = request.headers.get("X-Tenant-Slug", "").strip().lower()
         email = request.data.get("email", "").lower()
+        now_iso = timezone.now().isoformat()
+
         try:
             user = User.objects.get(email=email)
+
             if user.is_locked:
                 return Response({
                     "success": False,
                     "data": None,
                     "message": f"Account locked until {user.locked_until.strftime('%Y-%m-%d %H:%M UTC')}.",
                     "errors": None,
-                    "meta": {"timestamp": timezone.now().isoformat()},
+                    "meta": {"timestamp": now_iso},
                 }, status=status.HTTP_403_FORBIDDEN)
+
+            # ── Portal context enforcement ──────────────────────────────────
+            if tenant_slug:
+                # Request arrived from a tenant subdomain.
+                # Only tenant users whose tenant_schema matches the slug may log in.
+                if user.is_platform_role:
+                    return Response({
+                        "success": False,
+                        "data": None,
+                        "message": "Platform administrators must log in from the main portal.",
+                        "errors": {"detail": "Please use the main portal login page."},
+                        "meta": {"timestamp": now_iso},
+                    }, status=status.HTTP_403_FORBIDDEN)
+
+                if (user.tenant_schema or "").lower() != tenant_slug:
+                    return Response({
+                        "success": False,
+                        "data": None,
+                        "message": "You do not belong to this company portal.",
+                        "errors": {"detail": "Please log in from your own company URL."},
+                        "meta": {"timestamp": now_iso},
+                    }, status=status.HTTP_403_FORBIDDEN)
+            else:
+                # Request arrived from the main (platform) domain.
+                # Tenant operational roles must use their company subdomain.
+                PUBLIC_ROLES = {User.Role.PASSENGER, User.Role.STUDENT, User.Role.TOURIST}
+                if not user.is_platform_role and user.role not in PUBLIC_ROLES:
+                    tenant = user.tenant_schema or "your-company"
+                    return Response({
+                        "success": False,
+                        "data": None,
+                        "message": "Please log in from your company portal.",
+                        "errors": {"detail": f"Use {tenant}.citybus.com.np/login to sign in."},
+                        "meta": {"timestamp": now_iso},
+                    }, status=status.HTTP_403_FORBIDDEN)
+
         except User.DoesNotExist:
-            pass
+            pass  # fall through to serializer which returns 401
 
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
@@ -42,7 +82,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                 "data": None,
                 "message": "Invalid credentials.",
                 "errors": serializer.errors,
-                "meta": {"timestamp": timezone.now().isoformat()},
+                "meta": {"timestamp": now_iso},
             }, status=status.HTTP_401_UNAUTHORIZED)
 
         return Response({
@@ -50,7 +90,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             "data": serializer.validated_data,
             "message": "Login successful.",
             "errors": None,
-            "meta": {"timestamp": timezone.now().isoformat()},
+            "meta": {"timestamp": now_iso},
         })
 
 

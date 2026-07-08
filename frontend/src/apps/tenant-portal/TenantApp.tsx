@@ -17,22 +17,6 @@ import DispatchPage from './pages/DispatchPage'
 import OperationsDashboardPage from './pages/OperationsDashboardPage'
 import RolesPermissionsPage from './pages/RolesPermissionsPage'
 
-// Role-based page guards
-const ROLE_ACCESS: Record<string, string[]> = {
-  '/tenant/fleet': ['COMPANY_ADMIN', 'COMPANY_MANAGER', 'DISPATCHER'],
-  '/tenant/routes': ['COMPANY_ADMIN', 'COMPANY_MANAGER', 'DISPATCHER'],
-  '/tenant/stops': ['COMPANY_ADMIN', 'COMPANY_MANAGER', 'DISPATCHER'],
-  '/tenant/drivers': ['COMPANY_ADMIN', 'COMPANY_MANAGER', 'HR_OFFICER', 'DISPATCHER'],
-  '/tenant/conductors': ['COMPANY_ADMIN', 'COMPANY_MANAGER', 'HR_OFFICER', 'DISPATCHER'],
-  '/tenant/scheduling': ['COMPANY_ADMIN', 'COMPANY_MANAGER', 'DISPATCHER'],
-  '/tenant/live-tracking': ['COMPANY_ADMIN', 'COMPANY_MANAGER', 'DISPATCHER'],
-  '/tenant/operations': ['COMPANY_ADMIN', 'COMPANY_MANAGER', 'DISPATCHER'],
-  '/tenant/dispatch': ['COMPANY_ADMIN', 'COMPANY_MANAGER', 'DISPATCHER'],
-  '/tenant/ticketing': ['COMPANY_ADMIN', 'COMPANY_MANAGER', 'CONDUCTOR', 'FINANCE_OFFICER'],
-  '/tenant/maintenance': ['COMPANY_ADMIN', 'MAINTENANCE_OFFICER'],
-  '/tenant/analytics': ['COMPANY_ADMIN', 'COMPANY_MANAGER'],
-  '/tenant/accounting': ['COMPANY_ADMIN', 'COMPANY_MANAGER', 'FINANCE_OFFICER'],
-}
 
 export default function TenantApp() {
   return (

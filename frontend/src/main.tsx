@@ -12,7 +12,11 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30 * 1000,
-      retry: 2,
+      retry: (failureCount, error: unknown) => {
+        const status = (error as { response?: { status?: number } })?.response?.status
+        if (status !== undefined && status >= 400 && status < 500) return false
+        return failureCount < 2
+      },
       refetchOnWindowFocus: false,
     },
     mutations: {

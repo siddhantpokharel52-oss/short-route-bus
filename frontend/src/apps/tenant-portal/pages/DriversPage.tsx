@@ -46,7 +46,6 @@ interface Driver {
 }
 
 interface DriverForm {
-  // Personal
   full_name_en: string
   full_name_ne: string
   gender: string
@@ -56,13 +55,11 @@ interface DriverForm {
   address: string
   emergency_contact_name: string
   emergency_contact_number: string
-  // License
   license_no: string
   license_category: string
   license_issue_date: string
   license_expiry: string
   license_issuing_authority: string
-  // Employment
   employment_type: string
   date_of_joining: string
   experience_years: string
@@ -70,11 +67,9 @@ interface DriverForm {
   route_id: string
   shift: string
   bus_id: string
-  // Medical
   blood_group: string
   medical_conditions: string
   last_medical_checkup_date: string
-  // Salary
   basic_salary: string
 }
 
@@ -109,11 +104,14 @@ function SelectField({
 }
 
 // ─── Detail row helper ────────────────────────────────────────────────────────
-function DetailRow({ label, value }: { label: string; value?: string | number | null }) {
+function DetailRow({ label, value, dateValue }: { label: string; value?: string | number | null; dateValue?: string | null }) {
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-xs font-medium uppercase tracking-wide text-gray-400">{label}</span>
-      <span className="text-sm text-gray-900">{value ?? '—'}</span>
+      {dateValue
+        ? <DateDisplay date={dateValue} className="text-sm text-gray-900" />
+        : <span className="text-sm text-gray-900">{value ?? '—'}</span>
+      }
     </div>
   )
 }
@@ -128,12 +126,10 @@ export default function DriversPage() {
   const [allowances, setAllowances] = useState<{ title: string; amount: string }[]>([])
   const pagination = usePagination(totalCount)
 
-  // ── CRUD targets ─────────────────────────────────────────────────────────────
   const [viewTarget, setViewTarget] = useState<Driver | null>(null)
   const [editTarget, setEditTarget] = useState<Driver | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Driver | null>(null)
 
-  // ── Edit form state ───────────────────────────────────────────────────────────
   const [editStatus, setEditStatus] = useState('')
   const [editShift, setEditShift] = useState('')
   const [editPhone, setEditPhone] = useState('')
@@ -157,7 +153,6 @@ export default function DriversPage() {
     setEditEmploymentType(editTarget.employment_type ?? '')
   }, [editTarget])
 
-  // Driver list
   const { data, isLoading } = useQuery({
     queryKey: ['drivers', pagination.page, search],
     queryFn: async () => {
@@ -169,7 +164,6 @@ export default function DriversPage() {
     },
   })
 
-  // Vehicles dropdown
   const { data: vehicles = [] } = useQuery({
     queryKey: ['vehicles-dropdown'],
     queryFn: async () => {
@@ -199,7 +193,7 @@ export default function DriversPage() {
           .map((a) => ({ title: a.title.trim(), amount: parseFloat(a.amount) || 0 })),
       }),
     onSuccess: () => {
-      toast.success('Driver added successfully!')
+      toast.success(t('staff.drivers.toast.created'))
       setShowCreate(false)
       reset()
       setAllowances([])
@@ -214,7 +208,7 @@ export default function DriversPage() {
         const val = res.errors[firstKey]
         toast.error(`${firstKey}: ${Array.isArray(val) ? String(val[0]) : String(val)}`)
       } else {
-        toast.error(res?.message || (err as Error).message || 'Failed to add driver')
+        toast.error(res?.message || (err as Error).message || t('staff.drivers.toast.createFailed'))
       }
     },
   })
@@ -224,13 +218,13 @@ export default function DriversPage() {
     mutationFn: (payload: Partial<Driver>) =>
       apiClient.patch(`/operator/drivers/${editTarget!.id}/`, payload),
     onSuccess: () => {
-      toast.success('Driver updated successfully!')
+      toast.success(t('staff.drivers.toast.updated'))
       setEditTarget(null)
       qc.invalidateQueries({ queryKey: ['drivers'] })
     },
     onError: (err: unknown) => {
       const e = err as { response?: { data?: { message?: string } } }
-      toast.error(e?.response?.data?.message || 'Failed to update driver')
+      toast.error(e?.response?.data?.message || t('staff.drivers.toast.updateFailed'))
     },
   })
 
@@ -238,13 +232,13 @@ export default function DriversPage() {
   const deleteDriverMutation = useMutation({
     mutationFn: (id: string) => apiClient.delete(`/operator/drivers/${id}/`),
     onSuccess: () => {
-      toast.success('Driver removed successfully.')
+      toast.success(t('staff.drivers.toast.deleted'))
       setDeleteTarget(null)
       qc.invalidateQueries({ queryKey: ['drivers'] })
     },
     onError: (err: unknown) => {
       const e = err as { response?: { data?: { message?: string } } }
-      toast.error(e?.response?.data?.message || 'Failed to delete driver')
+      toast.error(e?.response?.data?.message || t('staff.drivers.toast.deleteFailed'))
     },
   })
 
@@ -266,7 +260,7 @@ export default function DriversPage() {
   const columns: Column<Driver>[] = [
     {
       key: 'employee_id',
-      header: 'Employee ID',
+      header: t('staff.drivers.table.employeeId'),
       render: (d) => (
         <code className="rounded bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700">
           {d.employee_id}
@@ -275,7 +269,7 @@ export default function DriversPage() {
     },
     {
       key: 'full_name_en',
-      header: 'Driver',
+      header: t('staff.drivers.table.driver'),
       render: (d) => (
         <div>
           <p className="font-medium text-gray-900">{d.full_name_en}</p>
@@ -283,18 +277,18 @@ export default function DriversPage() {
         </div>
       ),
     },
-    { key: 'gender', header: 'Gender', render: (d) => d.gender || '—' },
+    { key: 'gender', header: t('staff.drivers.table.gender'), render: (d) => d.gender || '—' },
     {
       key: 'license_no',
-      header: 'License No.',
+      header: t('staff.drivers.table.licenseNo'),
       render: (d) => (
         <code className="rounded bg-gray-100 px-2 py-0.5 text-xs dark:bg-gray-700">{d.license_no}</code>
       ),
     },
-    { key: 'license_category', header: 'Class' },
+    { key: 'license_category', header: t('staff.drivers.table.class') },
     {
       key: 'license_expiry',
-      header: 'License Expiry',
+      header: t('staff.drivers.table.licenseExpiry'),
       render: (d) => {
         const daysLeft = Math.floor((new Date(d.license_expiry).getTime() - Date.now()) / 86400000)
         return (
@@ -307,39 +301,36 @@ export default function DriversPage() {
     },
     {
       key: 'experience_years',
-      header: 'Experience',
-      render: (d) => `${d.experience_years ?? 0} yrs`,
+      header: t('staff.drivers.table.experience'),
+      render: (d) => t('staff.drivers.yrs', { count: d.experience_years ?? 0 }),
     },
-    { key: 'shift', header: 'Shift', render: (d) => d.shift || '—' },
-    { key: 'blood_group', header: 'Blood', render: (d) => d.blood_group || '—' },
+    { key: 'shift', header: t('staff.drivers.table.shift'), render: (d) => d.shift || '—' },
+    { key: 'blood_group', header: t('staff.drivers.table.blood'), render: (d) => d.blood_group || '—' },
     {
       key: 'status',
-      header: 'Status',
+      header: t('staff.drivers.table.status'),
       render: (d) => <Badge variant={statusVariant(d.status)} dot>{d.status}</Badge>,
     },
     {
       key: 'id',
-      header: 'Actions',
+      header: t('staff.drivers.table.actions'),
       render: (d) => (
         <div className="flex items-center gap-1">
           <button
             onClick={() => setViewTarget(d)}
             className="rounded-lg p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-colors"
-            title="View"
           >
             <Eye className="h-4 w-4" />
           </button>
           <button
             onClick={() => setEditTarget(d)}
             className="rounded-lg p-1.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
-            title="Edit"
           >
             <Pencil className="h-4 w-4" />
           </button>
           <button
             onClick={() => setDeleteTarget(d)}
             className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-            title="Delete"
           >
             <Trash2 className="h-4 w-4" />
           </button>
@@ -352,16 +343,16 @@ export default function DriversPage() {
     <div className="space-y-6">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Drivers</h1>
-          <p className="page-subtitle">Manage all registered bus drivers</p>
+          <h1 className="page-title">{t('staff.drivers.title')}</h1>
+          <p className="page-subtitle">{t('staff.drivers.subtitle')}</p>
         </div>
         <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setShowCreate(true)}>
-          Add Driver
+          {t('staff.drivers.addDriver')}
         </Button>
       </div>
 
       <Input
-        placeholder="Search by name, license number…"
+        placeholder={t('staff.drivers.searchPlaceholder')}
         leftAddon={<Search className="h-4 w-4" />}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
@@ -383,64 +374,64 @@ export default function DriversPage() {
       <Modal
         open={!!viewTarget}
         onClose={() => setViewTarget(null)}
-        title={`Driver — ${viewTarget?.employee_id ?? ''}`}
+        title={`${t('staff.drivers.title')} — ${viewTarget?.employee_id ?? ''}`}
         size="lg"
       >
         {viewTarget && (
           <div className="space-y-6 p-6">
-            <Section icon={User} title="Personal Information" />
+            <Section icon={User} title={t('staff.drivers.sections.personal')} />
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <DetailRow label="Full Name (EN)" value={viewTarget.full_name_en} />
-              <DetailRow label="Full Name (NE)" value={viewTarget.full_name_ne} />
-              <DetailRow label="Gender" value={viewTarget.gender} />
-              <DetailRow label="Date of Birth" value={viewTarget.dob} />
-              <DetailRow label="Citizenship No." value={viewTarget.citizenship_no} />
-              <DetailRow label="Phone" value={viewTarget.phone} />
+              <DetailRow label={t('staff.drivers.fields.fullNameEn')} value={viewTarget.full_name_en} />
+              <DetailRow label={t('staff.drivers.fields.fullNameNe')} value={viewTarget.full_name_ne} />
+              <DetailRow label={t('staff.drivers.fields.gender')} value={viewTarget.gender} />
+              <DetailRow label={t('staff.drivers.fields.dob')} dateValue={viewTarget.dob} />
+              <DetailRow label={t('staff.drivers.fields.citizenshipNo')} value={viewTarget.citizenship_no} />
+              <DetailRow label={t('staff.drivers.fields.phone')} value={viewTarget.phone} />
               <div className="col-span-2 sm:col-span-3">
-                <DetailRow label="Address" value={viewTarget.address} />
+                <DetailRow label={t('staff.drivers.fields.address')} value={viewTarget.address} />
               </div>
-              <DetailRow label="Emergency Contact" value={viewTarget.emergency_contact_name} />
-              <DetailRow label="Emergency Phone" value={viewTarget.emergency_contact_number} />
+              <DetailRow label={t('staff.drivers.fields.emergencyContact')} value={viewTarget.emergency_contact_name} />
+              <DetailRow label={t('staff.drivers.fields.emergencyPhone')} value={viewTarget.emergency_contact_number} />
             </div>
 
-            <Section icon={FileText} title="License Information" />
+            <Section icon={FileText} title={t('staff.drivers.sections.license')} />
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <DetailRow label="License No." value={viewTarget.license_no} />
-              <DetailRow label="Class" value={viewTarget.license_category} />
-              <DetailRow label="Issue Date" value={viewTarget.license_issue_date} />
-              <DetailRow label="Expiry Date" value={viewTarget.license_expiry} />
+              <DetailRow label={t('staff.drivers.fields.licenseNo')} value={viewTarget.license_no} />
+              <DetailRow label={t('staff.drivers.table.class')} value={viewTarget.license_category} />
+              <DetailRow label={t('staff.drivers.fields.issueDate')} dateValue={viewTarget.license_issue_date} />
+              <DetailRow label={t('staff.drivers.fields.expiryDate')} dateValue={viewTarget.license_expiry} />
               <div className="col-span-2">
-                <DetailRow label="Issuing Authority" value={viewTarget.license_issuing_authority} />
+                <DetailRow label={t('staff.drivers.fields.issuingAuthority')} value={viewTarget.license_issuing_authority} />
               </div>
             </div>
 
-            <Section icon={Briefcase} title="Employment Information" />
+            <Section icon={Briefcase} title={t('staff.drivers.sections.employment')} />
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <DetailRow label="Employee ID" value={viewTarget.employee_id} />
-              <DetailRow label="Employment Type" value={viewTarget.employment_type?.replace('_', ' ')} />
-              <DetailRow label="Date of Joining" value={viewTarget.date_of_joining} />
-              <DetailRow label="Experience" value={viewTarget.experience_years != null ? `${viewTarget.experience_years} yrs` : undefined} />
-              <DetailRow label="Shift" value={viewTarget.shift} />
-              <DetailRow label="Previous Employer" value={viewTarget.previous_employer} />
+              <DetailRow label={t('staff.drivers.fields.employeeId')} value={viewTarget.employee_id} />
+              <DetailRow label={t('staff.drivers.fields.employmentType')} value={viewTarget.employment_type?.replace('_', ' ')} />
+              <DetailRow label={t('staff.drivers.fields.dateOfJoining')} dateValue={viewTarget.date_of_joining} />
+              <DetailRow label={t('staff.drivers.experience')} value={viewTarget.experience_years != null ? t('staff.drivers.yrs', { count: viewTarget.experience_years }) : undefined} />
+              <DetailRow label={t('staff.drivers.fields.shift')} value={viewTarget.shift} />
+              <DetailRow label={t('staff.drivers.fields.previousEmployer')} value={viewTarget.previous_employer} />
             </div>
 
-            <Section icon={Heart} title="Medical Information" />
+            <Section icon={Heart} title={t('staff.drivers.sections.medical')} />
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <DetailRow label="Blood Group" value={viewTarget.blood_group} />
-              <DetailRow label="Last Check-up" value={viewTarget.last_medical_checkup_date} />
+              <DetailRow label={t('staff.drivers.fields.bloodGroup')} value={viewTarget.blood_group} />
+              <DetailRow label={t('staff.drivers.fields.lastCheckup')} dateValue={viewTarget.last_medical_checkup_date} />
               <div className="col-span-2 sm:col-span-3">
-                <DetailRow label="Medical Conditions" value={viewTarget.medical_conditions} />
+                <DetailRow label={t('staff.drivers.fields.medicalConditions')} value={viewTarget.medical_conditions} />
               </div>
             </div>
 
-            <Section icon={Wallet} title="Salary" />
+            <Section icon={Wallet} title={t('staff.drivers.sections.salary')} />
             <div className="grid grid-cols-2 gap-4">
-              <DetailRow label="Basic Salary (NPR)" value={viewTarget.basic_salary} />
-              <DetailRow label="Status" value={viewTarget.status} />
+              <DetailRow label={t('staff.drivers.fields.basicSalary')} value={viewTarget.basic_salary} />
+              <DetailRow label={t('staff.drivers.status')} value={viewTarget.status} />
             </div>
 
             <div className="flex justify-end border-t pt-4">
-              <Button variant="secondary" onClick={() => setViewTarget(null)}>Close</Button>
+              <Button variant="secondary" onClick={() => setViewTarget(null)}>{t('common:common.close')}</Button>
             </div>
           </div>
         )}
@@ -450,7 +441,7 @@ export default function DriversPage() {
       <Modal
         open={!!editTarget}
         onClose={() => setEditTarget(null)}
-        title={`Edit Driver — ${editTarget?.employee_id ?? ''}`}
+        title={`${t('staff.drivers.title')} — ${editTarget?.employee_id ?? ''}`}
         size="md"
       >
         {editTarget && (
@@ -461,55 +452,55 @@ export default function DriversPage() {
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Status</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.status')}</label>
                 <select
                   value={editStatus}
                   onChange={(e) => setEditStatus(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 >
-                  <option value="ACTIVE">Active</option>
-                  <option value="INACTIVE">Inactive</option>
-                  <option value="ON_LEAVE">On Leave</option>
-                  <option value="SUSPENDED">Suspended</option>
+                  <option value="ACTIVE">{t('staff.drivers.statuses.active')}</option>
+                  <option value="INACTIVE">{t('staff.drivers.statuses.inactive')}</option>
+                  <option value="ON_LEAVE">{t('staff.drivers.statuses.onLeave')}</option>
+                  <option value="SUSPENDED">{t('staff.drivers.statuses.suspended')}</option>
                 </select>
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Employment Type</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.fields.employmentType')}</label>
                 <select
                   value={editEmploymentType}
                   onChange={(e) => setEditEmploymentType(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 >
-                  <option value="PERMANENT">Permanent</option>
-                  <option value="CONTRACT">Contract</option>
-                  <option value="PART_TIME">Part Time</option>
+                  <option value="PERMANENT">{t('staff.drivers.employmentTypes.permanent')}</option>
+                  <option value="CONTRACT">{t('staff.drivers.employmentTypes.contract')}</option>
+                  <option value="PART_TIME">{t('staff.drivers.employmentTypes.partTime')}</option>
                 </select>
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Shift</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.fields.shift')}</label>
                 <select
                   value={editShift}
                   onChange={(e) => setEditShift(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 >
-                  <option value="">— Not assigned —</option>
-                  <option value="MORNING">Morning (5am–12pm)</option>
-                  <option value="DAY">Day (12pm–6pm)</option>
-                  <option value="EVENING">Evening (6pm–10pm)</option>
-                  <option value="NIGHT">Night (10pm–5am)</option>
+                  <option value="">{t('staff.drivers.notAssigned')}</option>
+                  <option value="MORNING">{t('staff.drivers.shifts.morning')}</option>
+                  <option value="DAY">{t('staff.drivers.shifts.day')}</option>
+                  <option value="EVENING">{t('staff.drivers.shifts.evening')}</option>
+                  <option value="NIGHT">{t('staff.drivers.shifts.night')}</option>
                 </select>
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Blood Group</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.fields.bloodGroup')}</label>
                 <select
                   value={editBloodGroup}
                   onChange={(e) => setEditBloodGroup(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 >
-                  <option value="">— Unknown —</option>
+                  <option value="">{t('staff.drivers.unknown')}</option>
                   {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map((bg) => (
                     <option key={bg} value={bg}>{bg}</option>
                   ))}
@@ -517,7 +508,7 @@ export default function DriversPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Phone Number</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.fields.phone')}</label>
                 <input
                   type="text"
                   value={editPhone}
@@ -527,7 +518,7 @@ export default function DriversPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Years of Experience</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.fields.experienceYears')}</label>
                 <input
                   type="number"
                   min="0"
@@ -539,7 +530,7 @@ export default function DriversPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">License Number</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.licenseNumber')}</label>
                 <input
                   type="text"
                   value={editLicenseNo}
@@ -549,24 +540,24 @@ export default function DriversPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">License Class</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.table.class')}</label>
                 <select
                   value={editLicenseCat}
                   onChange={(e) => setEditLicenseCat(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 >
-                  <option value="">Select class</option>
-                  <option value="A">Class A — Motorcycle</option>
-                  <option value="B">Class B — Light Vehicle</option>
-                  <option value="C">Class C — Heavy Vehicle</option>
-                  <option value="D">Class D — Public Vehicle</option>
-                  <option value="E">Class E — Tractor</option>
+                  <option value="">{t('staff.drivers.selectClass')}</option>
+                  <option value="A">{t('staff.drivers.licenseClasses.a')}</option>
+                  <option value="B">{t('staff.drivers.licenseClasses.b')}</option>
+                  <option value="C">{t('staff.drivers.licenseClasses.c')}</option>
+                  <option value="D">{t('staff.drivers.licenseClasses.d')}</option>
+                  <option value="E">{t('staff.drivers.licenseClasses.e')}</option>
                 </select>
               </div>
 
               <div className="sm:col-span-2">
                 <NepaliDateInput
-                  label="License Expiry Date"
+                  label={t('staff.drivers.fields.licenseExpiryDate')}
                   value={editLicenseExpiry}
                   onChange={setEditLicenseExpiry}
                 />
@@ -574,9 +565,9 @@ export default function DriversPage() {
             </div>
 
             <div className="flex justify-end gap-3 border-t pt-4">
-              <Button variant="secondary" onClick={() => setEditTarget(null)}>Cancel</Button>
+              <Button variant="secondary" onClick={() => setEditTarget(null)}>{t('common:common.cancel')}</Button>
               <Button onClick={handleUpdate} loading={updateDriverMutation.isPending}>
-                Save Changes
+                {t('staff.drivers.saveChanges')}
               </Button>
             </div>
           </div>
@@ -587,7 +578,7 @@ export default function DriversPage() {
       <Modal
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
-        title="Remove Driver"
+        title={t('staff.drivers.removeDriver')}
         size="sm"
       >
         {deleteTarget && (
@@ -595,23 +586,24 @@ export default function DriversPage() {
             <div className="flex items-start gap-3 rounded-lg bg-red-50 p-4">
               <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" />
               <div>
-                <p className="text-sm font-semibold text-red-700">This action cannot be undone.</p>
+                <p className="text-sm font-semibold text-red-700">{t('staff.drivers.deleteWarning')}</p>
                 <p className="text-sm text-red-600 mt-1">
-                  You are about to permanently remove{' '}
-                  <strong>{deleteTarget.full_name_en}</strong>{' '}
-                  ({deleteTarget.employee_id}) from the system.
+                  {t('staff.drivers.deleteConfirm', {
+                    name: deleteTarget.full_name_en,
+                    id: deleteTarget.employee_id,
+                  })}
                 </p>
               </div>
             </div>
             <div className="flex justify-end gap-3">
-              <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+              <Button variant="secondary" onClick={() => setDeleteTarget(null)}>{t('common:common.cancel')}</Button>
               <Button
                 variant="danger"
                 loading={deleteDriverMutation.isPending}
                 onClick={() => deleteDriverMutation.mutate(deleteTarget.id)}
                 leftIcon={<Trash2 className="h-4 w-4" />}
               >
-                Delete Driver
+                {t('staff.drivers.deleteDriver')}
               </Button>
             </div>
           </div>
@@ -622,47 +614,47 @@ export default function DriversPage() {
       <Modal
         open={showCreate}
         onClose={() => { setShowCreate(false); reset() }}
-        title="Add Driver"
+        title={t('staff.drivers.addDriver')}
         size="lg"
       >
         <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-6 p-6">
 
-          {/* ── Personal Information ─────────────────────────────────────── */}
-          <Section icon={User} title="Personal Information" />
+          {/* Personal Information */}
+          <Section icon={User} title={t('staff.drivers.sections.personal')} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <Input
-                label="Full Name (English)"
+                label={t('staff.drivers.fields.fullNameEn')}
                 required
                 placeholder="e.g. Ram Bahadur Shrestha"
                 error={errors.full_name_en?.message}
-                {...register('full_name_en', { required: 'Full name is required' })}
+                {...register('full_name_en', { required: t('staff.drivers.validation.fullNameRequired') })}
               />
             </div>
             <NepaliInput
-              label="Full Name (Nepali)"
+              label={t('staff.drivers.fields.fullNameNe')}
               placeholder="राम बहादुर श्रेष्ठ"
               {...register('full_name_ne')}
             />
             <Controller
               name="gender"
               control={control}
-              rules={{ required: 'Gender is required' }}
+              rules={{ required: t('staff.drivers.validation.genderRequired') }}
               render={({ field }) => (
-                <SelectField label="Gender" required error={errors.gender?.message} {...field}>
-                  <option value="MALE">Male</option>
-                  <option value="FEMALE">Female</option>
-                  <option value="OTHER">Other</option>
+                <SelectField label={t('staff.drivers.fields.gender')} required error={errors.gender?.message} {...field}>
+                  <option value="MALE">{t('staff.drivers.genders.male')}</option>
+                  <option value="FEMALE">{t('staff.drivers.genders.female')}</option>
+                  <option value="OTHER">{t('staff.drivers.genders.other')}</option>
                 </SelectField>
               )}
             />
             <Controller
               name="dob"
               control={control}
-              rules={{ required: 'Date of birth is required' }}
+              rules={{ required: t('staff.drivers.validation.dobRequired') }}
               render={({ field }) => (
                 <NepaliDateInput
-                  label="Date of Birth"
+                  label={t('staff.drivers.fields.dob')}
                   required
                   error={errors.dob?.message}
                   value={field.value}
@@ -671,63 +663,63 @@ export default function DriversPage() {
               )}
             />
             <Input
-              label="Citizenship Number"
+              label={t('staff.drivers.fields.citizenshipNo')}
               placeholder="e.g. 12-34-56-78901"
               required
               error={errors.citizenship_no?.message}
-              {...register('citizenship_no', { required: 'Citizenship number is required' })}
+              {...register('citizenship_no', { required: t('staff.drivers.validation.citizenshipRequired') })}
             />
             <div className="sm:col-span-2">
               <Input
-                label="Address"
+                label={t('staff.drivers.fields.address')}
                 placeholder="e.g. Kalanki, Kathmandu"
                 required
                 error={errors.address?.message}
-                {...register('address', { required: 'Address is required' })}
+                {...register('address', { required: t('staff.drivers.validation.addressRequired') })}
               />
             </div>
             <Input
-              label="Phone Number"
+              label={t('staff.drivers.fields.phone')}
               placeholder="+977-98XXXXXXXX"
               required
               error={errors.phone?.message}
-              {...register('phone', { required: 'Phone number is required' })}
+              {...register('phone', { required: t('staff.drivers.validation.phoneRequired') })}
             />
             <div />
             <Input
-              label="Emergency Contact Name"
+              label={t('staff.drivers.fields.emergencyContact')}
               placeholder="e.g. Sita Shrestha"
               {...register('emergency_contact_name')}
             />
             <Input
-              label="Emergency Contact Number"
+              label={t('staff.drivers.fields.emergencyPhone')}
               placeholder="+977-98XXXXXXXX"
               {...register('emergency_contact_number')}
             />
           </div>
 
-          {/* ── Driver License Information ────────────────────────────────── */}
-          <Section icon={FileText} title="Driver License Information" />
+          {/* Driver License Information */}
+          <Section icon={FileText} title={t('staff.drivers.sections.licenseInfo')} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input
-              label="License Number"
+              label={t('staff.drivers.licenseNumber')}
               required
               placeholder="e.g. 07-01-123456"
               error={errors.license_no?.message}
-              {...register('license_no', { required: 'License number is required' })}
+              {...register('license_no', { required: t('staff.drivers.validation.licenseRequired') })}
             />
             <Controller
               name="license_category"
               control={control}
-              rules={{ required: 'License class is required' }}
+              rules={{ required: t('staff.drivers.validation.licenseClassRequired') }}
               render={({ field }) => (
-                <SelectField label="License Type / Class" required error={errors.license_category?.message} {...field}>
-                  <option value="">Select class</option>
-                  <option value="A">Class A — Motorcycle</option>
-                  <option value="B">Class B — Light Vehicle</option>
-                  <option value="C">Class C — Heavy Vehicle</option>
-                  <option value="D">Class D — Public Vehicle</option>
-                  <option value="E">Class E — Tractor</option>
+                <SelectField label={t('staff.drivers.fields.licenseClass')} required error={errors.license_category?.message} {...field}>
+                  <option value="">{t('staff.drivers.selectClass')}</option>
+                  <option value="A">{t('staff.drivers.licenseClasses.a')}</option>
+                  <option value="B">{t('staff.drivers.licenseClasses.b')}</option>
+                  <option value="C">{t('staff.drivers.licenseClasses.c')}</option>
+                  <option value="D">{t('staff.drivers.licenseClasses.d')}</option>
+                  <option value="E">{t('staff.drivers.licenseClasses.e')}</option>
                 </SelectField>
               )}
             />
@@ -735,16 +727,16 @@ export default function DriversPage() {
               name="license_issue_date"
               control={control}
               render={({ field }) => (
-                <NepaliDateInput label="Issue Date" value={field.value} onChange={field.onChange} />
+                <NepaliDateInput label={t('staff.drivers.fields.issueDate')} value={field.value} onChange={field.onChange} />
               )}
             />
             <Controller
               name="license_expiry"
               control={control}
-              rules={{ required: 'License expiry is required' }}
+              rules={{ required: t('staff.drivers.validation.licenseExpiryRequired') }}
               render={({ field }) => (
                 <NepaliDateInput
-                  label="Expiry Date"
+                  label={t('staff.drivers.fields.expiryDate')}
                   required
                   error={errors.license_expiry?.message}
                   value={field.value}
@@ -754,18 +746,18 @@ export default function DriversPage() {
             />
             <div className="sm:col-span-2">
               <Input
-                label="Issuing Authority"
+                label={t('staff.drivers.fields.issuingAuthority')}
                 placeholder="e.g. Department of Transport Management, Bagmati Province"
                 {...register('license_issuing_authority')}
               />
             </div>
           </div>
 
-          {/* ── Employment Information ────────────────────────────────────── */}
-          <Section icon={Briefcase} title="Employment Information" />
+          {/* Employment Information */}
+          <Section icon={Briefcase} title={t('staff.drivers.sections.employment')} />
           <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2">
             <p className="text-xs text-blue-600">
-              <strong>Employee ID</strong> is generated automatically (DRV-0001, DRV-0002 …)
+              <strong>{t('staff.drivers.fields.employeeId')}</strong> — {t('staff.drivers.employeeIdAuto')}
             </p>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -773,40 +765,40 @@ export default function DriversPage() {
               name="date_of_joining"
               control={control}
               render={({ field }) => (
-                <NepaliDateInput label="Date of Joining" value={field.value} onChange={field.onChange} />
+                <NepaliDateInput label={t('staff.drivers.fields.dateOfJoining')} value={field.value} onChange={field.onChange} />
               )}
             />
             <Input
-              label="Years of Driving Experience"
+              label={t('staff.drivers.fields.experienceYears')}
               type="number"
               min="0"
               max="50"
               placeholder="e.g. 5"
               {...register('experience_years')}
             />
-            <SelectField label="Employment Type" {...register('employment_type')}>
-              <option value="PERMANENT">Permanent</option>
-              <option value="CONTRACT">Contract</option>
-              <option value="PART_TIME">Part Time</option>
+            <SelectField label={t('staff.drivers.fields.employmentType')} {...register('employment_type')}>
+              <option value="PERMANENT">{t('staff.drivers.employmentTypes.permanent')}</option>
+              <option value="CONTRACT">{t('staff.drivers.employmentTypes.contract')}</option>
+              <option value="PART_TIME">{t('staff.drivers.employmentTypes.partTime')}</option>
             </SelectField>
             <Input
-              label="Previous Employer"
+              label={t('staff.drivers.fields.previousEmployer')}
               placeholder="e.g. Sajha Yatayat"
               {...register('previous_employer')}
             />
-            <SelectField label="Shift" {...register('shift')}>
-              <option value="">— Not assigned —</option>
-              <option value="MORNING">Morning (5am–12pm)</option>
-              <option value="DAY">Day (12pm–6pm)</option>
-              <option value="EVENING">Evening (6pm–10pm)</option>
-              <option value="NIGHT">Night (10pm–5am)</option>
+            <SelectField label={t('staff.drivers.fields.shift')} {...register('shift')}>
+              <option value="">{t('staff.drivers.notAssigned')}</option>
+              <option value="MORNING">{t('staff.drivers.shifts.morning')}</option>
+              <option value="DAY">{t('staff.drivers.shifts.day')}</option>
+              <option value="EVENING">{t('staff.drivers.shifts.evening')}</option>
+              <option value="NIGHT">{t('staff.drivers.shifts.night')}</option>
             </SelectField>
           </div>
 
-          {/* ── Vehicle Information ───────────────────────────────────────── */}
-          <Section icon={Bus} title="Vehicle Information" />
-          <SelectField label="Bus Number / Vehicle" {...register('bus_id')}>
-            <option value="">— Not assigned —</option>
+          {/* Vehicle Information */}
+          <Section icon={Bus} title={t('staff.drivers.sections.vehicle')} />
+          <SelectField label={t('staff.drivers.fields.busVehicle')} {...register('bus_id')}>
+            <option value="">{t('staff.drivers.notAssigned')}</option>
             {(vehicles as { id: string; registration_no?: string; make?: string; model?: string }[]).map((v) => (
               <option key={v.id} value={v.id}>
                 {v.registration_no ?? v.id}
@@ -815,11 +807,11 @@ export default function DriversPage() {
             ))}
           </SelectField>
 
-          {/* ── Medical Information ───────────────────────────────────────── */}
-          <Section icon={Heart} title="Medical Information" />
+          {/* Medical Information */}
+          <Section icon={Heart} title={t('staff.drivers.sections.medical')} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <SelectField label="Blood Group" {...register('blood_group')}>
-              <option value="">— Unknown —</option>
+            <SelectField label={t('staff.drivers.fields.bloodGroup')} {...register('blood_group')}>
+              <option value="">{t('staff.drivers.unknown')}</option>
               {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map((bg) => (
                 <option key={bg} value={bg}>{bg}</option>
               ))}
@@ -828,28 +820,28 @@ export default function DriversPage() {
               name="last_medical_checkup_date"
               control={control}
               render={({ field }) => (
-                <NepaliDateInput label="Last Medical Check-up Date" value={field.value} onChange={field.onChange} />
+                <NepaliDateInput label={t('staff.drivers.fields.lastCheckup')} value={field.value} onChange={field.onChange} />
               )}
             />
             <div className="sm:col-span-2">
               <label className="mb-1 block text-sm font-medium text-gray-700">
-                Medical Conditions (if any)
+                {t('staff.drivers.fields.medicalConditions')}
               </label>
               <textarea
                 rows={3}
-                placeholder="List any known medical conditions, allergies, or medications…"
+                placeholder={t('staff.drivers.medicalConditionsPlaceholder')}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 {...register('medical_conditions')}
               />
             </div>
           </div>
 
-          {/* ── Salary & Wages ───────────────────────────────────────────── */}
-          <Section icon={Wallet} title="Salary & Wages" />
+          {/* Salary & Wages */}
+          <Section icon={Wallet} title={t('staff.drivers.sections.salaryWages')} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <Input
-                label="Basic Salary (NPR)"
+                label={t('staff.drivers.fields.basicSalary')}
                 type="number"
                 min="0"
                 step="0.01"
@@ -862,24 +854,24 @@ export default function DriversPage() {
           {/* Allowances */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-700">Allowances</label>
+              <label className="text-sm font-medium text-gray-700">{t('staff.drivers.allowances')}</label>
               <button
                 type="button"
                 onClick={() => setAllowances([...allowances, { title: '', amount: '' }])}
                 className="flex items-center gap-1 rounded-lg border border-dashed border-primary-400
                            px-3 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50 transition-colors"
               >
-                <Plus className="h-3 w-3" /> Add Allowance
+                <Plus className="h-3 w-3" /> {t('staff.drivers.addAllowance')}
               </button>
             </div>
             {allowances.length === 0 && (
-              <p className="text-xs text-gray-400 italic">No allowances added yet.</p>
+              <p className="text-xs text-gray-400 italic">{t('staff.drivers.noAllowances')}</p>
             )}
             {allowances.map((item, idx) => (
               <div key={idx} className="flex items-center gap-2">
                 <input
                   type="text"
-                  placeholder="Title (e.g. Transport)"
+                  placeholder={t('staff.drivers.allowanceTitlePlaceholder')}
                   value={item.title}
                   onChange={(e) => {
                     const updated = [...allowances]
@@ -891,7 +883,7 @@ export default function DriversPage() {
                 />
                 <input
                   type="number"
-                  placeholder="Amount (NPR)"
+                  placeholder={t('staff.drivers.allowanceAmountPlaceholder')}
                   min="0"
                   value={item.amount}
                   onChange={(e) => {
@@ -913,17 +905,17 @@ export default function DriversPage() {
             ))}
           </div>
 
-          {/* ── Actions ──────────────────────────────────────────────────── */}
+          {/* Actions */}
           <div className="flex justify-end gap-3 border-t pt-4">
             <Button
               variant="secondary"
               type="button"
               onClick={() => { setShowCreate(false); reset(); setAllowances([]) }}
             >
-              Cancel
+              {t('common:common.cancel')}
             </Button>
             <Button type="submit" loading={createMutation.isPending} leftIcon={<Plus className="h-4 w-4" />}>
-              Add Driver
+              {t('staff.drivers.addDriver')}
             </Button>
           </div>
         </form>

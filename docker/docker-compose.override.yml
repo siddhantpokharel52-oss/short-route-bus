@@ -1,0 +1,12 @@
+# Local development overrides — Docker Compose merges this automatically.
+# Do NOT commit changes specific to your machine here.
+# The production server (citybus.com.np) does NOT use this file.
+services:
+  nginx:
+    volumes:
+      - ./nginx/nginx.local.conf:/etc/nginx/nginx.conf:ro
+      - static_files:/app/staticfiles:ro
+      - media_files:/app/media:ro
+    ports:
+      - "8090:80"
+

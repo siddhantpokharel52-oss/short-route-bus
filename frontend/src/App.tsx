@@ -1,7 +1,8 @@
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { useAuthStore } from '@store/authStore'
-import { Suspense, lazy, Component, type ReactNode, type ErrorInfo } from 'react'
+import { useAuthStore, isPlatformRole, isTenantRole } from '@store/authStore'
+import { Suspense, lazy, Component, useEffect, type ReactNode, type ErrorInfo } from 'react'
 import { useGlobalNepaliKeyboard } from '@hooks/useGlobalNepaliKeyboard'
+import { getPortalContext, getMainLoginUrl, getTenantLoginUrl } from '@utils/portalContext'
 
 // Lazy-load portals
 const SuperAdminApp = lazy(() => import('@apps/super-admin/SuperAdminApp'))
@@ -98,6 +99,30 @@ function UnauthorizedPage() {
   )
 }
 
+// ─── Portal Context Guard ──────────────────────────────────────────────────
+// Ensures authenticated users are always on the domain that matches their role.
+// An authenticated platform user on a tenant subdomain gets sent to the main
+// domain, and an authenticated tenant user on the main domain gets sent to
+// their company subdomain.
+function PortalContextGuard({ children }: { children: ReactNode }) {
+  const { isAuthenticated, user } = useAuthStore()
+  const { isTenantPortal } = getPortalContext()
+
+  useEffect(() => {
+    if (!isAuthenticated || !user) return
+
+    if (isTenantPortal && isPlatformRole(user.role)) {
+      window.location.replace(getMainLoginUrl())
+    } else if (!isTenantPortal && isTenantRole(user.role) && user.tenantSchema) {
+      window.location.replace(
+        getTenantLoginUrl(user.tenantSchema).replace('/login', '/tenant/live-tracking')
+      )
+    }
+  }, [isAuthenticated, user, isTenantPortal])
+
+  return <>{children}</>
+}
+
 // ─── Protected Route ───────────────────────────────────────────────────────
 function ProtectedRoute({
   children,
@@ -127,6 +152,7 @@ export default function App() {
   return (
     <ErrorBoundary>
     <Suspense fallback={<LoadingFallback />}>
+    <PortalContextGuard>
       <Routes>
         {/* Public portal — no auth */}
         <Route path="/*" element={<PublicApp />} />
@@ -165,6 +191,7 @@ export default function App() {
         {/* Fallback */}
         <Route path="/unauthorized" element={<UnauthorizedPage />} />
       </Routes>
+    </PortalContextGuard>
     </Suspense>
     </ErrorBoundary>
   )

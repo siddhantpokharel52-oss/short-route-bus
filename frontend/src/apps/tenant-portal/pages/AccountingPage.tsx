@@ -65,10 +65,21 @@ const STATUS_META: Record<string, { badge: string; icon: React.ElementType }> = 
 }
 
 const fmt = (n: string | number) =>
-  `NPR ${parseFloat(String(n)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+  `NPR ${parseFloat(String(n)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
 
 const tabs = ['Overview', 'Chart of Accounts', 'Journal Entries', 'Salary Payments', 'Reports'] as const
 type Tab = typeof tabs[number]
+
+type ReportType = 'profit-loss' | 'balance-sheet' | 'trial-balance' | 'cash-flow' | 'expense-analysis' | 'general-ledger'
+
+const REPORT_TYPES: { id: ReportType; icon: React.ElementType }[] = [
+  { id: 'profit-loss',      icon: TrendingUp  },
+  { id: 'balance-sheet',    icon: Building2   },
+  { id: 'trial-balance',    icon: ArrowUpDown },
+  { id: 'cash-flow',        icon: Activity    },
+  { id: 'expense-analysis', icon: BarChart3   },
+  { id: 'general-ledger',   icon: FileText    },
+]
 
 // ─── KPI Card ────────────────────────────────────────────────────────────────
 
@@ -89,9 +100,7 @@ function KpiCard({ label, value, icon: Icon, sub }: {
   )
 }
 
-// CoaRow removed — replaced by ChartOfAccountsPanel
-
-// ─── New Journal Entry Modal ──────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function flattenTree(nodes: any[]): any[] {
   const result: any[] = []
@@ -100,12 +109,13 @@ function flattenTree(nodes: any[]): any[] {
   return result
 }
 
+// ─── New Journal Entry Modal ──────────────────────────────────────────────────
+
 function NewJournalEntryModal({ onClose, onSuccess }: {
   onClose: () => void; onSuccess: () => void
 }) {
-  // Fetch inside modal — React Query deduplicates: serves from cache if already loaded,
-  // otherwise fires one request. This avoids the prop-timing race where accounts=[]
-  // when the modal first renders and the native <select> doesn't repaint on update.
+  const { t } = useTranslation('tenant')
+
   const { data: treeData = [] } = useQuery<any[]>({
     queryKey: ['coa-tree'],
     queryFn: () => apiClient.get('/accounting/accounts/tree/').then(r => r.data),
@@ -129,13 +139,13 @@ function NewJournalEntryModal({ onClose, onSuccess }: {
 
   const mutation = useMutation({
     mutationFn: (payload: object) => apiClient.post('/accounting/journal-entries/', payload).then(r => r.data),
-    onSuccess: () => { toast.success('Journal entry created'); onSuccess(); onClose() },
-    onError: (e: any) => toast.error(e?.response?.data?.detail || 'Failed to create entry'),
+    onSuccess: () => { toast.success(t('accounting.jeModal.successCreate')); onSuccess(); onClose() },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || t('accounting.jeModal.errorCreate')),
   })
 
   const submit = () => {
-    if (!description.trim()) return toast.error('Description is required')
-    if (!balanced) return toast.error('Debits must equal credits')
+    if (!description.trim()) return toast.error(t('accounting.jeModal.validDesc'))
+    if (!balanced) return toast.error(t('accounting.jeModal.validBalance'))
     const filtered = lines.filter(l => l.account && (parseFloat(l.debit) || parseFloat(l.credit)))
     mutation.mutate({
       date, description, status: postNow ? 'POSTED' : 'DRAFT', source_type: 'MANUAL',
@@ -168,8 +178,8 @@ function NewJournalEntryModal({ onClose, onSuccess }: {
               <Receipt className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">New Journal Entry</h2>
-              <p className="text-xs text-primary-200">Double-entry — debits must equal credits</p>
+              <h2 className="text-base font-bold text-white">{t('accounting.jeModal.title')}</h2>
+              <p className="text-xs text-primary-200">{t('accounting.jeModal.subtitle')}</p>
             </div>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-white/60 hover:text-white hover:bg-white/10 transition-colors">
@@ -183,13 +193,13 @@ function NewJournalEntryModal({ onClose, onSuccess }: {
           {/* Date + Description */}
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <NepaliDateInput label="Date" value={date} onChange={setDate} />
+              <NepaliDateInput label={t('accounting.jeModal.date')} value={date} onChange={setDate} />
             </div>
             <div className="col-span-2">
               <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-                Description
+                {t('accounting.jeModal.description')}
               </label>
-              <input className="input" placeholder="e.g. Monthly pass revenue adjustment…" value={description} onChange={e => setDescription(e.target.value)} />
+              <input className="input" placeholder={t('accounting.jeModal.descPlaceholder')} value={description} onChange={e => setDescription(e.target.value)} />
             </div>
           </div>
 
@@ -197,10 +207,10 @@ function NewJournalEntryModal({ onClose, onSuccess }: {
           <div>
             <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
               <div className="grid grid-cols-[2fr_1.8fr_1fr_1fr_40px] gap-0 bg-gray-50 dark:bg-gray-800 px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                <span>Account</span>
-                <span>Memo</span>
-                <span className="text-right">Debit (NPR)</span>
-                <span className="text-right">Credit (NPR)</span>
+                <span>{t('accounting.jeModal.account')}</span>
+                <span>{t('accounting.jeModal.memo')}</span>
+                <span className="text-right">{t('accounting.jeModal.debitNPR')}</span>
+                <span className="text-right">{t('accounting.jeModal.creditNPR')}</span>
                 <span />
               </div>
               <div className="divide-y divide-gray-100 dark:divide-gray-700/60">
@@ -212,7 +222,7 @@ function NewJournalEntryModal({ onClose, onSuccess }: {
                         value={line.account}
                         onChange={e => updateLine(i, 'account', e.target.value)}
                       >
-                        <option value="">Select account…</option>
+                        <option value="">{t('accounting.jeModal.selectAccount')}</option>
                         {leafAccounts.map(a => (
                           <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
                         ))}
@@ -221,7 +231,7 @@ function NewJournalEntryModal({ onClose, onSuccess }: {
                     <div className="pr-3">
                       <input
                         className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm px-2.5 py-1.5 text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                        placeholder="Line description"
+                        placeholder={t('accounting.jeModal.lineMemo')}
                         value={line.description}
                         onChange={e => updateLine(i, 'description', e.target.value)}
                       />
@@ -258,7 +268,7 @@ function NewJournalEntryModal({ onClose, onSuccess }: {
                   onClick={() => setLines([...lines, { account: '', description: '', debit: '', credit: '' }])}
                   className="flex items-center gap-1.5 text-sm text-primary-600 dark:text-primary-400 font-medium hover:text-primary-700 transition-colors"
                 >
-                  <Plus className="h-3.5 w-3.5" /> Add Line
+                  <Plus className="h-3.5 w-3.5" /> {t('accounting.buttons.addLine')}
                 </button>
               </div>
             </div>
@@ -268,16 +278,16 @@ function NewJournalEntryModal({ onClose, onSuccess }: {
           <div className={`flex items-center justify-between rounded-xl p-4 ${balanced ? 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800' : 'bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700'}`}>
             <div className="flex gap-8 text-sm">
               <span className="text-gray-500 dark:text-gray-400">
-                Total Debit: <strong className="font-mono text-blue-700 dark:text-blue-300 ml-1">{fmt(totalDr)}</strong>
+                {t('accounting.jeModal.totalDebit')} <strong className="font-mono text-blue-700 dark:text-blue-300 ml-1">{fmt(totalDr)}</strong>
               </span>
               <span className="text-gray-500 dark:text-gray-400">
-                Total Credit: <strong className="font-mono text-emerald-700 dark:text-emerald-300 ml-1">{fmt(totalCr)}</strong>
+                {t('accounting.jeModal.totalCredit')} <strong className="font-mono text-emerald-700 dark:text-emerald-300 ml-1">{fmt(totalCr)}</strong>
               </span>
             </div>
             {totalDr > 0 && (
               balanced
-                ? <span className="flex items-center gap-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-300"><CheckCircle className="h-4 w-4" />Balanced</span>
-                : <span className="flex items-center gap-1.5 text-sm font-semibold text-red-500"><AlertCircle className="h-4 w-4" />Difference: {fmt(diff)}</span>
+                ? <span className="flex items-center gap-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-300"><CheckCircle className="h-4 w-4" />{t('accounting.jeModal.balanced')}</span>
+                : <span className="flex items-center gap-1.5 text-sm font-semibold text-red-500"><AlertCircle className="h-4 w-4" />{t('accounting.jeModal.difference')} {fmt(diff)}</span>
             )}
           </div>
         </div>
@@ -291,19 +301,19 @@ function NewJournalEntryModal({ onClose, onSuccess }: {
             >
               <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${postNow ? 'translate-x-4' : ''}`} />
             </div>
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Post immediately</span>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('accounting.jeModal.postImmediately')}</span>
           </label>
           <div className="flex gap-3">
-            <button onClick={onClose} className="btn-secondary">Cancel</button>
+            <button onClick={onClose} className="btn-secondary">{t('common:common.cancel')}</button>
             <button
               onClick={submit}
               disabled={mutation.isPending || !balanced}
               className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {mutation.isPending ? (
-                <><span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
+                <><span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{t('accounting.jeModal.saving')}</>
               ) : (
-                <><CheckCircle className="h-4 w-4" />{postNow ? 'Create & Post' : 'Save as Draft'}</>
+                <><CheckCircle className="h-4 w-4" />{postNow ? t('accounting.buttons.createPost') : t('accounting.buttons.saveDraft')}</>
               )}
             </button>
           </div>
@@ -316,6 +326,8 @@ function NewJournalEntryModal({ onClose, onSuccess }: {
 // ─── New Salary Modal ─────────────────────────────────────────────────────────
 
 function NewSalaryModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const { t } = useTranslation('tenant')
+
   const [form, setForm] = useState({
     employee_id: '', employee_name: '', employee_type: 'DRIVER',
     period_from: '', period_to: '', payment_date: new Date().toISOString().split('T')[0],
@@ -340,6 +352,8 @@ function NewSalaryModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
   }
 
   const [allowanceItems, setAllowanceItems] = useState<{ title: string; amount: number }[]>([])
+
+  type EmployeeOption = { id: string; employee_id: string; full_name_en: string; basic_salary: number | null; allowances: { title: string; amount: number }[] }
 
   const selectEmployee = (emp: EmployeeOption | null) => {
     if (!emp) {
@@ -377,8 +391,6 @@ function NewSalaryModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
     staleTime: 2 * 60 * 1000,
   })
 
-  type EmployeeOption = { id: string; employee_id: string; full_name_en: string; basic_salary: number | null; allowances: { title: string; amount: number }[] }
-
   const employeeList: EmployeeOption[] =
     form.employee_type === 'DRIVER'
       ? (driverData?.data ?? driverData?.results ?? driverData ?? [])
@@ -388,29 +400,35 @@ function NewSalaryModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
 
   const mutation = useMutation({
     mutationFn: (data: object) => apiClient.post('/accounting/salary-payments/', data).then(r => r.data),
-    onSuccess: () => { toast.success('Salary record created'); onSuccess(); onClose() },
+    onSuccess: () => { toast.success(t('accounting.salaryModal.successCreate')); onSuccess(); onClose() },
     onError: (e: any) => {
       const data = e?.response?.data
       if (data && typeof data === 'object') {
         const first = Object.entries(data)[0]
         if (first) { toast.error(`${first[0]}: ${first[1]}`); return }
       }
-      toast.error(data?.detail || 'Failed to create record')
+      toast.error(data?.detail || t('accounting.salaryModal.errorCreate'))
     },
   })
 
   const submitSalary = () => {
-    if (!form.employee_name) return toast.error('Select an employee')
-    if (form.employee_type !== 'STAFF' && !form.employee_id) return toast.error('Select an employee from the dropdown')
-    if (!form.period_from) return toast.error('Period From date is required')
-    if (!form.period_to) return toast.error('Period To date is required')
-    if (!form.basic_salary) return toast.error('Basic Salary is required')
-    if (form.period_from > form.period_to) return toast.error('Period From must be before Period To')
+    if (!form.employee_name) return toast.error(t('accounting.salaryModal.validEmployee'))
+    if (form.employee_type !== 'STAFF' && !form.employee_id) return toast.error(t('accounting.salaryModal.validEmployeeDropdown'))
+    if (!form.period_from) return toast.error(t('accounting.salaryModal.validPeriodFrom'))
+    if (!form.period_to) return toast.error(t('accounting.salaryModal.validPeriodTo'))
+    if (!form.basic_salary) return toast.error(t('accounting.salaryModal.validBasicSalary'))
+    if (form.period_from > form.period_to) return toast.error(t('accounting.salaryModal.validPeriodOrder'))
     mutation.mutate(form)
   }
 
   const netPay = parseFloat(form.net_pay) || 0
   const canSubmit = !!(form.employee_name && form.period_from && form.period_to && form.basic_salary)
+
+  const roleOptions = [
+    { value: 'DRIVER',    label: t('accounting.salaryModal.roleDriver') },
+    { value: 'CONDUCTOR', label: t('accounting.salaryModal.roleConductor') },
+    { value: 'STAFF',     label: t('accounting.salaryModal.roleOther') },
+  ]
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backdropFilter: 'blur(4px)', backgroundColor: 'rgba(0,0,0,0.5)' }}>
@@ -421,8 +439,8 @@ function NewSalaryModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-white/20 p-2"><Users className="h-5 w-5 text-white" /></div>
             <div>
-              <h2 className="text-base font-bold text-white">Add Salary Payment</h2>
-              <p className="text-xs text-primary-200">Auto-generates journal entry when paid</p>
+              <h2 className="text-base font-bold text-white">{t('accounting.salaryModal.title')}</h2>
+              <p className="text-xs text-primary-200">{t('accounting.salaryModal.subtitle')}</p>
             </div>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-white/60 hover:text-white hover:bg-white/10">
@@ -437,14 +455,10 @@ function NewSalaryModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
           <div>
             <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
               <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary-600 text-white text-[10px] font-bold mr-1.5">1</span>
-              Role
+              {t('accounting.salaryModal.stepRole')}
             </label>
             <div className="grid grid-cols-3 gap-2">
-              {[
-                { value: 'DRIVER',    label: 'Driver' },
-                { value: 'CONDUCTOR', label: 'Collector' },
-                { value: 'STAFF',     label: 'Other Staff' },
-              ].map(opt => (
+              {roleOptions.map(opt => (
                 <button
                   key={opt.value}
                   type="button"
@@ -465,12 +479,12 @@ function NewSalaryModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
           <div>
             <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
               <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary-600 text-white text-[10px] font-bold mr-1.5">2</span>
-              Employee Name
+              {t('accounting.salaryModal.stepEmployee')}
             </label>
             {form.employee_type === 'STAFF' ? (
               <input
                 className="input"
-                placeholder="Full name"
+                placeholder={t('accounting.salaryModal.fullNamePlaceholder')}
                 value={form.employee_name}
                 onChange={e => setForm(f => ({ ...f, employee_name: e.target.value }))}
               />
@@ -485,8 +499,8 @@ function NewSalaryModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
               >
                 <option value="">
                   {employeeList.length === 0
-                    ? `No ${form.employee_type === 'DRIVER' ? 'drivers' : 'conductors'} found`
-                    : `Select ${form.employee_type === 'DRIVER' ? 'driver' : 'conductor'}…`}
+                    ? (form.employee_type === 'DRIVER' ? t('accounting.salaryModal.noDrivers') : t('accounting.salaryModal.noConductors'))
+                    : (form.employee_type === 'DRIVER' ? t('accounting.salaryModal.selectDriver') : t('accounting.salaryModal.selectConductor'))}
                 </option>
                 {employeeList.map(emp => (
                   <option key={emp.id} value={emp.id}>
@@ -500,7 +514,7 @@ function NewSalaryModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
           <div className="grid grid-cols-3 gap-4">
             <div>
               <NepaliDateInput
-                label="Period From"
+                label={t('accounting.modal.periodFrom')}
                 required
                 value={form.period_from}
                 onChange={(v) => set('period_from', v)}
@@ -508,40 +522,40 @@ function NewSalaryModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
             </div>
             <div>
               <NepaliDateInput
-                label="Period To"
+                label={t('accounting.modal.periodTo')}
                 required
                 value={form.period_to}
                 onChange={(v) => set('period_to', v)}
               />
             </div>
             <div>
-              <NepaliDateInput label="Payment Date" value={form.payment_date} onChange={(v) => set('payment_date', v)} />
+              <NepaliDateInput label={t('accounting.modal.paymentDate')} value={form.payment_date} onChange={(v) => set('payment_date', v)} />
             </div>
           </div>
 
           {/* Salary breakdown box */}
           <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide flex items-center justify-between">
-              <span>Salary Breakdown</span>
-              {form.employee_id && <span className="text-primary-500 font-medium normal-case">Auto-filled from employee record</span>}
+              <span>{t('accounting.salaryModal.salaryBreakdown')}</span>
+              {form.employee_id && <span className="text-primary-500 font-medium normal-case">{t('accounting.salaryModal.autoFilled')}</span>}
             </div>
             <div className="p-4 grid grid-cols-3 gap-4">
               <div>
-                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Basic Salary</label>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">{t('accounting.salaryModal.basicSalary')}</label>
                 <div className="relative">
                   <span className="absolute left-3 top-2 text-xs text-gray-400">NPR</span>
                   <input type="number" className="input pl-10 font-mono" placeholder="0.00" value={form.basic_salary} onChange={e => set('basic_salary', e.target.value)} />
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-1.5">+ Allowances</label>
+                <label className="block text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-1.5">{t('accounting.salaryModal.plusAllowances')}</label>
                 <div className="relative">
                   <span className="absolute left-3 top-2 text-xs text-gray-400">NPR</span>
                   <input type="number" className="input pl-10 font-mono border-emerald-200 dark:border-emerald-800" placeholder="0.00" value={form.total_allowances} onChange={e => set('total_allowances', e.target.value)} />
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-red-500 dark:text-red-400 mb-1.5">− Deductions</label>
+                <label className="block text-xs font-medium text-red-500 dark:text-red-400 mb-1.5">{t('accounting.salaryModal.minusDeductions')}</label>
                 <div className="relative">
                   <span className="absolute left-3 top-2 text-xs text-gray-400">NPR</span>
                   <input type="number" className="input pl-10 font-mono border-red-200 dark:border-red-800" placeholder="0.00" value={form.deductions} onChange={e => set('deductions', e.target.value)} />
@@ -552,7 +566,7 @@ function NewSalaryModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
             {/* Allowances breakdown from employee record */}
             {allowanceItems.length > 0 && (
               <div className="mx-4 mb-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/15 border border-emerald-100 dark:border-emerald-800 px-3 py-2">
-                <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1.5">Allowance Details</p>
+                <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1.5">{t('accounting.salaryModal.allowanceDetails')}</p>
                 <div className="flex flex-wrap gap-x-4 gap-y-1">
                   {allowanceItems.map((a, i) => (
                     <span key={i} className="text-xs text-emerald-700 dark:text-emerald-300">
@@ -565,182 +579,37 @@ function NewSalaryModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
 
             {/* Net pay summary */}
             <div className="mx-4 mb-4 rounded-xl bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 p-3 flex items-center justify-between">
-              <span className="text-sm font-semibold text-primary-700 dark:text-primary-300">Net Pay</span>
+              <span className="text-sm font-semibold text-primary-700 dark:text-primary-300">{t('accounting.salaryModal.netPay')}</span>
               <span className="font-mono text-lg font-bold text-primary-700 dark:text-primary-300">{netPay > 0 ? fmt(netPay) : '—'}</span>
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Payment Method</label>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">{t('accounting.salaryModal.paymentMethod')}</label>
             <select className="input" value={form.payment_method} onChange={e => set('payment_method', e.target.value)}>
-              <option value="BANK_TRANSFER">Bank Transfer</option>
-              <option value="CASH">Cash</option>
-              <option value="CHEQUE">Cheque</option>
+              <option value="BANK_TRANSFER">{t('accounting.salaryModal.bankTransfer')}</option>
+              <option value="CASH">{t('accounting.salaryModal.cash')}</option>
+              <option value="CHEQUE">{t('accounting.salaryModal.cheque')}</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Notes (optional)</label>
-            <textarea className="input resize-none" rows={2} placeholder="Any remarks…" value={form.notes} onChange={e => set('notes', e.target.value)} />
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">{t('accounting.salaryModal.notes')}</label>
+            <textarea className="input resize-none" rows={2} placeholder={t('accounting.salaryModal.notesPlaceholder')} value={form.notes} onChange={e => set('notes', e.target.value)} />
           </div>
         </div>
 
         {/* Footer */}
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-          <button onClick={onClose} className="btn-secondary">Cancel</button>
+          <button onClick={onClose} className="btn-secondary">{t('common:common.cancel')}</button>
           <button onClick={submitSalary} disabled={mutation.isPending || !canSubmit}
             className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
             {mutation.isPending
-              ? <><span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
-              : <><CheckCircle className="h-4 w-4" />Create Record</>}
+              ? <><span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{t('accounting.salaryModal.saving')}</>
+              : <><CheckCircle className="h-4 w-4" />{t('accounting.salaryModal.createRecord')}</>}
           </button>
         </div>
       </div>
-    </div>
-  )
-}
-
-// ─── Reports ─────────────────────────────────────────────────────────────────
-
-type ReportType = 'profit-loss' | 'balance-sheet' | 'trial-balance' | 'cash-flow' | 'expense-analysis' | 'general-ledger'
-
-const REPORT_TYPES: { id: ReportType; label: string; icon: React.ElementType; desc: string }[] = [
-  { id: 'profit-loss',      label: 'Profit & Loss',   icon: TrendingUp,  desc: 'Revenue vs expenses summary' },
-  { id: 'balance-sheet',    label: 'Balance Sheet',   icon: Building2,   desc: 'Assets, liabilities & equity' },
-  { id: 'trial-balance',    label: 'Trial Balance',   icon: ArrowUpDown, desc: 'All accounts Dr/Cr totals' },
-  { id: 'cash-flow',        label: 'Cash Flow',       icon: Activity,    desc: 'Cash inflows & outflows' },
-  { id: 'expense-analysis', label: 'Expense Analysis',icon: BarChart3,   desc: 'Expense breakdown by account' },
-  { id: 'general-ledger',   label: 'General Ledger',  icon: FileText,    desc: 'Transaction-level detail' },
-]
-
-function ReportsPanel({ accounts }: { accounts: COA[] }) {
-  const [reportType, setReportType] = useState<ReportType>('profit-loss')
-  const [dateFrom, setDateFrom] = useState(() => { const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0] })
-  const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0])
-  const [glAccount, setGlAccount] = useState('')
-  const [fetched, setFetched] = useState(false)
-
-  const needsRange = ['profit-loss', 'cash-flow', 'expense-analysis', 'general-ledger'].includes(reportType)
-  const leafAccounts = accounts.filter(a => a.is_posting_allowed !== false && !a.is_group)
-
-  const queryUrl = (() => {
-    const p = new URLSearchParams()
-    if (needsRange) { p.set('date_from', dateFrom); p.set('date_to', dateTo) }
-    else p.set('date', dateTo)
-    if (reportType === 'general-ledger' && glAccount) p.set('account_id', glAccount)
-    return `/accounting/reports/${reportType}/?${p}`
-  })()
-
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ['report', reportType, dateFrom, dateTo, glAccount],
-    queryFn: () => apiClient.get(queryUrl).then(r => r.data),
-    enabled: fetched,
-  })
-
-  const run = () => { setFetched(true); setTimeout(refetch, 0) }
-
-  const current = REPORT_TYPES.find(r => r.id === reportType)!
-
-  return (
-    <div className="space-y-5">
-      {/* Report type selector cards */}
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-        {REPORT_TYPES.map(r => {
-          const Icon = r.icon
-          const active = r.id === reportType
-          return (
-            <button
-              key={r.id}
-              onClick={() => { setReportType(r.id); setFetched(false) }}
-              className={`rounded-xl p-3 text-left border transition-all ${active
-                ? 'bg-primary-600 border-primary-600 shadow-md shadow-primary-600/20'
-                : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-700'
-              }`}
-            >
-              <Icon className={`h-5 w-5 mb-2 ${active ? 'text-white' : 'text-gray-400 dark:text-gray-500'}`} />
-              <p className={`text-xs font-bold leading-tight ${active ? 'text-white' : 'text-gray-700 dark:text-gray-300'}`}>{r.label}</p>
-              <p className={`text-xs mt-0.5 leading-tight ${active ? 'text-primary-200' : 'text-gray-400 dark:text-gray-500'}`}>{r.desc}</p>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Parameters bar */}
-      <div className="flex flex-wrap items-end gap-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-        {needsRange ? (
-          <>
-            <div>
-              <NepaliDateInput label="From" value={dateFrom} onChange={setDateFrom} />
-            </div>
-            <div>
-              <NepaliDateInput label="To" value={dateTo} onChange={setDateTo} />
-            </div>
-          </>
-        ) : (
-          <div>
-            <NepaliDateInput label="As of Date" value={dateTo} onChange={setDateTo} />
-          </div>
-        )}
-        {reportType === 'general-ledger' && (
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Account</label>
-            <select className="input w-52" value={glAccount} onChange={e => setGlAccount(e.target.value)}>
-              <option value="">All accounts</option>
-              {leafAccounts.map(a => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
-            </select>
-          </div>
-        )}
-        <div className="flex gap-2 ml-auto">
-          {data && (
-            <button onClick={() => window.print()} className="btn-secondary flex items-center gap-2">
-              <Printer className="h-4 w-4" /> Print
-            </button>
-          )}
-          <button
-            onClick={run}
-            disabled={isLoading}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white text-sm font-semibold px-4 py-2.5 shadow-sm transition-colors disabled:opacity-60"
-          >
-            {isLoading
-              ? <><span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Generating…</>
-              : <><BarChart3 className="h-4 w-4" />Generate Report</>}
-          </button>
-        </div>
-      </div>
-
-      {/* Report output */}
-      {!fetched && !data && (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="rounded-2xl bg-gray-100 dark:bg-gray-800 p-5 mb-4">
-            <current.icon className="h-8 w-8 text-gray-400" />
-          </div>
-          <p className="text-base font-semibold text-gray-700 dark:text-gray-300">{current.label}</p>
-          <p className="text-sm text-gray-400 mt-1">{current.desc}</p>
-          <p className="text-xs text-gray-300 dark:text-gray-600 mt-3">Set your date range and click Generate Report</p>
-        </div>
-      )}
-
-      {data && !isLoading && (
-        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden print:shadow-none">
-          <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-            <div>
-              <h3 className="font-bold text-gray-900 dark:text-white">{current.label}</h3>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {needsRange ? `${dateFrom} to ${dateTo}` : `As of ${dateTo}`}
-              </p>
-            </div>
-            <span className="text-xs text-gray-400">Shangrila City Bus</span>
-          </div>
-          <div className="p-6 overflow-x-auto">
-            {reportType === 'profit-loss'      && <PLReport data={data} />}
-            {reportType === 'balance-sheet'    && <BSReport data={data} />}
-            {reportType === 'trial-balance'    && <TBReport data={data} />}
-            {reportType === 'cash-flow'        && <CFReport data={data} />}
-            {reportType === 'expense-analysis' && <ExpenseReport data={data} />}
-            {reportType === 'general-ledger'   && <GLReport data={data} />}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -756,13 +625,14 @@ const RRow = ({ code, name, amount, color = '' }: { code: string; name: string; 
 )
 
 function PLReport({ data }: { data: any }) {
+  const { t } = useTranslation('tenant')
   const profit = parseFloat(data.net_profit)
   return (
     <div className="grid grid-cols-2 gap-8">
       <div>
         <div className="flex items-center gap-2 mb-3">
           <span className="w-2 h-2 rounded-full bg-emerald-500" />
-          <h4 className="text-sm font-bold text-emerald-700 dark:text-emerald-400">Revenue</h4>
+          <h4 className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{t('accounting.plReport.revenue')}</h4>
         </div>
         <table className="w-full">
           <tbody>
@@ -772,7 +642,7 @@ function PLReport({ data }: { data: any }) {
           </tbody>
           <tfoot>
             <tr className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
-              <td colSpan={2} className="py-2.5 px-1 text-sm font-bold text-emerald-700 dark:text-emerald-300 rounded-l-lg">Total Revenue</td>
+              <td colSpan={2} className="py-2.5 px-1 text-sm font-bold text-emerald-700 dark:text-emerald-300 rounded-l-lg">{t('accounting.plReport.totalRevenue')}</td>
               <td className="py-2.5 px-1 text-right font-mono font-bold text-emerald-700 dark:text-emerald-300 rounded-r-lg">{fmt(data.total_income)}</td>
             </tr>
           </tfoot>
@@ -781,7 +651,7 @@ function PLReport({ data }: { data: any }) {
       <div>
         <div className="flex items-center gap-2 mb-3">
           <span className="w-2 h-2 rounded-full bg-red-500" />
-          <h4 className="text-sm font-bold text-red-600 dark:text-red-400">Expenses</h4>
+          <h4 className="text-sm font-bold text-red-600 dark:text-red-400">{t('accounting.plReport.expenses')}</h4>
         </div>
         <table className="w-full">
           <tbody>
@@ -791,14 +661,14 @@ function PLReport({ data }: { data: any }) {
           </tbody>
           <tfoot>
             <tr className="bg-red-50 dark:bg-red-900/20">
-              <td colSpan={2} className="py-2.5 px-1 text-sm font-bold text-red-600 dark:text-red-400">Total Expenses</td>
+              <td colSpan={2} className="py-2.5 px-1 text-sm font-bold text-red-600 dark:text-red-400">{t('accounting.plReport.totalExpenses')}</td>
               <td className="py-2.5 px-1 text-right font-mono font-bold text-red-600 dark:text-red-400">{fmt(data.total_expenses)}</td>
             </tr>
           </tfoot>
         </table>
         <div className={`mt-4 rounded-xl p-4 flex items-center justify-between ${profit >= 0 ? 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'}`}>
           <span className={`font-bold text-sm ${profit >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-600 dark:text-red-400'}`}>
-            Net {profit >= 0 ? 'Profit' : 'Loss'}
+            {profit >= 0 ? t('accounting.plReport.netProfit') : t('accounting.plReport.netLoss')}
           </span>
           <span className={`font-mono text-xl font-bold ${profit >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-600 dark:text-red-400'}`}>
             {fmt(Math.abs(profit))}
@@ -810,6 +680,7 @@ function PLReport({ data }: { data: any }) {
 }
 
 function BSReport({ data }: { data: any }) {
+  const { t } = useTranslation('tenant')
   const Section = ({ title, rows, total, colorClass }: any) => (
     <div className="mb-5">
       <div className="flex items-center gap-2 mb-2">
@@ -822,7 +693,7 @@ function BSReport({ data }: { data: any }) {
         ))}</tbody>
         <tfoot>
           <tr className={colorClass.bg}>
-            <td colSpan={2} className={`py-2.5 px-1 text-sm font-bold ${colorClass.text}`}>Total {title}</td>
+            <td colSpan={2} className={`py-2.5 px-1 text-sm font-bold ${colorClass.text}`}>{t('accounting.bsReport.total')} {title}</td>
             <td className={`py-2.5 px-1 text-right font-mono font-bold ${colorClass.text}`}>{fmt(total)}</td>
           </tr>
         </tfoot>
@@ -832,42 +703,43 @@ function BSReport({ data }: { data: any }) {
   return (
     <div>
       <div className="grid grid-cols-2 gap-8">
-        <Section title="Assets" rows={data.assets.rows} total={data.assets.total} colorClass={{ dot: 'bg-blue-500', text: 'text-blue-700 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/20' }} />
+        <Section title={t('accounting.bsReport.assets')} rows={data.assets.rows} total={data.assets.total} colorClass={{ dot: 'bg-blue-500', text: 'text-blue-700 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/20' }} />
         <div>
-          <Section title="Liabilities" rows={data.liabilities.rows} total={data.liabilities.total} colorClass={{ dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/20' }} />
+          <Section title={t('accounting.bsReport.liabilities')} rows={data.liabilities.rows} total={data.liabilities.total} colorClass={{ dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/20' }} />
           <Section
-            title="Equity"
-            rows={[...data.equity.rows, { code: '—', name: 'Current Year Earnings', balance: data.equity.current_year_earnings }]}
+            title={t('accounting.bsReport.equity')}
+            rows={[...data.equity.rows, { code: '—', name: t('accounting.bsReport.currentYearEarnings'), balance: data.equity.current_year_earnings }]}
             total={data.equity.total}
             colorClass={{ dot: 'bg-purple-500', text: 'text-purple-700 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-900/20' }}
           />
         </div>
       </div>
       <div className="mt-2 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4 flex justify-between text-sm font-bold">
-        <span>Total Assets: <span className="font-mono">{fmt(data.assets.total)}</span></span>
-        <span>Total Liabilities + Equity: <span className="font-mono">{fmt(data.total_liabilities_equity)}</span></span>
+        <span>{t('accounting.bsReport.totalAssets')} <span className="font-mono">{fmt(data.assets.total)}</span></span>
+        <span>{t('accounting.bsReport.totalLiabEquity')} <span className="font-mono">{fmt(data.total_liabilities_equity)}</span></span>
       </div>
     </div>
   )
 }
 
 function TBReport({ data }: { data: any }) {
+  const { t } = useTranslation('tenant')
   return (
     <div>
       <div className="flex items-center gap-2 mb-4">
         {data.balanced
-          ? <span className="flex items-center gap-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-1 rounded-full"><CheckCircle className="h-3.5 w-3.5" />Balanced</span>
-          : <span className="flex items-center gap-1.5 text-sm font-semibold text-red-600 bg-red-50 dark:bg-red-900/20 px-3 py-1 rounded-full"><AlertCircle className="h-3.5 w-3.5" />Unbalanced</span>
+          ? <span className="flex items-center gap-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-1 rounded-full"><CheckCircle className="h-3.5 w-3.5" />{t('accounting.tbReport.balanced')}</span>
+          : <span className="flex items-center gap-1.5 text-sm font-semibold text-red-600 bg-red-50 dark:bg-red-900/20 px-3 py-1 rounded-full"><AlertCircle className="h-3.5 w-3.5" />{t('accounting.tbReport.unbalanced')}</span>
         }
       </div>
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 dark:bg-gray-800 text-xs text-gray-500 uppercase tracking-wide">
-            <th className="py-2.5 px-3 text-left rounded-l-lg">Code</th>
-            <th className="py-2.5 px-3 text-left">Account Name</th>
-            <th className="py-2.5 px-3 text-left">Type</th>
-            <th className="py-2.5 px-3 text-right">Debit</th>
-            <th className="py-2.5 px-3 text-right rounded-r-lg">Credit</th>
+            <th className="py-2.5 px-3 text-left rounded-l-lg">{t('accounting.tbReport.code')}</th>
+            <th className="py-2.5 px-3 text-left">{t('accounting.tbReport.accountName')}</th>
+            <th className="py-2.5 px-3 text-left">{t('accounting.tbReport.type')}</th>
+            <th className="py-2.5 px-3 text-right">{t('accounting.tbReport.debit')}</th>
+            <th className="py-2.5 px-3 text-right rounded-r-lg">{t('accounting.tbReport.credit')}</th>
           </tr>
         </thead>
         <tbody>
@@ -887,7 +759,7 @@ function TBReport({ data }: { data: any }) {
         </tbody>
         <tfoot>
           <tr className="bg-gray-100 dark:bg-gray-700 font-bold text-sm">
-            <td colSpan={3} className="py-2.5 px-3 rounded-l-lg">Totals</td>
+            <td colSpan={3} className="py-2.5 px-3 rounded-l-lg">{t('accounting.tbReport.totals')}</td>
             <td className="py-2.5 px-3 text-right font-mono text-blue-700 dark:text-blue-300">{fmt(data.total_debit)}</td>
             <td className="py-2.5 px-3 text-right font-mono text-emerald-700 dark:text-emerald-300 rounded-r-lg">{fmt(data.total_credit)}</td>
           </tr>
@@ -898,23 +770,25 @@ function TBReport({ data }: { data: any }) {
 }
 
 function CFReport({ data }: { data: any }) {
+  const { t } = useTranslation('tenant')
   const op = data.operating
+  const cfRows = [
+    { labelKey: 'accounting.cfReport.ticketCollections',   val: op.ticket_collections,   pos: true },
+    { labelKey: 'accounting.cfReport.fuelPayments',        val: op.fuel_payments,         pos: false },
+    { labelKey: 'accounting.cfReport.maintenancePayments', val: op.maintenance_payments,  pos: false },
+    { labelKey: 'accounting.cfReport.salaryPayments',      val: op.salary_payments,       pos: false },
+  ]
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2.5 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-          Operating Activities
+          {t('accounting.cfReport.operatingActivities')}
         </div>
         <table className="w-full text-sm">
           <tbody>
-            {[
-              { label: 'Ticket collections',    val: op.ticket_collections,    pos: true },
-              { label: 'Fuel payments',          val: op.fuel_payments,          pos: false },
-              { label: 'Maintenance payments',   val: op.maintenance_payments,   pos: false },
-              { label: 'Salary payments',        val: op.salary_payments,        pos: false },
-            ].map(row => (
-              <tr key={row.label} className="border-b border-gray-100 dark:border-gray-700/60">
-                <td className="py-2.5 px-4 text-gray-600 dark:text-gray-400">{row.label}</td>
+            {cfRows.map(row => (
+              <tr key={row.labelKey} className="border-b border-gray-100 dark:border-gray-700/60">
+                <td className="py-2.5 px-4 text-gray-600 dark:text-gray-400">{t(row.labelKey)}</td>
                 <td className={`py-2.5 px-4 text-right font-mono font-semibold ${row.pos ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                   {row.pos ? '+ ' : '− '}{fmt(row.val)}
                 </td>
@@ -925,15 +799,15 @@ function CFReport({ data }: { data: any }) {
       </div>
       <div className="grid grid-cols-3 gap-4">
         <div className="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-4 text-center">
-          <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide mb-1">Total Inflow</p>
+          <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide mb-1">{t('accounting.cfReport.totalInflow')}</p>
           <p className="font-mono text-lg font-bold text-emerald-700 dark:text-emerald-300">{fmt(data.total_cash_inflow)}</p>
         </div>
         <div className="rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 text-center">
-          <p className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wide mb-1">Total Outflow</p>
+          <p className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wide mb-1">{t('accounting.cfReport.totalOutflow')}</p>
           <p className="font-mono text-lg font-bold text-red-600 dark:text-red-400">{fmt(data.total_cash_outflow)}</p>
         </div>
         <div className={`rounded-xl p-4 text-center border ${parseFloat(data.net_cash_flow) >= 0 ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' : 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800'}`}>
-          <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide mb-1">Net Cash Flow</p>
+          <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide mb-1">{t('accounting.cfReport.netCashFlow')}</p>
           <p className="font-mono text-lg font-bold text-blue-700 dark:text-blue-300">{fmt(data.net_cash_flow)}</p>
         </div>
       </div>
@@ -942,6 +816,7 @@ function CFReport({ data }: { data: any }) {
 }
 
 function ExpenseReport({ data }: { data: any }) {
+  const { t } = useTranslation('tenant')
   const total = parseFloat(data.total) || 1
   const rows = data.expenses.filter((r: any) => parseFloat(r.amount) > 0)
   return (
@@ -949,10 +824,10 @@ function ExpenseReport({ data }: { data: any }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 dark:bg-gray-800 text-xs text-gray-500 uppercase tracking-wide">
-            <th className="py-2.5 px-3 text-left rounded-l-lg">Code</th>
-            <th className="py-2.5 px-3 text-left">Expense Account</th>
-            <th className="py-2.5 px-3 text-right">Amount</th>
-            <th className="py-2.5 px-3 text-right w-32">% Share</th>
+            <th className="py-2.5 px-3 text-left rounded-l-lg">{t('accounting.expReport.code')}</th>
+            <th className="py-2.5 px-3 text-left">{t('accounting.expReport.expenseAccount')}</th>
+            <th className="py-2.5 px-3 text-right">{t('accounting.expReport.amount')}</th>
+            <th className="py-2.5 px-3 text-right w-32">{t('accounting.expReport.pctShare')}</th>
             <th className="py-2.5 px-3 w-32 rounded-r-lg" />
           </tr>
         </thead>
@@ -976,7 +851,7 @@ function ExpenseReport({ data }: { data: any }) {
         </tbody>
         <tfoot>
           <tr className="bg-orange-50 dark:bg-orange-900/20 font-bold">
-            <td colSpan={2} className="py-2.5 px-3 text-orange-700 dark:text-orange-300 rounded-l-lg">Total Expenses</td>
+            <td colSpan={2} className="py-2.5 px-3 text-orange-700 dark:text-orange-300 rounded-l-lg">{t('accounting.expReport.totalExpenses')}</td>
             <td className="py-2.5 px-3 text-right font-mono text-orange-700 dark:text-orange-300">{fmt(data.total)}</td>
             <td className="py-2.5 px-3 text-right font-mono text-orange-700 dark:text-orange-300">100%</td>
             <td className="rounded-r-lg" />
@@ -988,17 +863,18 @@ function ExpenseReport({ data }: { data: any }) {
 }
 
 function GLReport({ data }: { data: any }) {
+  const { t } = useTranslation('tenant')
   return (
     <table className="w-full text-sm">
       <thead>
         <tr className="bg-gray-50 dark:bg-gray-800 text-xs text-gray-500 uppercase tracking-wide">
-          <th className="py-2.5 px-3 text-left rounded-l-lg">Account</th>
-          <th className="py-2.5 px-3 text-left">Date</th>
-          <th className="py-2.5 px-3 text-left">Entry No.</th>
-          <th className="py-2.5 px-3 text-left">Description</th>
-          <th className="py-2.5 px-3 text-right">Debit</th>
-          <th className="py-2.5 px-3 text-right">Credit</th>
-          <th className="py-2.5 px-3 text-right rounded-r-lg">Balance</th>
+          <th className="py-2.5 px-3 text-left rounded-l-lg">{t('accounting.glReport.account')}</th>
+          <th className="py-2.5 px-3 text-left">{t('accounting.glReport.date')}</th>
+          <th className="py-2.5 px-3 text-left">{t('accounting.glReport.entryNo')}</th>
+          <th className="py-2.5 px-3 text-left">{t('accounting.glReport.description')}</th>
+          <th className="py-2.5 px-3 text-right">{t('accounting.glReport.debit')}</th>
+          <th className="py-2.5 px-3 text-right">{t('accounting.glReport.credit')}</th>
+          <th className="py-2.5 px-3 text-right rounded-r-lg">{t('accounting.glReport.balance')}</th>
         </tr>
       </thead>
       <tbody>
@@ -1021,6 +897,162 @@ function GLReport({ data }: { data: any }) {
   )
 }
 
+// ─── Reports Panel ────────────────────────────────────────────────────────────
+
+function ReportsPanel({ accounts }: { accounts: COA[] }) {
+  const { t } = useTranslation('tenant')
+  const [reportType, setReportType] = useState<ReportType>('profit-loss')
+  const [dateFrom, setDateFrom] = useState(() => { const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0] })
+  const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0])
+  const [glAccount, setGlAccount] = useState('')
+  const [fetched, setFetched] = useState(false)
+
+  const needsRange = ['profit-loss', 'cash-flow', 'expense-analysis', 'general-ledger'].includes(reportType)
+  const leafAccounts = accounts.filter(a => a.is_posting_allowed !== false && !a.is_group)
+
+  const reportLabelMap: Record<ReportType, string> = {
+    'profit-loss':      t('accounting.reports.profitLoss'),
+    'balance-sheet':    t('accounting.reports.balanceSheet'),
+    'trial-balance':    t('accounting.reports.trialBalance'),
+    'cash-flow':        t('accounting.reports.cashFlow'),
+    'expense-analysis': t('accounting.reports.expenseAnalysis'),
+    'general-ledger':   t('accounting.reports.generalLedger'),
+  }
+  const reportDescMap: Record<ReportType, string> = {
+    'profit-loss':      t('accounting.reports.profitLossDesc'),
+    'balance-sheet':    t('accounting.reports.balanceSheetDesc'),
+    'trial-balance':    t('accounting.reports.trialBalanceDesc'),
+    'cash-flow':        t('accounting.reports.cashFlowDesc'),
+    'expense-analysis': t('accounting.reports.expenseAnalysisDesc'),
+    'general-ledger':   t('accounting.reports.generalLedgerDesc'),
+  }
+
+  const queryUrl = (() => {
+    const p = new URLSearchParams()
+    if (needsRange) { p.set('date_from', dateFrom); p.set('date_to', dateTo) }
+    else p.set('date', dateTo)
+    if (reportType === 'general-ledger' && glAccount) p.set('account_id', glAccount)
+    return `/accounting/reports/${reportType}/?${p}`
+  })()
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['report', reportType, dateFrom, dateTo, glAccount],
+    queryFn: () => apiClient.get(queryUrl).then(r => r.data),
+    enabled: fetched,
+  })
+
+  const run = () => { setFetched(true); setTimeout(refetch, 0) }
+
+  const currentLabel = reportLabelMap[reportType]
+  const currentDesc  = reportDescMap[reportType]
+  const CurrentIcon  = REPORT_TYPES.find(r => r.id === reportType)!.icon
+
+  return (
+    <div className="space-y-5">
+      {/* Report type selector cards */}
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+        {REPORT_TYPES.map(r => {
+          const Icon = r.icon
+          const active = r.id === reportType
+          return (
+            <button
+              key={r.id}
+              onClick={() => { setReportType(r.id); setFetched(false) }}
+              className={`rounded-xl p-3 text-left border transition-all ${active
+                ? 'bg-primary-600 border-primary-600 shadow-md shadow-primary-600/20'
+                : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-700'
+              }`}
+            >
+              <Icon className={`h-5 w-5 mb-2 ${active ? 'text-white' : 'text-gray-400 dark:text-gray-500'}`} />
+              <p className={`text-xs font-bold leading-tight ${active ? 'text-white' : 'text-gray-700 dark:text-gray-300'}`}>{reportLabelMap[r.id]}</p>
+              <p className={`text-xs mt-0.5 leading-tight ${active ? 'text-primary-200' : 'text-gray-400 dark:text-gray-500'}`}>{reportDescMap[r.id]}</p>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Parameters bar */}
+      <div className="flex flex-wrap items-end gap-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        {needsRange ? (
+          <>
+            <div>
+              <NepaliDateInput label={t('accounting.reports.from')} value={dateFrom} onChange={setDateFrom} />
+            </div>
+            <div>
+              <NepaliDateInput label={t('accounting.reports.to')} value={dateTo} onChange={setDateTo} />
+            </div>
+          </>
+        ) : (
+          <div>
+            <NepaliDateInput label={t('accounting.reports.asOfDate')} value={dateTo} onChange={setDateTo} />
+          </div>
+        )}
+        {reportType === 'general-ledger' && (
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">{t('accounting.reports.account')}</label>
+            <select className="input w-52" value={glAccount} onChange={e => setGlAccount(e.target.value)}>
+              <option value="">{t('accounting.reports.allAccounts')}</option>
+              {leafAccounts.map(a => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
+            </select>
+          </div>
+        )}
+        <div className="flex gap-2 ml-auto">
+          {data && (
+            <button onClick={() => window.print()} className="btn-secondary flex items-center gap-2">
+              <Printer className="h-4 w-4" /> {t('accounting.buttons.print')}
+            </button>
+          )}
+          <button
+            onClick={run}
+            disabled={isLoading}
+            className="inline-flex items-center gap-2 rounded-xl bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white text-sm font-semibold px-4 py-2.5 shadow-sm transition-colors disabled:opacity-60"
+          >
+            {isLoading
+              ? <><span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{t('accounting.reports.generating')}</>
+              : <><BarChart3 className="h-4 w-4" />{t('accounting.buttons.generateReport')}</>}
+          </button>
+        </div>
+      </div>
+
+      {/* Report output */}
+      {!fetched && !data && (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="rounded-2xl bg-gray-100 dark:bg-gray-800 p-5 mb-4">
+            <CurrentIcon className="h-8 w-8 text-gray-400" />
+          </div>
+          <p className="text-base font-semibold text-gray-700 dark:text-gray-300">{currentLabel}</p>
+          <p className="text-sm text-gray-400 mt-1">{currentDesc}</p>
+          <p className="text-xs text-gray-300 dark:text-gray-600 mt-3">{t('accounting.reports.setDateRange')}</p>
+        </div>
+      )}
+
+      {data && !isLoading && (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden print:shadow-none">
+          <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-gray-900 dark:text-white">{currentLabel}</h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {needsRange
+                  ? `${dateFrom} ${t('accounting.reports.dateRangeSep')} ${dateTo}`
+                  : `${t('accounting.reports.asOf')} ${dateTo}`}
+              </p>
+            </div>
+            <span className="text-xs text-gray-400">Shangrila City Bus</span>
+          </div>
+          <div className="p-6 overflow-x-auto">
+            {reportType === 'profit-loss'      && <PLReport data={data} />}
+            {reportType === 'balance-sheet'    && <BSReport data={data} />}
+            {reportType === 'trial-balance'    && <TBReport data={data} />}
+            {reportType === 'cash-flow'        && <CFReport data={data} />}
+            {reportType === 'expense-analysis' && <ExpenseReport data={data} />}
+            {reportType === 'general-ledger'   && <GLReport data={data} />}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AccountingPage() {
@@ -1039,9 +1071,7 @@ export default function AccountingPage() {
     queryKey: ['accounting-dashboard'],
     queryFn: () => apiClient.get('/accounting/dashboard/').then(r => r.data),
   })
-  // Flat account list for JE modal + reports.
-  // Uses the tree cache (same queryKey as ChartOfAccountsPanel) to avoid a
-  // second network round-trip and sidesteps pagination format ambiguity.
+
   const { data: coaTree = [] } = useQuery<any[]>({
     queryKey: ['coa-tree'],
     queryFn: () => apiClient.get('/accounting/accounts/tree/').then(r => r.data),
@@ -1081,18 +1111,18 @@ export default function AccountingPage() {
 
   const postMutation = useMutation({
     mutationFn: (id: string) => apiClient.post(`/accounting/journal-entries/${id}/post/`).then(r => r.data),
-    onSuccess: () => { toast.success('Entry posted'); queryClient.invalidateQueries({ queryKey: ['journal-entries'] }); queryClient.invalidateQueries({ queryKey: ['accounting-dashboard'] }) },
+    onSuccess: () => { toast.success(t('accounting.je.entryPosted')); queryClient.invalidateQueries({ queryKey: ['journal-entries'] }); queryClient.invalidateQueries({ queryKey: ['accounting-dashboard'] }) },
     onError: (e: any) => toast.error(e?.response?.data?.detail || 'Failed'),
   })
   const reverseMutation = useMutation({
     mutationFn: (id: string) => apiClient.post(`/accounting/journal-entries/${id}/reverse/`, { date: new Date().toISOString().split('T')[0] }).then(r => r.data),
-    onSuccess: () => { toast.success('Entry reversed'); queryClient.invalidateQueries({ queryKey: ['journal-entries'] }) },
+    onSuccess: () => { toast.success(t('accounting.je.entryReversed')); queryClient.invalidateQueries({ queryKey: ['journal-entries'] }) },
     onError: (e: any) => toast.error(e?.response?.data?.detail || 'Failed'),
   })
   const payMutation = useMutation({
     mutationFn: (id: string) => apiClient.post(`/accounting/salary-payments/${id}/pay/`).then(r => r.data),
     onSuccess: () => {
-      toast.success('Salary paid — journal entry auto-created')
+      toast.success(t('accounting.salaryModal.successPaid'))
       queryClient.invalidateQueries({ queryKey: ['salary-payments'] })
       queryClient.invalidateQueries({ queryKey: ['accounting-dashboard'] })
     },
@@ -1112,6 +1142,13 @@ export default function AccountingPage() {
     MAINTENANCE: 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300',
     SALARY: 'bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300',
   }
+
+  const autoMappingItems = [
+    { icon: Ticket, labelKey: 'accounting.overview.journalMapping.ticketSale',    dr: 'Cash / Bank (1110/1120)',  cr: 'Ticket Revenue (4100)', num: '01' },
+    { icon: Fuel,   labelKey: 'accounting.overview.journalMapping.fuelPurchase',  dr: 'Fuel Expense (5100)',       cr: 'AP – Fuel (2110)',      num: '02' },
+    { icon: Wrench, labelKey: 'accounting.overview.journalMapping.maintenance',   dr: 'Maintenance (5200)',        cr: 'AP – Vendor (2120)',    num: '03' },
+    { icon: Users,  labelKey: 'accounting.overview.journalMapping.salaryPayment', dr: 'Salary Exp. (5300/5400)',  cr: 'Cash / Bank (1110)',    num: '04' },
+  ]
 
   return (
     <div className="min-h-full">
@@ -1149,23 +1186,23 @@ export default function AccountingPage() {
       {/* Tabs */}
       <div className="mb-6 flex gap-0 border-b border-gray-200 dark:border-gray-700">
         {tabs.map(tab => {
-          const tabLabel = tab === 'Overview' ? t('accounting.tabs.overview')
-            : tab === 'Chart of Accounts' ? t('accounting.tabs.chartOfAccounts')
-            : tab === 'Journal Entries' ? t('accounting.tabs.journalEntries')
-            : tab === 'Salary Payments' ? t('accounting.tabs.salaryPayments')
+          const tabLabel = tab === 'Overview'          ? t('accounting.tabs.overview')
+            : tab === 'Chart of Accounts'             ? t('accounting.tabs.chartOfAccounts')
+            : tab === 'Journal Entries'               ? t('accounting.tabs.journalEntries')
+            : tab === 'Salary Payments'               ? t('accounting.tabs.salaryPayments')
             : t('accounting.tabs.reports')
           return (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-all ${
-              activeTab === tab
-                ? 'border-primary-600 text-primary-700 dark:text-primary-300'
-                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-            }`}
-          >
-            {tabLabel}
-          </button>
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-all ${
+                activeTab === tab
+                  ? 'border-primary-600 text-primary-700 dark:text-primary-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+              }`}
+            >
+              {tabLabel}
+            </button>
           )
         })}
       </div>
@@ -1192,7 +1229,7 @@ export default function AccountingPage() {
                   <div className="w-5 h-5 rounded-md bg-primary-600 flex items-center justify-center">
                     <TrendingUp className="h-3 w-3 text-white" />
                   </div>
-                  <span className="text-xs text-gray-400">Total income</span>
+                  <span className="text-xs text-gray-400">{t('accounting.overview.totalIncome')}</span>
                 </div>
               </div>
               <div className="px-8">
@@ -1202,7 +1239,7 @@ export default function AccountingPage() {
                   <div className="w-5 h-5 rounded-md bg-primary-600 flex items-center justify-center">
                     <TrendingDown className="h-3 w-3 text-white" />
                   </div>
-                  <span className="text-xs text-gray-400">Total costs</span>
+                  <span className="text-xs text-gray-400">{t('accounting.overview.totalCosts')}</span>
                 </div>
               </div>
               <div className="pl-8">
@@ -1212,7 +1249,7 @@ export default function AccountingPage() {
                   <div className="w-5 h-5 rounded-md bg-primary-600 flex items-center justify-center">
                     <BarChart3 className="h-3 w-3 text-white" />
                   </div>
-                  <span className="text-xs text-gray-400">Revenue − Expenses</span>
+                  <span className="text-xs text-gray-400">{t('accounting.overview.revenueMinusExpenses')}</span>
                 </div>
               </div>
             </div>
@@ -1220,9 +1257,9 @@ export default function AccountingPage() {
 
           {/* Balance sheet metrics */}
           <div className="grid grid-cols-3 gap-4">
-            <KpiCard label={t('accounting.overview.cashBalance')}   value={kpis ? fmt(kpis.cash_balance) : '—'}        icon={Wallet}      sub="Current liquid funds" />
-            <KpiCard label={t('accounting.overview.receivable')}    value={kpis ? fmt(kpis.accounts_receivable) : '—'} icon={ArrowUpDown} sub="Amounts owed to you" />
-            <KpiCard label={t('accounting.overview.payable')}       value={kpis ? fmt(kpis.accounts_payable) : '—'}    icon={CreditCard}  sub="Amounts you owe" />
+            <KpiCard label={t('accounting.overview.cashBalance')}   value={kpis ? fmt(kpis.cash_balance) : '—'}        icon={Wallet}      sub={t('accounting.overview.currentLiquidFunds')} />
+            <KpiCard label={t('accounting.overview.receivable')}    value={kpis ? fmt(kpis.accounts_receivable) : '—'} icon={ArrowUpDown} sub={t('accounting.overview.amountsOwedToYou')} />
+            <KpiCard label={t('accounting.overview.payable')}       value={kpis ? fmt(kpis.accounts_payable) : '—'}    icon={CreditCard}  sub={t('accounting.overview.amountsYouOwe')} />
           </div>
 
           {/* Auto-journaling mapping */}
@@ -1232,25 +1269,20 @@ export default function AccountingPage() {
                 <Activity className="h-3.5 w-3.5 text-white" />
               </div>
               <div>
-                <p className="text-sm font-bold text-gray-800 dark:text-gray-100">Automatic Journal Entry Mapping</p>
-                <p className="text-xs text-gray-400">Every operational event triggers a balanced double-entry automatically</p>
+                <p className="text-sm font-bold text-gray-800 dark:text-gray-100">{t('accounting.overview.autoMapping')}</p>
+                <p className="text-xs text-gray-400">{t('accounting.overview.autoMappingDesc')}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-y md:divide-y-0 divide-gray-100 dark:divide-gray-700">
-              {[
-                { icon: Ticket, label: 'Ticket Sale',    dr: 'Cash / Bank (1110/1120)',  cr: 'Ticket Revenue (4100)', num: '01' },
-                { icon: Fuel,   label: 'Fuel Purchase',  dr: 'Fuel Expense (5100)',       cr: 'AP – Fuel (2110)',      num: '02' },
-                { icon: Wrench, label: 'Maintenance',    dr: 'Maintenance (5200)',         cr: 'AP – Vendor (2120)',    num: '03' },
-                { icon: Users,  label: 'Salary Payment', dr: 'Salary Exp. (5300/5400)',   cr: 'Cash / Bank (1110)',    num: '04' },
-              ].map(item => (
-                <div key={item.label} className="p-5 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors">
+              {autoMappingItems.map(item => (
+                <div key={item.labelKey} className="p-5 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors">
                   <div className="flex items-center gap-2.5 mb-4">
                     <div className="w-9 h-9 rounded-xl bg-primary-600 flex items-center justify-center shadow-sm shadow-primary-600/30 flex-shrink-0">
                       <item.icon className="h-4 w-4 text-white" />
                     </div>
                     <div>
-                      <span className="text-[10px] font-bold text-primary-400 uppercase tracking-widest">Step {item.num}</span>
-                      <p className="text-sm font-bold text-gray-800 dark:text-gray-100 leading-tight">{item.label}</p>
+                      <span className="text-[10px] font-bold text-primary-400 uppercase tracking-widest">{t('accounting.overview.step')} {item.num}</span>
+                      <p className="text-sm font-bold text-gray-800 dark:text-gray-100 leading-tight">{t(item.labelKey)}</p>
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -1280,13 +1312,13 @@ export default function AccountingPage() {
           <div className="flex flex-wrap gap-3 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-3">
             <div className="relative flex-1 min-w-52">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-              <input className="input pl-9" placeholder="Search entry no. or description…" value={jeSearch} onChange={e => setJeSearch(e.target.value)} />
+              <input className="input pl-9" placeholder={t('accounting.je.searchPlaceholder')} value={jeSearch} onChange={e => setJeSearch(e.target.value)} />
             </div>
             <select className="input w-40" value={jeStatusFilter} onChange={e => setJeStatusFilter(e.target.value)}>
-              <option value="">All Status</option>
-              <option value="DRAFT">Draft</option>
-              <option value="POSTED">Posted</option>
-              <option value="REVERSED">Reversed</option>
+              <option value="">{t('accounting.je.allStatus')}</option>
+              <option value="DRAFT">{t('accounting.je.statusDraft')}</option>
+              <option value="POSTED">{t('accounting.je.statusPosted')}</option>
+              <option value="REVERSED">{t('accounting.je.statusReversed')}</option>
             </select>
             <button
               onClick={() => setShowReversed(v => !v)}
@@ -1297,7 +1329,7 @@ export default function AccountingPage() {
               }`}
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              {showReversed ? 'Hiding reversed' : 'Show reversed'}
+              {showReversed ? t('accounting.je.hideReversed') : t('accounting.je.showReversed')}
             </button>
           </div>
 
@@ -1312,7 +1344,7 @@ export default function AccountingPage() {
                   <th className="py-2.5 px-3 text-right">{t('accounting.columns.debit')}</th>
                   <th className="py-2.5 px-3 text-right">{t('accounting.columns.credit')}</th>
                   <th className="py-2.5 px-3 text-center">{t('accounting.columns.status')}</th>
-                  <th className="py-2.5 px-4 text-center">{t('common.actions')}</th>
+                  <th className="py-2.5 px-4 text-center">{t('common:common.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1341,19 +1373,19 @@ export default function AccountingPage() {
                           <div className="flex items-center justify-center gap-1.5">
                             <button
                               onClick={() => setExpandedJE(expandedJE === je.id ? null : je.id)}
-                              title="View lines"
+                              title={t('accounting.je.viewLines')}
                               className="rounded-lg p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                             >
                               <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expandedJE === je.id ? 'rotate-180' : ''}`} />
                             </button>
                             {je.status === 'DRAFT' && (
-                              <button onClick={() => postMutation.mutate(je.id)} title="Post entry"
+                              <button onClick={() => postMutation.mutate(je.id)} title={t('accounting.je.postEntry')}
                                 className="rounded-lg p-1.5 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors">
                                 <CheckCircle className="h-4 w-4" />
                               </button>
                             )}
                             {je.status === 'POSTED' && (
-                              <button onClick={() => reverseMutation.mutate(je.id)} title="Reverse entry"
+                              <button onClick={() => reverseMutation.mutate(je.id)} title={t('accounting.je.reverseEntry')}
                                 className="rounded-lg p-1.5 text-orange-500 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors">
                                 <RotateCcw className="h-4 w-4" />
                               </button>
@@ -1366,16 +1398,16 @@ export default function AccountingPage() {
                           <td colSpan={8} className="px-8 py-4">
                             <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                               <div className="bg-gray-100 dark:bg-gray-700/50 px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                                Journal Lines — {je.entry_no}
+                                {t('accounting.je.journalLines')} — {je.entry_no}
                               </div>
                               <table className="w-full text-xs">
                                 <thead>
                                   <tr className="text-gray-400 uppercase tracking-wide border-b border-gray-200 dark:border-gray-700">
-                                    <th className="text-left px-4 py-2 w-16">Code</th>
-                                    <th className="text-left px-3 py-2">Account</th>
-                                    <th className="text-left px-3 py-2">Memo</th>
-                                    <th className="text-right px-3 py-2 w-32">Debit</th>
-                                    <th className="text-right px-4 py-2 w-32">Credit</th>
+                                    <th className="text-left px-4 py-2 w-16">{t('accounting.je.code')}</th>
+                                    <th className="text-left px-3 py-2">{t('accounting.je.account')}</th>
+                                    <th className="text-left px-3 py-2">{t('accounting.je.memo')}</th>
+                                    <th className="text-right px-3 py-2 w-32">{t('accounting.columns.debit')}</th>
+                                    <th className="text-right px-4 py-2 w-32">{t('accounting.columns.credit')}</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -1402,8 +1434,8 @@ export default function AccountingPage() {
             {journalEntries.length === 0 && (
               <div className="py-20 text-center">
                 <FileText className="h-10 w-10 text-gray-200 dark:text-gray-700 mx-auto mb-3" />
-                <p className="text-sm font-medium text-gray-400">No journal entries yet</p>
-                <p className="text-xs text-gray-300 dark:text-gray-600 mt-1">Entries are auto-generated from ticket sales, fuel & maintenance — or create manually.</p>
+                <p className="text-sm font-medium text-gray-400">{t('accounting.je.emptyTitle')}</p>
+                <p className="text-xs text-gray-300 dark:text-gray-600 mt-1">{t('accounting.je.emptyDesc')}</p>
               </div>
             )}
           </div>
@@ -1417,7 +1449,7 @@ export default function AccountingPage() {
           <div className="flex gap-3 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-              <input className="input pl-9" placeholder="Search by employee name…" value={salarySearch} onChange={e => setSalarySearch(e.target.value)} />
+              <input className="input pl-9" placeholder={t('accounting.salary.searchPlaceholder')} value={salarySearch} onChange={e => setSalarySearch(e.target.value)} />
             </div>
           </div>
 
@@ -1434,7 +1466,7 @@ export default function AccountingPage() {
                   <th className="py-2.5 px-3 text-right">{t('accounting.columns.netPay')}</th>
                   <th className="py-2.5 px-3 text-center">{t('accounting.columns.status')}</th>
                   <th className="py-2.5 px-3 text-center">{t('accounting.columns.jeRef')}</th>
-                  <th className="py-2.5 px-4 text-center">{t('common.actions')}</th>
+                  <th className="py-2.5 px-4 text-center">{t('common:common.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1507,8 +1539,8 @@ export default function AccountingPage() {
             {salaryPayments.length === 0 && (
               <div className="py-20 text-center">
                 <Users className="h-10 w-10 text-gray-200 dark:text-gray-700 mx-auto mb-3" />
-                <p className="text-sm font-medium text-gray-400">No salary records yet</p>
-                <p className="text-xs text-gray-300 dark:text-gray-600 mt-1">Add salary payments to auto-generate journal entries.</p>
+                <p className="text-sm font-medium text-gray-400">{t('accounting.salary.emptyTitle')}</p>
+                <p className="text-xs text-gray-300 dark:text-gray-600 mt-1">{t('accounting.salary.emptyDesc')}</p>
               </div>
             )}
           </div>

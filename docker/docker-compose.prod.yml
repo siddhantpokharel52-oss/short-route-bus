@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   db:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     restart: always
     environment:
       POSTGRES_DB: kvbms
@@ -26,12 +26,12 @@ services:
   django:
     build:
       context: ..
-      dockerfile: docker/Dockerfiles/Dockerfile.django
+      dockerfile: docker/Dockerfiles/Dockerfile.django.prod
     restart: always
     command: >
       sh -c "python backend/manage.py migrate &&
              python backend/manage.py collectstatic --noinput &&
-             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4 --worker-class uvicorn.workers.UvicornWorker"
+             daphne -b 0.0.0.0 -p 8000 config.asgi:application"
     volumes:
       - static_files:/app/staticfiles
       - media_files:/app/media
@@ -50,6 +50,8 @@ services:
       - SECRET_KEY=${SECRET_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - TENANT_BASE_DOMAIN=${TENANT_BASE_DOMAIN:-citybus.com.np}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
       - SENTRY_DSN=${SENTRY_DSN}
       - AWS_S3_BUCKET=${AWS_S3_BUCKET}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
@@ -73,7 +75,7 @@ services:
   celery:
     build:
       context: ..
-      dockerfile: docker/Dockerfiles/Dockerfile.django
+      dockerfile: docker/Dockerfiles/Dockerfile.django.prod
     restart: always
     command: celery -A config worker -l info -c 4 -Q default,notifications,finance,analytics,emergency
     depends_on:
@@ -91,7 +93,7 @@ services:
   celery-beat:
     build:
       context: ..
-      dockerfile: docker/Dockerfiles/Dockerfile.django
+      dockerfile: docker/Dockerfiles/Dockerfile.django.prod
     restart: always
     command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     depends_on:
@@ -105,6 +107,14 @@ services:
       - DB_HOST=db
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - SECRET_KEY=${SECRET_KEY}
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfiles/Dockerfile.frontend.prod
+    restart: always
+    expose:
+      - "3000"
 
   nginx:
     image: nginx:alpine
@@ -120,6 +130,7 @@ services:
     depends_on:
       - django
       - fastapi
+      - frontend
 
 volumes:
   postgres_data:

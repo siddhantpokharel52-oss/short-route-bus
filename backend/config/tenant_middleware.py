@@ -24,18 +24,29 @@ from django.db import connection
 from django.http import JsonResponse
 
 
+_SENTINEL = object()
+
+
 def _authenticate_jwt(request):
-    """Resolve the request's JWT user without depending on DRF's view-level
-    authentication (which runs later and isn't available to middleware)."""
+    """Resolve the request's JWT user.
+
+    Returns:
+        (user, expired) where:
+          user    – the resolved User, or None
+          expired – True if a Bearer token was present but authentication failed
+                    (expired or invalid token). False if no token was sent.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    has_token = auth_header.lower().startswith("bearer ")
     try:
         from rest_framework_simplejwt.authentication import JWTAuthentication
         result = JWTAuthentication().authenticate(request)
         if result is not None:
             user, _token = result
-            return user
+            return user, False
     except Exception:
         pass
-    return None
+    return None, has_token  # None user; expired=True only when a token was supplied
 
 
 class TenantSchemaMiddleware:
@@ -52,18 +63,38 @@ class TenantSchemaMiddleware:
                 tenant = None  # unknown slug — leave schema unchanged
 
             if tenant is not None:
-                user = _authenticate_jwt(request)
-                user_schema = (getattr(user, "tenant_schema", "") or "").lower() if user else ""
-                if slug != user_schema:
+                user, token_expired = _authenticate_jwt(request)
+
+                if user is None and token_expired:
+                    # Bearer token was present but expired/invalid → 401 so
+                    # the Axios refresh interceptor retries with a fresh token.
                     return JsonResponse(
                         {
                             "success": False,
                             "data": None,
-                            "message": "Permission denied.",
-                            "errors": {"detail": "X-Tenant-Slug does not match your account's tenant."},
+                            "message": "Authentication required.",
+                            "errors": {"detail": "Token is expired or invalid."},
                         },
-                        status=403,
+                        status=401,
                     )
+
+                if user is not None:
+                    # Valid JWT — verify it belongs to this tenant before
+                    # switching schema (prevents cross-tenant data leakage).
+                    user_schema = (getattr(user, "tenant_schema", "") or "").lower()
+                    if slug != user_schema:
+                        return JsonResponse(
+                            {
+                                "success": False,
+                                "data": None,
+                                "message": "Permission denied.",
+                                "errors": {"detail": "X-Tenant-Slug does not match your account's tenant."},
+                            },
+                            status=403,
+                        )
+
+                # No JWT at all (unauthenticated request, e.g. /auth/login/).
+                # Pass through — the view's permission_classes handle auth.
                 connection.set_tenant(tenant)
 
         response = self.get_response(request)

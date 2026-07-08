@@ -1,7 +1,7 @@
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Upload, CheckCircle, XCircle, TrendingUp, Bus, Users } from 'lucide-react'
+import { ArrowLeft, Upload, CheckCircle, TrendingUp, Bus, Users } from 'lucide-react'
 import { Button } from '@components/shared/Button'
 import { Badge, statusVariant } from '@components/shared/Badge'
 import { StatCard } from '@components/shared/StatCard'

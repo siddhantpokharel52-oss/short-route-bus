@@ -4,19 +4,15 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { Eye, EyeOff, Bus } from 'lucide-react'
+import { Eye, EyeOff, Bus, Building2 } from 'lucide-react'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
 import { LanguageToggle } from '@components/shared/LanguageToggle'
 import { useAuth } from '@hooks/useAuth'
 import { useAuthStore } from '@store/authStore'
+import { getPortalContext, getTenantLoginUrl, getMainLoginUrl } from '@utils/portalContext'
+import { isPlatformRole, isTenantRole } from '@store/authStore'
 import toast from 'react-hot-toast'
-
-const PLATFORM_ROLES = ['SUPER_ADMIN', 'TRANSPORT_AUTHORITY', 'PLATFORM_ANALYST']
-const TENANT_ROLES = [
-  'COMPANY_ADMIN', 'COMPANY_MANAGER', 'DISPATCHER', 'DRIVER',
-  'CONDUCTOR', 'FINANCE_OFFICER', 'HR_OFFICER', 'MAINTENANCE_OFFICER', 'INVENTORY_OFFICER',
-]
 
 type LoginForm = { email: string; password: string }
 type TotpForm = { code: string }
@@ -29,18 +25,36 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
 
-  // On mount: if already authenticated with a valid role, redirect to the right portal.
-  // If authenticated but with a stale/invalid role (e.g. old PASSENGER state),
-  // clear the auth state so the user can log in fresh.
+  const { isTenantPortal, tenantSlug } = getPortalContext()
+
+  // On mount: redirect already-authenticated users to the correct portal,
+  // or to the correct domain if they ended up on the wrong one.
   useEffect(() => {
     if (!isAuthenticated || !user) return
     const role = user.role
-    if (PLATFORM_ROLES.includes(role)) {
-      navigate('/super-admin/dashboard', { replace: true })
-    } else if (TENANT_ROLES.includes(role)) {
-      navigate('/tenant/live-tracking', { replace: true })
+
+    if (isPlatformRole(role)) {
+      if (isTenantPortal) {
+        // Platform user landed on a tenant subdomain — send them to the main portal.
+        window.location.replace(getMainLoginUrl())
+      } else {
+        navigate('/super-admin/dashboard', { replace: true })
+      }
+    } else if (isTenantRole(role)) {
+      if (!isTenantPortal) {
+        // Tenant user landed on the main domain — redirect to their subdomain.
+        if (user.tenantSchema) {
+          window.location.replace(
+            getTenantLoginUrl(user.tenantSchema).replace('/login', '/tenant/live-tracking')
+          )
+        } else {
+          clearAuth()
+        }
+      } else {
+        navigate('/tenant/live-tracking', { replace: true })
+      }
     } else {
-      // Stale or unknown role — wipe it so the form starts clean
+      // Stale or unknown role — wipe so the form starts clean
       clearAuth()
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -90,30 +104,62 @@ export default function LoginPage() {
     }
   }
 
+  const portalIcon = isTenantPortal ? (
+    <Building2 className="h-10 w-10 text-white" />
+  ) : (
+    <Bus className="h-10 w-10 text-white" />
+  )
+
+  const portalTitle = isTenantPortal
+    ? (tenantSlug ? tenantSlug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : t('auth.companyPortal'))
+    : t('app.name')
+
+  const portalSubtitle = isTenantPortal
+    ? t('auth.companyPortalSubtitle', { defaultValue: 'Company Management Portal' })
+    : t('app.fullName')
+
+  const loginSubtitle = isTenantPortal
+    ? t('auth.loginSubtitleTenant', { defaultValue: 'Sign in to your company portal' })
+    : t('auth.loginSubtitle')
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-primary-900 via-primary-800 to-primary-600">
       {/* Left panel — branding */}
       <div className="hidden flex-1 flex-col items-center justify-center p-12 text-white lg:flex">
         <div className="mb-8 flex h-20 w-20 items-center justify-center rounded-2xl bg-white/10 backdrop-blur-sm">
-          <Bus className="h-10 w-10 text-white" />
+          {portalIcon}
         </div>
-        <h1 className="text-5xl font-bold">{t('app.name')}</h1>
-        <p className="mt-4 text-xl text-primary-200">{t('app.fullName')}</p>
-        <p className="mt-2 text-primary-300">{t('app.tagline')}</p>
+        <h1 className="text-5xl font-bold">{portalTitle}</h1>
+        <p className="mt-4 text-xl text-primary-200">{portalSubtitle}</p>
+        {!isTenantPortal && <p className="mt-2 text-primary-300">{t('app.tagline')}</p>}
 
-        <div className="mt-16 grid grid-cols-2 gap-6 text-center">
-          {[
-            { label: t('auth.stats.busOperators'), value: '12+' },
-            { label: t('auth.stats.dailyTrips'), value: '2,400+' },
-            { label: t('auth.stats.passengersPerDay'), value: '85,000+' },
-            { label: t('auth.stats.routesCount'), value: '48' },
-          ].map((stat) => (
-            <div key={stat.label} className="rounded-xl bg-white/10 p-4 backdrop-blur-sm">
-              <p className="text-3xl font-bold text-white">{stat.value}</p>
-              <p className="mt-1 text-sm text-primary-200">{stat.label}</p>
-            </div>
-          ))}
-        </div>
+        {!isTenantPortal && (
+          <div className="mt-16 grid grid-cols-2 gap-6 text-center">
+            {[
+              { label: t('auth.stats.busOperators'), value: '12+' },
+              { label: t('auth.stats.dailyTrips'), value: '2,400+' },
+              { label: t('auth.stats.passengersPerDay'), value: '85,000+' },
+              { label: t('auth.stats.routesCount'), value: '48' },
+            ].map((stat) => (
+              <div key={stat.label} className="rounded-xl bg-white/10 p-4 backdrop-blur-sm">
+                <p className="text-3xl font-bold text-white">{stat.value}</p>
+                <p className="mt-1 text-sm text-primary-200">{stat.label}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {isTenantPortal && (
+          <p className="mt-8 text-sm text-primary-300">
+            {t('auth.platformLoginHint', { defaultValue: 'Platform administrators:' })}{' '}
+            <a
+              href={getMainLoginUrl()}
+              className="underline hover:text-white"
+            >
+              {t('auth.useMainPortal', { defaultValue: 'use the main portal' })}
+            </a>
+          </p>
+        )}
       </div>
 
       {/* Right panel — login form */}
@@ -121,8 +167,10 @@ export default function LoginPage() {
         <div className="w-full max-w-sm">
           {/* Mobile logo */}
           <div className="mb-8 flex items-center justify-center gap-3 lg:hidden">
-            <Bus className="h-8 w-8 text-white" />
-            <span className="text-2xl font-bold text-white">{t('app.name')}</span>
+            {isTenantPortal
+              ? <Building2 className="h-8 w-8 text-white" />
+              : <Bus className="h-8 w-8 text-white" />}
+            <span className="text-2xl font-bold text-white">{portalTitle}</span>
           </div>
 
           <div className="rounded-2xl bg-white p-8 shadow-2xl lg:p-0 lg:shadow-none">
@@ -132,7 +180,7 @@ export default function LoginPage() {
                   {requires2FA ? t('auth.twoFactorTitle') : t('auth.loginTitle')}
                 </h2>
                 <p className="mt-1 text-sm text-gray-500">
-                  {requires2FA ? t('auth.twoFactorCode') : t('auth.loginSubtitle')}
+                  {requires2FA ? t('auth.twoFactorCode') : loginSubtitle}
                 </p>
               </div>
               <LanguageToggle />

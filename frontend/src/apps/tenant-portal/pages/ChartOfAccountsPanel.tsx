@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronRight, ChevronDown, Plus, Pencil, Trash2, Search, X,
@@ -50,37 +51,25 @@ const BLANK_FORM: FormState = {
   is_group: false, is_posting_allowed: true, is_active: true,
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Visual-only constants (no text) ─────────────────────────────────────────
 
-const TYPE_META: Record<AccountType, { label: string; dot: string; badge: string; nature: AccountNature }> = {
-  ASSET:     { label: 'Asset',     dot: 'bg-blue-500',    badge: 'bg-blue-50 text-blue-700 ring-blue-200',    nature: 'DEBIT'  },
-  LIABILITY: { label: 'Liability', dot: 'bg-red-500',     badge: 'bg-red-50 text-red-700 ring-red-200',       nature: 'CREDIT' },
-  EQUITY:    { label: 'Equity',    dot: 'bg-purple-500',  badge: 'bg-purple-50 text-purple-700 ring-purple-200', nature: 'CREDIT' },
-  INCOME:    { label: 'Income',    dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 ring-emerald-200', nature: 'CREDIT' },
-  EXPENSE:   { label: 'Expense',   dot: 'bg-orange-500',  badge: 'bg-orange-50 text-orange-700 ring-orange-200', nature: 'DEBIT' },
+const TYPE_META: Record<AccountType, { dot: string; badge: string; nature: AccountNature }> = {
+  ASSET:     { dot: 'bg-blue-500',    badge: 'bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:ring-blue-800',    nature: 'DEBIT'  },
+  LIABILITY: { dot: 'bg-red-500',     badge: 'bg-red-50 text-red-700 ring-red-200 dark:bg-red-900/30 dark:text-red-300 dark:ring-red-800',       nature: 'CREDIT' },
+  EQUITY:    { dot: 'bg-purple-500',  badge: 'bg-purple-50 text-purple-700 ring-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:ring-purple-800', nature: 'CREDIT' },
+  INCOME:    { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:ring-emerald-800', nature: 'CREDIT' },
+  EXPENSE:   { dot: 'bg-orange-500',  badge: 'bg-orange-50 text-orange-700 ring-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:ring-orange-800', nature: 'DEBIT'  },
 }
 
-const TYPE_FILTERS: { label: string; value: AccountType | '' }[] = [
-  { label: 'All', value: '' },
-  { label: 'Asset', value: 'ASSET' },
-  { label: 'Liability', value: 'LIABILITY' },
-  { label: 'Equity', value: 'EQUITY' },
-  { label: 'Income', value: 'INCOME' },
-  { label: 'Expense', value: 'EXPENSE' },
-]
+const TYPE_KEYS = ['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE'] as const
 
 const fmt = (n: string | number) =>
   `NPR ${parseFloat(String(n)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function collectVisibleIds(
-  accounts: COAAccount[],
-  search: string,
-  typeFilter: string,
-): Set<string> {
+function collectVisibleIds(accounts: COAAccount[], search: string, typeFilter: string): Set<string> {
   const result = new Set<string>()
-
   function walk(acct: COAAccount): boolean {
     const q = search.toLowerCase()
     const matchesSearch = !q || acct.code.toLowerCase().includes(q) || acct.name.toLowerCase().includes(q)
@@ -89,13 +78,9 @@ function collectVisibleIds(
     for (const child of acct.children ?? []) {
       if (walk(child)) childrenVisible = true
     }
-    if ((matchesSearch && matchesType) || childrenVisible) {
-      result.add(acct.id)
-      return true
-    }
+    if ((matchesSearch && matchesType) || childrenVisible) { result.add(acct.id); return true }
     return false
   }
-
   for (const acct of accounts) walk(acct)
   return result
 }
@@ -103,7 +88,6 @@ function collectVisibleIds(
 function collectAutoExpand(accounts: COAAccount[], search: string, typeFilter: string): Set<string> {
   if (!search && !typeFilter) return new Set()
   const expanded = new Set<string>()
-
   function walk(acct: COAAccount, ancestors: string[]): boolean {
     const q = search.toLowerCase()
     const matchesSearch = !q || acct.code.toLowerCase().includes(q) || acct.name.toLowerCase().includes(q)
@@ -118,17 +102,13 @@ function collectAutoExpand(accounts: COAAccount[], search: string, typeFilter: s
     }
     return false
   }
-
   for (const acct of accounts) walk(acct, [])
   return expanded
 }
 
 function flattenTree(accounts: COAAccount[]): COAAccount[] {
   const result: COAAccount[] = []
-  function walk(acct: COAAccount) {
-    result.push(acct)
-    for (const child of acct.children ?? []) walk(child)
-  }
+  function walk(acct: COAAccount) { result.push(acct); for (const child of acct.children ?? []) walk(child) }
   for (const acct of accounts) walk(acct)
   return result
 }
@@ -148,22 +128,15 @@ function buildBreadcrumb(tree: COAAccount[], targetId: string): COAAccount[] {
 
 // ─── Move Dialog ──────────────────────────────────────────────────────────────
 
-function MoveDialog({
-  account,
-  flat,
-  onClose,
-  onMove,
-}: {
-  account: COAAccount
-  flat: COAAccount[]
-  onClose: () => void
-  onMove: (parentId: string | null) => void
+function MoveDialog({ account, flat, onClose, onMove }: {
+  account: COAAccount; flat: COAAccount[]
+  onClose: () => void; onMove: (parentId: string | null) => void
 }) {
+  const { t } = useTranslation('tenant')
   const [parentId, setParentId] = useState<string>(account.parent ?? '')
 
   const eligible = flat.filter(a => {
     if (a.id === account.id) return false
-    // Can't move under own descendants
     let node: COAAccount | undefined = a
     const flatMap = Object.fromEntries(flat.map(x => [x.id, x]))
     while (node) {
@@ -179,7 +152,7 @@ function MoveDialog({
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-2">
             <Move className="h-4 w-4 text-primary-600" />
-            <span className="font-semibold text-gray-900 dark:text-white text-sm">Move Account</span>
+            <span className="font-semibold text-gray-900 dark:text-white text-sm">{t('accounting.coa.moveDialog.title')}</span>
           </div>
           <button onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800">
             <X className="h-4 w-4" />
@@ -187,16 +160,18 @@ function MoveDialog({
         </div>
         <div className="p-5 space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Moving <strong className="text-gray-900 dark:text-white">{account.code} — {account.name}</strong>
+            {t('accounting.coa.moveDialog.movingLabel')} <strong className="text-gray-900 dark:text-white">{account.code} — {account.name}</strong>
           </p>
           <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">New Parent Account</label>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+              {t('accounting.coa.moveDialog.newParent')}
+            </label>
             <select
-              className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
               value={parentId}
               onChange={e => setParentId(e.target.value)}
             >
-              <option value="">(Root — no parent)</option>
+              <option value="">{t('accounting.coa.moveDialog.rootParent')}</option>
               {eligible.map(a => (
                 <option key={a.id} value={a.id}>
                   {'  '.repeat(a.level_no - 1)}{a.code} — {a.name}
@@ -206,12 +181,12 @@ function MoveDialog({
           </div>
         </div>
         <div className="flex justify-end gap-3 px-5 py-4 border-t border-gray-200 dark:border-gray-700">
-          <button onClick={onClose} className="btn-secondary text-sm">Cancel</button>
+          <button onClick={onClose} className="btn-secondary text-sm">{t('common:common.cancel')}</button>
           <button
             onClick={() => onMove(parentId || null)}
             className="inline-flex items-center gap-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-4 py-2 transition-colors"
           >
-            <Move className="h-3.5 w-3.5" />Move Here
+            <Move className="h-3.5 w-3.5" />{t('accounting.coa.moveDialog.moveHere')}
           </button>
         </div>
       </div>
@@ -221,14 +196,12 @@ function MoveDialog({
 
 // ─── Context Menu ─────────────────────────────────────────────────────────────
 
-function ContextMenu({
-  x, y, account,
-  onAddChild, onEdit, onDelete, onMove, onClose,
-}: {
+function ContextMenu({ x, y, account, onAddChild, onEdit, onDelete, onMove, onClose }: {
   x: number; y: number; account: COAAccount
   onAddChild: () => void; onEdit: () => void
   onDelete: () => void; onMove: () => void; onClose: () => void
 }) {
+  const { t } = useTranslation('tenant')
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -240,10 +213,10 @@ function ContextMenu({
   }, [onClose])
 
   const items = [
-    { icon: CornerDownRight, label: 'Add Child Account', action: onAddChild, color: 'text-primary-600 dark:text-primary-400' },
-    { icon: Pencil,          label: 'Edit Account',      action: onEdit,     color: 'text-gray-700 dark:text-gray-300' },
-    { icon: Move,            label: 'Move Account',      action: onMove,     color: 'text-gray-700 dark:text-gray-300' },
-    { icon: Trash2,          label: 'Delete Account',    action: onDelete,   color: account.is_system ? 'text-gray-300 cursor-not-allowed' : 'text-red-600 dark:text-red-400', disabled: account.is_system },
+    { icon: CornerDownRight, labelKey: 'accounting.coa.contextMenu.addChild', action: onAddChild, color: 'text-primary-600 dark:text-primary-400', disabled: false },
+    { icon: Pencil,          labelKey: 'accounting.coa.contextMenu.edit',     action: onEdit,     color: 'text-gray-700 dark:text-gray-300', disabled: false },
+    { icon: Move,            labelKey: 'accounting.coa.contextMenu.move',     action: onMove,     color: 'text-gray-700 dark:text-gray-300', disabled: false },
+    { icon: Trash2,          labelKey: 'accounting.coa.contextMenu.delete',   action: onDelete,   color: account.is_system ? 'text-gray-300 cursor-not-allowed' : 'text-red-600 dark:text-red-400', disabled: account.is_system },
   ]
 
   return (
@@ -258,13 +231,13 @@ function ContextMenu({
       </div>
       {items.map(item => (
         <button
-          key={item.label}
+          key={item.labelKey}
           disabled={item.disabled}
           onClick={() => { if (!item.disabled) { item.action(); onClose() } }}
           className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-colors ${item.color}`}
         >
           <item.icon className="h-3.5 w-3.5 flex-shrink-0" />
-          {item.label}
+          {t(item.labelKey)}
         </button>
       ))}
     </div>
@@ -274,30 +247,16 @@ function ContextMenu({
 // ─── Tree Node ────────────────────────────────────────────────────────────────
 
 function TreeNode({
-  account,
-  depth,
-  expanded,
-  selected,
-  visibleIds,
-  draggedId,
-  dropTargetId,
-  onToggle,
-  onSelect,
-  onContextMenu,
-  onDragStart,
-  onDragOver,
-  onDragLeave,
-  onDrop,
+  account, depth, expanded, selected, visibleIds,
+  draggedId, dropTargetId, typeLabels,
+  onToggle, onSelect, onContextMenu,
+  onDragStart, onDragOver, onDragLeave, onDrop,
 }: {
-  account: COAAccount
-  depth: number
-  expanded: Set<string>
-  selected: string | null
-  visibleIds: Set<string>
-  draggedId: string | null
-  dropTargetId: string | null
-  onToggle: (id: string) => void
-  onSelect: (id: string) => void
+  account: COAAccount; depth: number
+  expanded: Set<string>; selected: string | null; visibleIds: Set<string>
+  draggedId: string | null; dropTargetId: string | null
+  typeLabels: Record<AccountType, string>
+  onToggle: (id: string) => void; onSelect: (id: string) => void
   onContextMenu: (e: React.MouseEvent, account: COAAccount) => void
   onDragStart: (e: React.DragEvent, id: string) => void
   onDragOver: (e: React.DragEvent, id: string) => void
@@ -330,14 +289,12 @@ function TreeNode({
         `}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
       >
-        {/* Drag handle */}
         {!account.is_system && (
           <span className="opacity-0 group-hover:opacity-40 cursor-grab active:cursor-grabbing flex-shrink-0">
             <GripVertical className="h-3.5 w-3.5 text-gray-400" />
           </span>
         )}
 
-        {/* Expand toggle */}
         <button
           onClick={e => { e.stopPropagation(); if (hasChildren) onToggle(account.id) }}
           className={`w-5 h-5 flex items-center justify-center rounded flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors ${!hasChildren ? 'invisible' : ''}`}
@@ -345,7 +302,6 @@ function TreeNode({
           {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         </button>
 
-        {/* Folder / file icon */}
         <span className="flex-shrink-0">
           {account.is_group
             ? (isOpen ? <FolderOpen className="h-3.5 w-3.5 text-amber-500" /> : <Folder className="h-3.5 w-3.5 text-amber-400" />)
@@ -353,37 +309,30 @@ function TreeNode({
           }
         </span>
 
-        {/* Code */}
         <span className="font-mono text-[11px] font-bold text-gray-400 dark:text-gray-500 flex-shrink-0 w-14">
           {account.code}
         </span>
 
-        {/* Name */}
         <span className={`flex-1 text-sm truncate ${
-          depth === 0
-            ? 'font-bold text-gray-900 dark:text-white'
-            : account.is_group
-            ? 'font-semibold text-gray-800 dark:text-gray-100'
-            : 'font-medium text-gray-700 dark:text-gray-300'
+          depth === 0 ? 'font-bold text-gray-900 dark:text-white'
+          : account.is_group ? 'font-semibold text-gray-800 dark:text-gray-100'
+          : 'font-medium text-gray-700 dark:text-gray-300'
         } ${isSelected ? 'text-primary-700 dark:text-primary-300' : ''}`}>
           {account.name}
         </span>
 
-        {/* Type badge (only on root or when selected) */}
         {(depth === 0 || isSelected) && (
           <span className={`hidden sm:inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset flex-shrink-0 ${meta.badge}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
-            {meta.label}
+            {typeLabels[account.account_type]}
           </span>
         )}
 
-        {/* System badge */}
         {account.is_system && (
           <span className="text-[10px] text-gray-300 dark:text-gray-600 flex-shrink-0">SYS</span>
         )}
       </div>
 
-      {/* Children */}
       {isOpen && account.children?.map(child => (
         <TreeNode
           key={child.id}
@@ -394,6 +343,7 @@ function TreeNode({
           visibleIds={visibleIds}
           draggedId={draggedId}
           dropTargetId={dropTargetId}
+          typeLabels={typeLabels}
           onToggle={onToggle}
           onSelect={onSelect}
           onContextMenu={onContextMenu}
@@ -410,17 +360,9 @@ function TreeNode({
 // ─── Account Form (right panel) ───────────────────────────────────────────────
 
 function AccountForm({
-  mode,
-  initial,
-  flat,
-  tree,
-  selectedId,
-  onSave,
-  onDelete,
-  onAddChild,
-  onEdit,
-  isSaving,
-  isDeleting,
+  mode, initial, flat, tree, selectedId,
+  onSave, onDelete, onAddChild, onEdit,
+  isSaving, isDeleting, typeLabels,
 }: {
   mode: 'create' | 'edit' | null
   initial: Partial<FormState>
@@ -433,17 +375,16 @@ function AccountForm({
   onEdit: () => void
   isSaving: boolean
   isDeleting: boolean
+  typeLabels: Record<AccountType, string>
 }) {
+  const { t } = useTranslation('tenant')
   const [form, setForm] = useState<FormState>({ ...BLANK_FORM, ...initial })
 
-  useEffect(() => {
-    setForm({ ...BLANK_FORM, ...initial })
-  }, [initial, mode])
+  useEffect(() => { setForm({ ...BLANK_FORM, ...initial }) }, [initial, mode])
 
   const set = (k: keyof FormState, v: FormState[typeof k]) =>
     setForm(prev => {
       const next = { ...prev, [k]: v }
-      // If changing to group, disable posting
       if (k === 'is_group' && v === true) next.is_posting_allowed = false
       if (k === 'is_group' && v === false) next.is_posting_allowed = true
       return next
@@ -452,10 +393,8 @@ function AccountForm({
   const selectedAccount = selectedId ? flat.find(a => a.id === selectedId) : null
   const breadcrumb = selectedId ? buildBreadcrumb(tree, selectedId) : []
 
-  // Parent choices: exclude self and own descendants
   const parentChoices = flat.filter(a => {
     if (selectedId && a.id === selectedId) return false
-    // Exclude descendants of selected
     if (selectedId) {
       let node: COAAccount | undefined = a
       const flatMap = Object.fromEntries(flat.map(x => [x.id, x]))
@@ -473,8 +412,8 @@ function AccountForm({
         <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-4">
           <FileText className="h-7 w-7 text-gray-300 dark:text-gray-600" />
         </div>
-        <p className="text-sm font-semibold text-gray-600 dark:text-gray-400">Select an account</p>
-        <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">Click any account in the tree to view details, or use "+" to create a new one.</p>
+        <p className="text-sm font-semibold text-gray-600 dark:text-gray-400">{t('accounting.coa.selectAccountPrompt')}</p>
+        <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">{t('accounting.coa.selectAccountHint')}</p>
       </div>
     )
   }
@@ -498,72 +437,78 @@ function AccountForm({
       {/* Header */}
       <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-700">
         <h3 className="text-sm font-bold text-gray-900 dark:text-white">
-          {mode === 'create' ? 'New Account' : mode === 'edit' ? 'Edit Account' : selectedAccount?.name ?? 'Account Details'}
+          {mode === 'create'
+            ? t('accounting.coa.newAccount')
+            : mode === 'edit'
+            ? t('accounting.coa.editAccount')
+            : selectedAccount?.name ?? t('accounting.coa.accountDetails')}
         </h3>
         {selectedAccount && mode !== 'create' && (
           <div className="flex items-center gap-2 mt-1">
             <span className="font-mono text-xs text-gray-400">{selectedAccount.code}</span>
             <span className="text-gray-200 dark:text-gray-700">·</span>
-            <span className="text-xs text-gray-400">Level {selectedAccount.level_no}</span>
+            <span className="text-xs text-gray-400">{t('accounting.coa.level')} {selectedAccount.level_no}</span>
             <span className="text-gray-200 dark:text-gray-700">·</span>
             <span className="text-xs text-gray-400">{selectedAccount.account_nature}</span>
             {selectedAccount.is_group && (
               <>
                 <span className="text-gray-200 dark:text-gray-700">·</span>
-                <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Group</span>
+                <span className="text-xs font-medium text-amber-600 dark:text-amber-400">{t('accounting.coa.group')}</span>
               </>
             )}
           </div>
         )}
       </div>
 
-      {/* View mode — show details, quick action buttons */}
+      {/* View mode — details + action buttons */}
       {!mode && selectedAccount && (
         <div className="flex-1 p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-3">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Account Code</p>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{t('accounting.coa.detail.accountCode')}</p>
               <p className="font-mono text-sm font-bold text-gray-900 dark:text-white">{selectedAccount.code}</p>
             </div>
             <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-3">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Type</p>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{t('accounting.coa.detail.type')}</p>
               <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${TYPE_META[selectedAccount.account_type].badge}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${TYPE_META[selectedAccount.account_type].dot}`} />
-                {TYPE_META[selectedAccount.account_type].label}
+                {typeLabels[selectedAccount.account_type]}
               </span>
             </div>
             <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-3">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Nature</p>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{t('accounting.coa.detail.nature')}</p>
               <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{selectedAccount.account_nature}</p>
             </div>
             <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-3">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Balance</p>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{t('accounting.coa.detail.balance')}</p>
               <p className={`font-mono text-sm font-bold ${parseFloat(selectedAccount.balance) >= 0 ? 'text-gray-900 dark:text-white' : 'text-red-600'}`}>
                 {fmt(selectedAccount.balance)}
               </p>
             </div>
             <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-3">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Group Account</p>
-              <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{selectedAccount.is_group ? 'Yes' : 'No'}</p>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{t('accounting.coa.detail.groupAccount')}</p>
+              <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                {selectedAccount.is_group ? t('accounting.coa.detail.yes') : t('accounting.coa.detail.no')}
+              </p>
             </div>
             <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-3">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Posting Allowed</p>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{t('accounting.coa.detail.postingAllowed')}</p>
               <p className={`text-sm font-semibold ${selectedAccount.is_posting_allowed ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'}`}>
-                {selectedAccount.is_posting_allowed ? 'Yes' : 'No'}
+                {selectedAccount.is_posting_allowed ? t('accounting.coa.detail.yes') : t('accounting.coa.detail.no')}
               </p>
             </div>
           </div>
 
           {selectedAccount.parent_name && (
             <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-3">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Parent Account</p>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{t('accounting.coa.detail.parentAccount')}</p>
               <p className="font-mono text-sm text-gray-700 dark:text-gray-300">{selectedAccount.parent_name}</p>
             </div>
           )}
 
           {selectedAccount.description && (
             <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-3">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Description</p>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{t('accounting.coa.detail.description')}</p>
               <p className="text-sm text-gray-700 dark:text-gray-300">{selectedAccount.description}</p>
             </div>
           )}
@@ -571,31 +516,23 @@ function AccountForm({
           {selectedAccount.is_system && (
             <div className="flex items-start gap-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-3">
               <Info className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-amber-700 dark:text-amber-300">This is a system-defined account. It cannot be deleted, but you can add child accounts under it.</p>
+              <p className="text-xs text-amber-700 dark:text-amber-300">{t('accounting.coa.systemWarning')}</p>
             </div>
           )}
 
-          {/* Action buttons */}
           <div className="flex flex-wrap gap-2 pt-2">
-            <button
-              onClick={onAddChild}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold px-3 py-2 transition-colors"
-            >
-              <CornerDownRight className="h-3.5 w-3.5" />Add Child
+            <button onClick={onAddChild}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold px-3 py-2 transition-colors">
+              <CornerDownRight className="h-3.5 w-3.5" />{t('accounting.coa.actions.addChild')}
             </button>
-            <button
-              onClick={onEdit}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-semibold px-3 py-2 transition-colors"
-            >
-              <Pencil className="h-3.5 w-3.5" />Edit
+            <button onClick={onEdit}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-semibold px-3 py-2 transition-colors">
+              <Pencil className="h-3.5 w-3.5" />{t('accounting.coa.actions.edit')}
             </button>
             {!selectedAccount.is_system && (
-              <button
-                onClick={onDelete}
-                disabled={isDeleting}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-white dark:bg-gray-800 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 text-xs font-semibold px-3 py-2 transition-colors disabled:opacity-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" />Delete
+              <button onClick={onDelete} disabled={isDeleting}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-white dark:bg-gray-800 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 text-xs font-semibold px-3 py-2 transition-colors disabled:opacity-50">
+                <Trash2 className="h-3.5 w-3.5" />{t('accounting.coa.actions.delete')}
               </button>
             )}
           </div>
@@ -608,26 +545,26 @@ function AccountForm({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-                Account Code <span className="text-red-500">*</span>
+                {t('accounting.coa.form.accountCode')} <span className="text-red-500">*</span>
               </label>
               <input
                 className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:text-white"
-                placeholder="e.g. 1110"
+                placeholder={t('accounting.coa.form.accountCodePlaceholder')}
                 value={form.code}
                 onChange={e => set('code', e.target.value)}
               />
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-                Account Type <span className="text-red-500">*</span>
+                {t('accounting.coa.form.accountType')} <span className="text-red-500">*</span>
               </label>
               <select
                 className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
                 value={form.account_type}
                 onChange={e => set('account_type', e.target.value as AccountType)}
               >
-                {Object.entries(TYPE_META).map(([k, v]) => (
-                  <option key={k} value={k}>{v.label}</option>
+                {TYPE_KEYS.map(k => (
+                  <option key={k} value={k}>{typeLabels[k]}</option>
                 ))}
               </select>
             </div>
@@ -635,24 +572,26 @@ function AccountForm({
 
           <div>
             <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-              Account Name <span className="text-red-500">*</span>
+              {t('accounting.coa.form.accountName')} <span className="text-red-500">*</span>
             </label>
             <input
               className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:text-white"
-              placeholder="e.g. Cash in Hand"
+              placeholder={t('accounting.coa.form.accountNamePlaceholder')}
               value={form.name}
               onChange={e => set('name', e.target.value)}
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Parent Account</label>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+              {t('accounting.coa.form.parentAccount')}
+            </label>
             <select
               className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
               value={form.parent}
               onChange={e => set('parent', e.target.value)}
             >
-              <option value="">(Root — no parent)</option>
+              <option value="">{t('accounting.coa.form.rootParent')}</option>
               {parentChoices.map(a => (
                 <option key={a.id} value={a.id}>
                   {'  '.repeat(a.level_no - 1)}{a.code} — {a.name}
@@ -661,11 +600,11 @@ function AccountForm({
             </select>
           </div>
 
-          {/* Nature (read-only, derived from type) */}
+          {/* Nature — read-only, derived */}
           <div className="flex items-center gap-2 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900 px-3 py-2">
             <Info className="h-4 w-4 text-blue-500 flex-shrink-0" />
             <p className="text-xs text-blue-700 dark:text-blue-300">
-              <span className="font-semibold">Nature:</span> {TYPE_META[form.account_type].nature} — auto-derived from account type.
+              {t('accounting.coa.form.natureInfo', { nature: TYPE_META[form.account_type].nature })}
             </p>
           </div>
 
@@ -678,8 +617,8 @@ function AccountForm({
                 <span className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${form.is_group ? 'translate-x-4' : ''}`} />
               </div>
               <div>
-                <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">Group Account</p>
-                <p className="text-[10px] text-gray-400">Can have sub-accounts</p>
+                <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">{t('accounting.coa.form.groupAccount')}</p>
+                <p className="text-[10px] text-gray-400">{t('accounting.coa.form.groupAccountHint')}</p>
               </div>
             </label>
 
@@ -691,24 +630,25 @@ function AccountForm({
                 <span className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${form.is_posting_allowed ? 'translate-x-4' : ''}`} />
               </div>
               <div>
-                <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">Allow Posting</p>
-                <p className="text-[10px] text-gray-400">Journal entries permitted</p>
+                <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">{t('accounting.coa.form.allowPosting')}</p>
+                <p className="text-[10px] text-gray-400">{t('accounting.coa.form.allowPostingHint')}</p>
               </div>
             </label>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Description</label>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+              {t('accounting.coa.form.description')}
+            </label>
             <textarea
               className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 dark:text-white"
               rows={2}
-              placeholder="Optional description or notes…"
+              placeholder={t('accounting.coa.form.descriptionPlaceholder')}
               value={form.description}
               onChange={e => set('description', e.target.value)}
             />
           </div>
 
-          {/* Active toggle (edit only) */}
           {mode === 'edit' && (
             <label className="flex items-center gap-2.5 cursor-pointer">
               <div
@@ -717,19 +657,18 @@ function AccountForm({
               >
                 <span className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${form.is_active ? 'translate-x-4' : ''}`} />
               </div>
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Account is Active</span>
+              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{t('accounting.coa.form.accountActive')}</span>
             </label>
           )}
 
-          {/* Save */}
           <button
             onClick={() => onSave(form)}
             disabled={isSaving || !form.code.trim() || !form.name.trim()}
             className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSaving
-              ? <><span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
-              : <><Save className="h-4 w-4" />{mode === 'create' ? 'Create Account' : 'Save Changes'}</>
+              ? <><span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{t('accounting.coa.form.saving')}</>
+              : <><Save className="h-4 w-4" />{mode === 'create' ? t('accounting.coa.form.createAccount') : t('accounting.coa.form.saveChanges')}</>
             }
           </button>
         </div>
@@ -741,9 +680,9 @@ function AccountForm({
 // ─── Main Panel ───────────────────────────────────────────────────────────────
 
 export default function ChartOfAccountsPanel() {
+  const { t } = useTranslation('tenant')
   const qc = useQueryClient()
 
-  // ── Tree state ────────────────────────────────────────────────────────────
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<string | null>(null)
   const [mode, setMode] = useState<'create' | 'edit' | null>(null)
@@ -755,7 +694,24 @@ export default function ChartOfAccountsPanel() {
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const [moveDialog, setMoveDialog] = useState<COAAccount | null>(null)
 
-  // ── Queries ───────────────────────────────────────────────────────────────
+  // Translated type labels — computed once from t(), passed down as prop
+  const typeLabels: Record<AccountType, string> = {
+    ASSET:     t('accounting.coa.typeAsset'),
+    LIABILITY: t('accounting.coa.typeLiability'),
+    EQUITY:    t('accounting.coa.typeEquity'),
+    INCOME:    t('accounting.coa.typeIncome'),
+    EXPENSE:   t('accounting.coa.typeExpense'),
+  }
+
+  const TYPE_FILTERS: { label: string; value: AccountType | '' }[] = [
+    { label: t('accounting.coa.typeAll'),      value: '' },
+    { label: t('accounting.coa.typeAsset'),    value: 'ASSET' },
+    { label: t('accounting.coa.typeLiability'),value: 'LIABILITY' },
+    { label: t('accounting.coa.typeEquity'),   value: 'EQUITY' },
+    { label: t('accounting.coa.typeIncome'),   value: 'INCOME' },
+    { label: t('accounting.coa.typeExpense'),  value: 'EXPENSE' },
+  ]
+
   const { data: tree = [], isLoading } = useQuery<COAAccount[]>({
     queryKey: ['coa-tree'],
     queryFn: () => apiClient.get('/accounting/accounts/tree/').then(r => r.data),
@@ -764,7 +720,6 @@ export default function ChartOfAccountsPanel() {
   const flat = flattenTree(tree)
   const visibleIds = collectVisibleIds(tree, search, typeFilter)
 
-  // Auto-expand when search/filter active
   useEffect(() => {
     if (search || typeFilter) {
       const toExpand = collectAutoExpand(tree, search, typeFilter)
@@ -777,72 +732,53 @@ export default function ChartOfAccountsPanel() {
     qc.invalidateQueries({ queryKey: ['coa-flat'] })
   }, [qc])
 
-  // ── Mutations ──────────────────────────────────────────────────────────────
   const createMutation = useMutation({
     mutationFn: (data: object) => apiClient.post('/accounting/accounts/', data).then(r => r.data),
     onSuccess: (created: COAAccount) => {
-      toast.success('Account created')
+      toast.success(t('accounting.coa.toast.created'))
       invalidate()
       setMode(null)
       setSelected(created.id)
       if (created.parent) setExpanded(prev => new Set([...prev, created.parent!]))
     },
-    onError: (e: any) => toast.error(e?.response?.data?.code?.[0] ?? e?.response?.data?.detail ?? 'Failed to create account'),
+    onError: (e: any) => toast.error(e?.response?.data?.code?.[0] ?? e?.response?.data?.detail ?? t('accounting.coa.toast.createError')),
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: object }) =>
       apiClient.patch(`/accounting/accounts/${id}/`, data).then(r => r.data),
-    onSuccess: () => { toast.success('Account updated'); invalidate(); setMode(null) },
-    onError: (e: any) => toast.error(e?.response?.data?.code?.[0] ?? e?.response?.data?.detail ?? 'Failed to update'),
+    onSuccess: () => { toast.success(t('accounting.coa.toast.updated')); invalidate(); setMode(null) },
+    onError: (e: any) => toast.error(e?.response?.data?.code?.[0] ?? e?.response?.data?.detail ?? t('accounting.coa.toast.updateError')),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.delete(`/accounting/accounts/${id}/`),
-    onSuccess: () => {
-      toast.success('Account deleted')
-      invalidate()
-      setSelected(null)
-      setMode(null)
-    },
-    onError: (e: any) => toast.error(e?.response?.data?.detail ?? 'Cannot delete this account'),
+    onSuccess: () => { toast.success(t('accounting.coa.toast.deleted')); invalidate(); setSelected(null); setMode(null) },
+    onError: (e: any) => toast.error(e?.response?.data?.detail ?? t('accounting.coa.toast.deleteError')),
   })
 
   const moveMutation = useMutation({
     mutationFn: ({ id, parentId }: { id: string; parentId: string | null }) =>
       apiClient.post(`/accounting/accounts/${id}/move/`, { parent_id: parentId }).then(r => r.data),
     onSuccess: (updated: COAAccount) => {
-      toast.success('Account moved')
+      toast.success(t('accounting.coa.toast.moved'))
       invalidate()
       if (updated.parent) setExpanded(prev => new Set([...prev, updated.parent!]))
     },
-    onError: (e: any) => toast.error(e?.response?.data?.detail ?? 'Move failed'),
+    onError: (e: any) => toast.error(e?.response?.data?.detail ?? t('accounting.coa.toast.moveError')),
   })
 
-  // ── Handlers ───────────────────────────────────────────────────────────────
   const toggleExpand = (id: string) =>
-    setExpanded(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
+    setExpanded(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
 
   const expandAll = () => setExpanded(new Set(flat.map(a => a.id)))
   const collapseAll = () => setExpanded(new Set())
 
-  const handleSelect = (id: string) => {
-    setSelected(id)
-    setMode(null)
-    setContextMenu(null)
-  }
+  const handleSelect = (id: string) => { setSelected(id); setMode(null); setContextMenu(null) }
 
   const openCreate = (parentId?: string) => {
     const parent = parentId ? flat.find(a => a.id === parentId) : undefined
-    setFormInit({
-      ...BLANK_FORM,
-      parent: parentId ?? '',
-      account_type: parent?.account_type ?? 'ASSET',
-    })
+    setFormInit({ ...BLANK_FORM, parent: parentId ?? '', account_type: parent?.account_type ?? 'ASSET' })
     setMode('create')
     setSelected(null)
   }
@@ -851,14 +787,9 @@ export default function ChartOfAccountsPanel() {
     const acct = flat.find(a => a.id === id)
     if (!acct) return
     setFormInit({
-      code: acct.code,
-      name: acct.name,
-      account_type: acct.account_type,
-      parent: acct.parent ?? '',
-      description: acct.description,
-      is_group: acct.is_group,
-      is_posting_allowed: acct.is_posting_allowed,
-      is_active: acct.is_active,
+      code: acct.code, name: acct.name, account_type: acct.account_type,
+      parent: acct.parent ?? '', description: acct.description,
+      is_group: acct.is_group, is_posting_allowed: acct.is_posting_allowed, is_active: acct.is_active,
     })
     setMode('edit')
     setSelected(id)
@@ -866,43 +797,24 @@ export default function ChartOfAccountsPanel() {
 
   const handleSave = (data: FormState) => {
     const payload = {
-      code: data.code.trim(),
-      name: data.name.trim(),
-      account_type: data.account_type,
-      parent: data.parent || null,
-      description: data.description,
-      is_group: data.is_group,
-      is_posting_allowed: data.is_group ? false : data.is_posting_allowed,
-      is_active: data.is_active,
+      code: data.code.trim(), name: data.name.trim(), account_type: data.account_type,
+      parent: data.parent || null, description: data.description, is_group: data.is_group,
+      is_posting_allowed: data.is_group ? false : data.is_posting_allowed, is_active: data.is_active,
     }
-    if (mode === 'create') {
-      createMutation.mutate(payload)
-    } else if (mode === 'edit' && selected) {
-      updateMutation.mutate({ id: selected, data: payload })
-    }
+    if (mode === 'create') createMutation.mutate(payload)
+    else if (mode === 'edit' && selected) updateMutation.mutate({ id: selected, data: payload })
   }
 
   const handleDelete = (id: string) => {
     const acct = flat.find(a => a.id === id)
     if (!acct) return
-    if (acct.children_count > 0) {
-      toast.error('Cannot delete a group account that has child accounts')
-      return
-    }
-    if (!window.confirm(`Delete account "${acct.code} — ${acct.name}"? This cannot be undone.`)) return
+    if (acct.children_count > 0) { toast.error(t('accounting.coa.toast.deleteGroupError')); return }
+    if (!window.confirm(t('accounting.coa.toast.deleteConfirm', { code: acct.code, name: acct.name }))) return
     deleteMutation.mutate(id)
   }
 
-  // DnD handlers
-  const handleDragStart = (e: React.DragEvent, id: string) => {
-    e.dataTransfer.effectAllowed = 'move'
-    setDraggedId(id)
-  }
-  const handleDragOver = (e: React.DragEvent, id: string) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    if (id !== draggedId) setDropTargetId(id)
-  }
+  const handleDragStart = (e: React.DragEvent, id: string) => { e.dataTransfer.effectAllowed = 'move'; setDraggedId(id) }
+  const handleDragOver = (e: React.DragEvent, id: string) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (id !== draggedId) setDropTargetId(id) }
   const handleDragLeave = () => setDropTargetId(null)
   const handleDrop = (e: React.DragEvent, targetId: string) => {
     e.preventDefault()
@@ -911,7 +823,6 @@ export default function ChartOfAccountsPanel() {
     moveMutation.mutate({ id: draggedId, parentId: targetId })
     setDraggedId(null)
   }
-
   const handleContextMenu = (e: React.MouseEvent, account: COAAccount) => {
     e.preventDefault()
     setContextMenu({ x: e.clientX, y: e.clientY, account })
@@ -923,12 +834,11 @@ export default function ChartOfAccountsPanel() {
       {/* Toolbar */}
       <div className="flex flex-col gap-2 p-3 border-b border-gray-100 dark:border-gray-700">
         <div className="flex items-center gap-2">
-          {/* Search */}
           <div className="relative flex-1">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
             <input
               className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-sm pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:text-white"
-              placeholder="Search by code or name…"
+              placeholder={t('accounting.coa.searchPlaceholder')}
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
@@ -939,20 +849,20 @@ export default function ChartOfAccountsPanel() {
             )}
           </div>
 
-          {/* Expand / Collapse All */}
-          <button onClick={expandAll} title="Expand all" className="rounded-lg p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+          <button onClick={expandAll} title={t('accounting.coa.expandAll')}
+            className="rounded-lg p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
             <ChevronsDown className="h-4 w-4" />
           </button>
-          <button onClick={collapseAll} title="Collapse all" className="rounded-lg p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+          <button onClick={collapseAll} title={t('accounting.coa.collapseAll')}
+            className="rounded-lg p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
             <ChevronsUp className="h-4 w-4" />
           </button>
 
-          {/* Add root account */}
           <button
             onClick={() => openCreate()}
             className="inline-flex items-center gap-1.5 rounded-xl bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white text-xs font-semibold px-3 py-2 transition-colors"
           >
-            <Plus className="h-3.5 w-3.5" />Add Account
+            <Plus className="h-3.5 w-3.5" />{t('accounting.coa.addAccount')}
           </button>
         </div>
 
@@ -972,7 +882,7 @@ export default function ChartOfAccountsPanel() {
             </button>
           ))}
           <span className="ml-auto text-xs text-gray-400 dark:text-gray-600 self-center pr-1">
-            {flat.filter(a => visibleIds.has(a.id)).length} accounts
+            {flat.filter(a => visibleIds.has(a.id)).length} {t('accounting.coa.accountsCount')}
           </span>
         </div>
       </div>
@@ -991,8 +901,10 @@ export default function ChartOfAccountsPanel() {
           ) : tree.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center px-4">
               <Folder className="h-10 w-10 text-gray-200 dark:text-gray-700 mb-3" />
-              <p className="text-sm text-gray-400">No accounts found.</p>
-              <p className="text-xs text-gray-300 dark:text-gray-600 mt-1">Run <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">seed_coa</code> to initialise root accounts.</p>
+              <p className="text-sm text-gray-400">{t('accounting.coa.emptyTitle')}</p>
+              <p className="text-xs text-gray-300 dark:text-gray-600 mt-1">
+                {t('accounting.coa.emptyDesc')}
+              </p>
             </div>
           ) : (
             tree.map(root => (
@@ -1005,6 +917,7 @@ export default function ChartOfAccountsPanel() {
                 visibleIds={visibleIds}
                 draggedId={draggedId}
                 dropTargetId={dropTargetId}
+                typeLabels={typeLabels}
                 onToggle={toggleExpand}
                 onSelect={handleSelect}
                 onContextMenu={handleContextMenu}
@@ -1031,6 +944,7 @@ export default function ChartOfAccountsPanel() {
             onEdit={() => selected && openEdit(selected)}
             isSaving={createMutation.isPending || updateMutation.isPending}
             isDeleting={deleteMutation.isPending}
+            typeLabels={typeLabels}
           />
         </div>
       </div>
@@ -1055,10 +969,7 @@ export default function ChartOfAccountsPanel() {
           account={moveDialog}
           flat={flat}
           onClose={() => setMoveDialog(null)}
-          onMove={(parentId) => {
-            moveMutation.mutate({ id: moveDialog.id, parentId })
-            setMoveDialog(null)
-          }}
+          onMove={(parentId) => { moveMutation.mutate({ id: moveDialog.id, parentId }); setMoveDialog(null) }}
         />
       )}
     </div>

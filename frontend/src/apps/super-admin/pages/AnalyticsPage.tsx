@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line, PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import { StatCard } from '@components/shared/StatCard'
-import { TrendingUp, Bus, Users, MapPin } from 'lucide-react'
+import { TrendingUp, Bus, Users } from 'lucide-react'
 import apiClient from '@services/api'
 import { formatNPR } from '@utils/nepaliDate'
 import { useUiStore } from '@store/uiStore'

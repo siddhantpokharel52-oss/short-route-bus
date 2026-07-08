@@ -24,6 +24,7 @@ export default defineConfig({
   server: {
     port: 3000,
     host: '0.0.0.0',
+    allowedHosts: ['citybus.com.np', 'www.citybus.com.np', '.localhost'],
     proxy: {
       // FastAPI live routes MUST come before the generic /api catch-all
       '/api/v1/live': {

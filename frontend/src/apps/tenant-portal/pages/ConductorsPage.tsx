@@ -9,6 +9,7 @@ import { Table, Column, Pagination } from '@components/shared/Table'
 import { Badge, statusVariant } from '@components/shared/Badge'
 import { Modal } from '@components/shared/Modal'
 import { NepaliDateInput } from '@components/shared/NepaliDateInput'
+import { DateDisplay } from '@components/shared/DateDisplay'
 import { usePagination } from '@hooks/usePagination'
 import apiClient from '@services/api'
 import toast from 'react-hot-toast'
@@ -86,11 +87,22 @@ function SelectField({
   )
 }
 
-function DetailRow({ label, value }: { label: string; value?: string | number | null }) {
+function DetailRow({
+  label,
+  value,
+  dateValue,
+}: {
+  label: string
+  value?: string | number | null
+  dateValue?: string | null
+}) {
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-xs font-medium uppercase tracking-wide text-gray-400">{label}</span>
-      <span className="text-sm text-gray-900">{value ?? '—'}</span>
+      {dateValue != null
+        ? <DateDisplay date={dateValue} />
+        : <span className="text-sm text-gray-900">{value ?? '—'}</span>
+      }
     </div>
   )
 }
@@ -177,7 +189,7 @@ export default function ConductorsPage() {
           .map((a) => ({ title: a.title.trim(), amount: parseFloat(a.amount) || 0 })),
       }),
     onSuccess: () => {
-      toast.success('Collector added successfully!')
+      toast.success(t('staff.conductors.toast.addSuccess'))
       setShowCreate(false)
       reset()
       setAllowances([])
@@ -192,7 +204,7 @@ export default function ConductorsPage() {
         const val = res.errors[firstKey]
         toast.error(`${firstKey}: ${Array.isArray(val) ? String(val[0]) : String(val)}`)
       } else {
-        toast.error(res?.message || (err as Error).message || 'Failed to add collector')
+        toast.error(res?.message || (err as Error).message || t('staff.conductors.toast.addError'))
       }
     },
   })
@@ -202,13 +214,13 @@ export default function ConductorsPage() {
     mutationFn: (payload: Partial<Collector>) =>
       apiClient.patch(`/operator/conductors/${editTarget!.id}/`, payload),
     onSuccess: () => {
-      toast.success('Collector updated successfully!')
+      toast.success(t('staff.conductors.toast.updateSuccess'))
       setEditTarget(null)
       qc.invalidateQueries({ queryKey: ['conductors'] })
     },
     onError: (err: unknown) => {
       const e = err as { response?: { data?: { message?: string } } }
-      toast.error(e?.response?.data?.message || 'Failed to update collector')
+      toast.error(e?.response?.data?.message || t('staff.conductors.toast.updateError'))
     },
   })
 
@@ -216,13 +228,13 @@ export default function ConductorsPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.delete(`/operator/conductors/${id}/`),
     onSuccess: () => {
-      toast.success('Collector removed successfully.')
+      toast.success(t('staff.conductors.toast.deleteSuccess'))
       setDeleteTarget(null)
       qc.invalidateQueries({ queryKey: ['conductors'] })
     },
     onError: (err: unknown) => {
       const e = err as { response?: { data?: { message?: string } } }
-      toast.error(e?.response?.data?.message || 'Failed to delete collector')
+      toast.error(e?.response?.data?.message || t('staff.conductors.toast.deleteError'))
     },
   })
 
@@ -290,7 +302,7 @@ export default function ConductorsPage() {
             </code>
           </div>
         )
-        : <span className="text-xs text-gray-400 italic">Not assigned</span>,
+        : <span className="text-xs text-gray-400 italic">{t('staff.conductors.notAssigned')}</span>,
     },
     {
       key: 'employment_type',
@@ -300,32 +312,32 @@ export default function ConductorsPage() {
     { key: 'blood_group', header: t('staff.conductors.bloodGroup'), render: (c) => c.blood_group || '—' },
     {
       key: 'status',
-      header: t('common.status'),
+      header: t('staff.conductors.status'),
       render: (c) => <Badge variant={statusVariant(c.status)} dot>{c.status}</Badge>,
     },
     {
       key: 'id',
-      header: t('common.actions'),
+      header: t('staff.conductors.actions'),
       render: (c) => (
         <div className="flex items-center gap-1">
           <button
             onClick={() => setViewTarget(c)}
             className="rounded-lg p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-colors"
-            title="View"
+            title={t('common:common.view')}
           >
             <Eye className="h-4 w-4" />
           </button>
           <button
             onClick={() => setEditTarget(c)}
             className="rounded-lg p-1.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
-            title="Edit"
+            title={t('common:common.edit')}
           >
             <Pencil className="h-4 w-4" />
           </button>
           <button
             onClick={() => setDeleteTarget(c)}
             className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-            title="Delete"
+            title={t('common:common.delete')}
           >
             <Trash2 className="h-4 w-4" />
           </button>
@@ -374,26 +386,26 @@ export default function ConductorsPage() {
           <div className="space-y-6 p-6">
             <Section icon={User} title={t('staff.conductors.personalInfo')} />
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <DetailRow label="Full Name (EN)" value={viewTarget.full_name_en} />
-              <DetailRow label="Full Name (NE)" value={viewTarget.full_name_ne} />
+              <DetailRow label={t('staff.conductors.fullNameEn')} value={viewTarget.full_name_en} />
+              <DetailRow label={t('staff.conductors.fullNameNe')} value={viewTarget.full_name_ne} />
               <DetailRow label={t('staff.conductors.gender')} value={viewTarget.gender} />
-              <DetailRow label="Date of Birth" value={viewTarget.dob} />
-              <DetailRow label="Citizenship No." value={viewTarget.citizenship_no} />
-              <DetailRow label="Phone" value={viewTarget.phone} />
+              <DetailRow label={t('staff.conductors.dateOfBirth')} dateValue={viewTarget.dob} />
+              <DetailRow label={t('staff.conductors.citizenshipNo')} value={viewTarget.citizenship_no} />
+              <DetailRow label={t('staff.conductors.phone')} value={viewTarget.phone} />
               <div className="col-span-2 sm:col-span-3">
-                <DetailRow label="Address" value={viewTarget.address} />
+                <DetailRow label={t('staff.conductors.address')} value={viewTarget.address} />
               </div>
-              <DetailRow label="Emergency Contact" value={viewTarget.emergency_contact_name} />
-              <DetailRow label="Emergency Phone" value={viewTarget.emergency_contact_number} />
+              <DetailRow label={t('staff.conductors.emergencyContact')} value={viewTarget.emergency_contact_name} />
+              <DetailRow label={t('staff.conductors.emergencyPhone')} value={viewTarget.emergency_contact_number} />
             </div>
 
             <Section icon={Briefcase} title={t('staff.conductors.employmentInfo')} />
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
               <DetailRow label={t('staff.conductors.employeeId')} value={viewTarget.employee_id} />
               <DetailRow label={t('staff.conductors.employmentType')} value={viewTarget.employment_type?.replace('_', ' ')} />
-              <DetailRow label="Date of Joining" value={viewTarget.date_of_joining} />
+              <DetailRow label={t('staff.conductors.dateOfJoining')} dateValue={viewTarget.date_of_joining} />
               <DetailRow label={t('staff.conductors.shift')} value={viewTarget.shift} />
-              <DetailRow label={t('common.status')} value={viewTarget.status} />
+              <DetailRow label={t('staff.conductors.status')} value={viewTarget.status} />
             </div>
 
             <Section icon={Bus} title={t('staff.conductors.busAssignment')} />
@@ -405,7 +417,7 @@ export default function ConductorsPage() {
                   : '—'}
               />
               <DetailRow
-                label="Assigned Route"
+                label={t('staff.conductors.assignedRoute')}
                 value={viewTarget.assigned_route_id
                   ? (routeMap.get(viewTarget.assigned_route_id) ?? viewTarget.assigned_route_id)
                   : '—'}
@@ -419,11 +431,11 @@ export default function ConductorsPage() {
 
             <Section icon={Wallet} title={t('staff.conductors.salaryWages')} />
             <div className="grid grid-cols-2 gap-4">
-              <DetailRow label="Basic Salary (NPR)" value={viewTarget.basic_salary} />
+              <DetailRow label={t('staff.conductors.basicSalary')} value={viewTarget.basic_salary} />
             </div>
 
             <div className="flex justify-end border-t pt-4">
-              <Button variant="secondary" onClick={() => setViewTarget(null)}>{t('common.close')}</Button>
+              <Button variant="secondary" onClick={() => setViewTarget(null)}>{t('common:common.close')}</Button>
             </div>
           </div>
         )}
@@ -433,7 +445,7 @@ export default function ConductorsPage() {
       <Modal
         open={!!editTarget}
         onClose={() => setEditTarget(null)}
-        title={`${t('common.edit')} ${t('staff.conductors.title')} — ${editTarget?.employee_id ?? ''}`}
+        title={`${t('common:common.edit')} ${t('staff.conductors.title')} — ${editTarget?.employee_id ?? ''}`}
         size="md"
       >
         {editTarget && (
@@ -444,55 +456,55 @@ export default function ConductorsPage() {
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Status</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.conductors.status')}</label>
                 <select
                   value={editStatus}
                   onChange={(e) => setEditStatus(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 >
-                  <option value="ACTIVE">Active</option>
-                  <option value="INACTIVE">Inactive</option>
-                  <option value="ON_LEAVE">On Leave</option>
-                  <option value="SUSPENDED">Suspended</option>
+                  <option value="ACTIVE">{t('staff.conductors.statusOptions.ACTIVE')}</option>
+                  <option value="INACTIVE">{t('staff.conductors.statusOptions.INACTIVE')}</option>
+                  <option value="ON_LEAVE">{t('staff.conductors.statusOptions.ON_LEAVE')}</option>
+                  <option value="SUSPENDED">{t('staff.conductors.statusOptions.SUSPENDED')}</option>
                 </select>
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Employment Type</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.conductors.employmentType')}</label>
                 <select
                   value={editEmploymentType}
                   onChange={(e) => setEditEmploymentType(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 >
-                  <option value="PERMANENT">Permanent</option>
-                  <option value="CONTRACT">Contract</option>
-                  <option value="PART_TIME">Part Time</option>
+                  <option value="PERMANENT">{t('staff.conductors.types.PERMANENT')}</option>
+                  <option value="CONTRACT">{t('staff.conductors.types.CONTRACT')}</option>
+                  <option value="PART_TIME">{t('staff.conductors.types.PART_TIME')}</option>
                 </select>
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Shift</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.conductors.shift')}</label>
                 <select
                   value={editShift}
                   onChange={(e) => setEditShift(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 >
-                  <option value="">— Not assigned —</option>
-                  <option value="MORNING">Morning (5am–12pm)</option>
-                  <option value="DAY">Day (12pm–6pm)</option>
-                  <option value="EVENING">Evening (6pm–10pm)</option>
-                  <option value="NIGHT">Night (10pm–5am)</option>
+                  <option value="">{t('staff.conductors.notAssignedOption')}</option>
+                  <option value="MORNING">{t('staff.conductors.shifts.MORNING')}</option>
+                  <option value="DAY">{t('staff.conductors.shifts.DAY')}</option>
+                  <option value="EVENING">{t('staff.conductors.shifts.EVENING')}</option>
+                  <option value="NIGHT">{t('staff.conductors.shifts.NIGHT')}</option>
                 </select>
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Blood Group</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.conductors.bloodGroup')}</label>
                 <select
                   value={editBloodGroup}
                   onChange={(e) => setEditBloodGroup(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 >
-                  <option value="">— Unknown —</option>
+                  <option value="">{t('staff.conductors.unknownBloodGroup')}</option>
                   {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map((bg) => (
                     <option key={bg} value={bg}>{bg}</option>
                   ))}
@@ -500,7 +512,7 @@ export default function ConductorsPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Phone Number</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.conductors.phoneNumber')}</label>
                 <input
                   type="text"
                   value={editPhone}
@@ -510,13 +522,13 @@ export default function ConductorsPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Assign to Bus</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.conductors.assignToBus')}</label>
                 <select
                   value={editVehicleId}
                   onChange={(e) => setEditVehicleId(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 >
-                  <option value="">— Not assigned —</option>
+                  <option value="">{t('staff.conductors.notAssignedOption')}</option>
                   {(vehicles as { id: string; registration_no?: string }[]).map((v) => (
                     <option key={v.id} value={v.id}>{v.registration_no ?? v.id}</option>
                   ))}
@@ -524,13 +536,13 @@ export default function ConductorsPage() {
               </div>
 
               <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm font-medium text-gray-700">Assign to Route</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.conductors.assignToRoute')}</label>
                 <select
                   value={editRouteId}
                   onChange={(e) => setEditRouteId(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 >
-                  <option value="">— Not assigned —</option>
+                  <option value="">{t('staff.conductors.notAssignedOption')}</option>
                   {(routes as { id: string; route_code?: string; name_en?: string }[]).map((r) => (
                     <option key={r.id} value={r.id}>
                       {r.route_code ? `${r.route_code} — ` : ''}{r.name_en ?? r.id}
@@ -541,9 +553,9 @@ export default function ConductorsPage() {
             </div>
 
             <div className="flex justify-end gap-3 border-t pt-4">
-              <Button variant="secondary" onClick={() => setEditTarget(null)}>{t('common.cancel')}</Button>
+              <Button variant="secondary" onClick={() => setEditTarget(null)}>{t('common:common.cancel')}</Button>
               <Button onClick={handleUpdate} loading={updateMutation.isPending}>
-                {t('common.update')}
+                {t('common:common.update')}
               </Button>
             </div>
           </div>
@@ -554,7 +566,7 @@ export default function ConductorsPage() {
       <Modal
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
-        title={`${t('common.delete')} ${t('staff.conductors.title')}`}
+        title={`${t('common:common.delete')} ${t('staff.conductors.title')}`}
         size="sm"
       >
         {deleteTarget && (
@@ -562,23 +574,24 @@ export default function ConductorsPage() {
             <div className="flex items-start gap-3 rounded-lg bg-red-50 p-4">
               <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" />
               <div>
-                <p className="text-sm font-semibold text-red-700">This action cannot be undone.</p>
+                <p className="text-sm font-semibold text-red-700">{t('staff.conductors.deleteWarning')}</p>
                 <p className="text-sm text-red-600 mt-1">
-                  You are about to permanently remove{' '}
-                  <strong>{deleteTarget.full_name_en}</strong>{' '}
-                  ({deleteTarget.employee_id}) from the system.
+                  {t('staff.conductors.deleteConfirm', {
+                    name: deleteTarget.full_name_en,
+                    id: deleteTarget.employee_id,
+                  })}
                 </p>
               </div>
             </div>
             <div className="flex justify-end gap-3">
-              <Button variant="secondary" onClick={() => setDeleteTarget(null)}>{t('common.cancel')}</Button>
+              <Button variant="secondary" onClick={() => setDeleteTarget(null)}>{t('common:common.cancel')}</Button>
               <Button
                 variant="danger"
                 loading={deleteMutation.isPending}
                 onClick={() => deleteMutation.mutate(deleteTarget.id)}
                 leftIcon={<Trash2 className="h-4 w-4" />}
               >
-                {t('common.delete')} {t('staff.conductors.title')}
+                {t('common:common.delete')} {t('staff.conductors.title')}
               </Button>
             </div>
           </div>
@@ -599,38 +612,38 @@ export default function ConductorsPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <Input
-                label="Full Name (English)"
+                label={t('staff.conductors.fullNameEn')}
                 required
                 placeholder="e.g. Hari Prasad Adhikari"
                 error={errors.full_name_en?.message}
-                {...register('full_name_en', { required: 'Full name is required' })}
+                {...register('full_name_en', { required: t('staff.conductors.validation.fullNameRequired') })}
               />
             </div>
             <NepaliInput
-              label="Full Name (Nepali)"
+              label={t('staff.conductors.fullNameNe')}
               placeholder="हरि प्रसाद अधिकारी"
               {...register('full_name_ne')}
             />
             <Controller
               name="gender"
               control={control}
-              rules={{ required: 'Gender is required' }}
+              rules={{ required: t('staff.conductors.validation.genderRequired') }}
               render={({ field }) => (
-                <SelectField label="Gender" required error={errors.gender?.message} {...field}>
-                  <option value="">Select gender</option>
-                  <option value="MALE">Male</option>
-                  <option value="FEMALE">Female</option>
-                  <option value="OTHER">Other</option>
+                <SelectField label={t('staff.conductors.gender')} required error={errors.gender?.message} {...field}>
+                  <option value="">{t('staff.conductors.selectGender')}</option>
+                  <option value="MALE">{t('staff.conductors.genders.MALE')}</option>
+                  <option value="FEMALE">{t('staff.conductors.genders.FEMALE')}</option>
+                  <option value="OTHER">{t('staff.conductors.genders.OTHER')}</option>
                 </SelectField>
               )}
             />
             <Controller
               name="dob"
               control={control}
-              rules={{ required: 'Date of birth is required' }}
+              rules={{ required: t('staff.conductors.validation.dobRequired') }}
               render={({ field }) => (
                 <NepaliDateInput
-                  label="Date of Birth"
+                  label={t('staff.conductors.dateOfBirth')}
                   required
                   error={errors.dob?.message}
                   value={field.value}
@@ -639,36 +652,36 @@ export default function ConductorsPage() {
               )}
             />
             <Input
-              label="Citizenship Number"
+              label={t('staff.conductors.citizenshipNo')}
               required
               placeholder="e.g. 12-34-56-78901"
               error={errors.citizenship_no?.message}
-              {...register('citizenship_no', { required: 'Citizenship number is required' })}
+              {...register('citizenship_no', { required: t('staff.conductors.validation.citizenshipRequired') })}
             />
             <div className="sm:col-span-2">
               <Input
-                label="Address"
+                label={t('staff.conductors.address')}
                 required
                 placeholder="e.g. Kalanki, Kathmandu"
                 error={errors.address?.message}
-                {...register('address', { required: 'Address is required' })}
+                {...register('address', { required: t('staff.conductors.validation.addressRequired') })}
               />
             </div>
             <Input
-              label="Phone Number"
+              label={t('staff.conductors.phoneNumber')}
               required
               placeholder="+977-98XXXXXXXX"
               error={errors.phone?.message}
-              {...register('phone', { required: 'Phone number is required' })}
+              {...register('phone', { required: t('staff.conductors.validation.phoneRequired') })}
             />
             <div />
             <Input
-              label="Emergency Contact Name"
+              label={t('staff.conductors.emergencyContact')}
               placeholder="e.g. Sita Adhikari"
               {...register('emergency_contact_name')}
             />
             <Input
-              label="Emergency Contact Number"
+              label={t('staff.conductors.emergencyPhone')}
               placeholder="+977-98XXXXXXXX"
               {...register('emergency_contact_number')}
             />
@@ -678,7 +691,7 @@ export default function ConductorsPage() {
           <Section icon={Briefcase} title={t('staff.conductors.employmentInfo')} />
           <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2">
             <p className="text-xs text-blue-600">
-              <strong>Employee ID</strong> is auto-generated (CDR-0001, CDR-0002 …)
+              {t('staff.conductors.employeeIdAutoGen')}
             </p>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -686,23 +699,23 @@ export default function ConductorsPage() {
               name="date_of_joining"
               control={control}
               render={({ field }) => (
-                <NepaliDateInput label="Date of Joining" value={field.value} onChange={field.onChange} />
+                <NepaliDateInput label={t('staff.conductors.dateOfJoining')} value={field.value} onChange={field.onChange} />
               )}
             />
-            <SelectField label="Employment Type" {...register('employment_type')}>
-              <option value="PERMANENT">Permanent</option>
-              <option value="CONTRACT">Contract</option>
-              <option value="PART_TIME">Part Time</option>
+            <SelectField label={t('staff.conductors.employmentType')} {...register('employment_type')}>
+              <option value="PERMANENT">{t('staff.conductors.types.PERMANENT')}</option>
+              <option value="CONTRACT">{t('staff.conductors.types.CONTRACT')}</option>
+              <option value="PART_TIME">{t('staff.conductors.types.PART_TIME')}</option>
             </SelectField>
-            <SelectField label="Shift" {...register('shift')}>
-              <option value="">— Not assigned —</option>
-              <option value="MORNING">Morning (5am–12pm)</option>
-              <option value="DAY">Day (12pm–6pm)</option>
-              <option value="EVENING">Evening (6pm–10pm)</option>
-              <option value="NIGHT">Night (10pm–5am)</option>
+            <SelectField label={t('staff.conductors.shift')} {...register('shift')}>
+              <option value="">{t('staff.conductors.notAssignedOption')}</option>
+              <option value="MORNING">{t('staff.conductors.shifts.MORNING')}</option>
+              <option value="DAY">{t('staff.conductors.shifts.DAY')}</option>
+              <option value="EVENING">{t('staff.conductors.shifts.EVENING')}</option>
+              <option value="NIGHT">{t('staff.conductors.shifts.NIGHT')}</option>
             </SelectField>
-            <SelectField label="Route Assigned" {...register('assigned_route_id')}>
-              <option value="">— Not assigned —</option>
+            <SelectField label={t('staff.conductors.routeAssigned')} {...register('assigned_route_id')}>
+              <option value="">{t('staff.conductors.notAssignedOption')}</option>
               {(routes as { id: string; route_code?: string; name_en?: string }[]).map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.route_code ? `${r.route_code} — ` : ''}{r.name_en ?? r.id}
@@ -713,8 +726,8 @@ export default function ConductorsPage() {
 
           {/* Bus Assignment */}
           <Section icon={Bus} title={t('staff.conductors.busAssignment')} />
-          <SelectField label="Assign to Bus" {...register('assigned_vehicle_id')}>
-            <option value="">— Not assigned —</option>
+          <SelectField label={t('staff.conductors.assignToBus')} {...register('assigned_vehicle_id')}>
+            <option value="">{t('staff.conductors.notAssignedOption')}</option>
             {(vehicles as { id: string; registration_no?: string; make?: string; model?: string; vehicle_type?: string }[]).map((v) => (
               <option key={v.id} value={v.id}>
                 {v.registration_no ?? v.id}
@@ -727,8 +740,8 @@ export default function ConductorsPage() {
           {/* Medical Information */}
           <Section icon={Heart} title={t('staff.conductors.medicalInfo')} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <SelectField label="Blood Group" {...register('blood_group')}>
-              <option value="">— Unknown —</option>
+            <SelectField label={t('staff.conductors.bloodGroup')} {...register('blood_group')}>
+              <option value="">{t('staff.conductors.unknownBloodGroup')}</option>
               {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map((bg) => (
                 <option key={bg} value={bg}>{bg}</option>
               ))}
@@ -740,7 +753,7 @@ export default function ConductorsPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <Input
-                label="Basic Salary (NPR)"
+                label={t('staff.conductors.basicSalary')}
                 type="number"
                 min="0"
                 step="0.01"
@@ -760,17 +773,17 @@ export default function ConductorsPage() {
                 className="flex items-center gap-1 rounded-lg border border-dashed border-primary-400
                            px-3 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50 transition-colors"
               >
-                <Plus className="h-3 w-3" /> Add Allowance
+                <Plus className="h-3 w-3" /> {t('staff.conductors.addAllowance')}
               </button>
             </div>
             {allowances.length === 0 && (
-              <p className="text-xs text-gray-400 italic">No allowances added yet.</p>
+              <p className="text-xs text-gray-400 italic">{t('staff.conductors.noAllowances')}</p>
             )}
             {allowances.map((item, idx) => (
               <div key={idx} className="flex items-center gap-2">
                 <input
                   type="text"
-                  placeholder="Title (e.g. Transport)"
+                  placeholder={t('staff.conductors.allowanceTitle')}
                   value={item.title}
                   onChange={(e) => {
                     const updated = [...allowances]
@@ -782,7 +795,7 @@ export default function ConductorsPage() {
                 />
                 <input
                   type="number"
-                  placeholder="Amount (NPR)"
+                  placeholder={t('staff.conductors.allowanceAmount')}
                   min="0"
                   value={item.amount}
                   onChange={(e) => {
@@ -807,7 +820,7 @@ export default function ConductorsPage() {
           {/* Actions */}
           <div className="flex justify-end gap-3 border-t pt-4">
             <Button variant="secondary" type="button" onClick={() => { setShowCreate(false); reset(); setAllowances([]) }}>
-              {t('common.cancel')}
+              {t('common:common.cancel')}
             </Button>
             <Button type="submit" loading={createMutation.isPending} leftIcon={<Plus className="h-4 w-4" />}>
               {t('staff.conductors.addConductor')}

@@ -11,6 +11,7 @@ export interface Tenant {
   contact_phone: string
   address: string
   pan_vat_number: string
+  commission_rate?: number
   created_at: string
   domains: { id: number; domain: string; is_primary: boolean }[]
 }
@@ -112,7 +113,7 @@ const tenantService = {
       return data.data
     },
 
-    upload: async (tenantId: string, formData: FormData): Promise<TenantDocument> => {
+    upload: async (_tenantId: string, formData: FormData): Promise<TenantDocument> => {
       const { data } = await apiClient.post<ApiResponse<TenantDocument>>(
         `/platform/tenant-documents/`,
         formData,

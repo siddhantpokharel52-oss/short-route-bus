@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Plus, Search, CreditCard, RefreshCw } from 'lucide-react'
+import { Search, CreditCard, RefreshCw } from 'lucide-react'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
 import { Table, Column, Pagination } from '@components/shared/Table'

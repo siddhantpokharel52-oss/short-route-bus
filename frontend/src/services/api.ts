@@ -3,6 +3,7 @@
  */
 import axios, { AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 import { useAuthStore } from '@store/authStore'
+import { getPortalContext } from '@utils/portalContext'
 import toast from 'react-hot-toast'
 
 // Standard API envelope from backend
@@ -37,10 +38,13 @@ apiClient.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`
     }
 
-    // Attach tenant slug from auth store for tenant-scoped requests
-    const tenantSlug = useAuthStore.getState().tenantSlug
-    if (tenantSlug && config.url && !config.url.startsWith('/platform')) {
-      config.headers['X-Tenant-Slug'] = tenantSlug
+    // Derive tenant slug from the current hostname (ground truth).
+    // Using the hostname means the login request also carries the slug before
+    // the user is authenticated, and cross-subdomain access is naturally blocked
+    // by TenantSchemaMiddleware (JWT tenant_schema won't match the hostname slug).
+    const { isTenantPortal, tenantSlug: hostnameSlug } = getPortalContext()
+    if (isTenantPortal && hostnameSlug && config.url && !config.url.startsWith('/platform')) {
+      config.headers['X-Tenant-Slug'] = hostnameSlug
     }
 
     // Language header
@@ -52,6 +56,23 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 )
 
+// Shared refresh promise — prevents multiple concurrent requests from each
+// independently calling token/refresh/ when the access token expires.
+let _refreshPromise: Promise<string> | null = null
+
+function _doRefresh(): Promise<string> {
+  if (_refreshPromise) return _refreshPromise
+  _refreshPromise = (async () => {
+    const refreshToken = useAuthStore.getState().refreshToken
+    if (!refreshToken) throw new Error('No refresh token')
+    const res = await axios.post('/api/v1/auth/token/refresh/', { refresh: refreshToken })
+    const { access } = res.data
+    useAuthStore.getState().setTokens(access, refreshToken)
+    return access
+  })().finally(() => { _refreshPromise = null })
+  return _refreshPromise
+}
+
 // Response interceptor: handle token refresh and error normalisation
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => response,
@@ -61,15 +82,7 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
       try {
-        const refreshToken = useAuthStore.getState().refreshToken
-        if (!refreshToken) throw new Error('No refresh token')
-
-        const res = await axios.post('/api/v1/auth/token/refresh/', {
-          refresh: refreshToken,
-        })
-        // Note: token/refresh/ maps to backend.apps.users.urls -> token/refresh/
-        const { access } = res.data
-        useAuthStore.getState().setTokens(access, refreshToken)
+        const access = await _doRefresh()
         originalRequest.headers.Authorization = `Bearer ${access}`
         return apiClient(originalRequest)
       } catch {

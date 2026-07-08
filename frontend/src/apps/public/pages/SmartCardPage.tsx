@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CreditCard, RefreshCw, Search, AlertCircle } from 'lucide-react'
+import { CreditCard, Search, AlertCircle } from 'lucide-react'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
 import { Badge } from '@components/shared/Badge'
