@@ -1,6 +1,10 @@
+from pathlib import Path
 from .base import *
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
+
+STATIC_ROOT = Path('/app/staticfiles')
+MEDIA_ROOT = Path('/app/media')
 
 DEBUG = False
 
