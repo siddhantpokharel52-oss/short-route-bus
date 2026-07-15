@@ -121,10 +121,12 @@ DATABASES = {
 
 DATABASE_ROUTERS = ["django_tenants.routers.TenantSyncRouter"]
 
+REDIS_URL = config("REDIS_URL", default="redis://redis:6379/0")
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": config("REDIS_URL", default="redis://redis:6379/0"),
+        "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         },
@@ -206,7 +208,7 @@ SPECTACULAR_SETTINGS = {
 }
 
 # Celery
-CELERY_BROKER_URL = config("REDIS_URL", default="redis://redis:6379/0")
+CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = "django-db"
 CELERY_CACHE_BACKEND = "default"
 CELERY_ACCEPT_CONTENT = ["json"]
@@ -220,7 +222,7 @@ CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [config("REDIS_URL", default="redis://redis:6379/0")],
+            "hosts": [REDIS_URL],
         },
     },
 }
