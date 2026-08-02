@@ -2,7 +2,7 @@ from rest_framework import views
 from rest_framework.response import Response
 from django.utils import timezone
 from .models import TenantAnalyticsSnapshot, CityAnalyticsSnapshot
-from backend.apps.users.permissions import IsOperationsRole, IsTransportAuthority
+from backend.apps.users.permissions import IsOperationsRole, IsTransportAuthority, IsFinanceRole
 
 
 def api_response(data=None, message="Success", success=True, errors=None, status_code=200):
@@ -217,3 +217,124 @@ class CityAnalyticsView(views.APIView):
             "total_active_buses", "total_revenue", "total_complaints", "fleet_availability_ratio",
         ))
         return api_response(data=data)
+
+
+def _parse_target_date(request):
+    """Returns (date, error_response). error_response is None on success."""
+    date_str = request.query_params.get("date")
+    if not date_str:
+        return timezone.now().date(), None
+    from datetime import datetime
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d").date(), None
+    except ValueError:
+        return None, api_response(
+            success=False, message="`date` must be YYYY-MM-DD.", errors=None, status_code=400
+        )
+
+
+class TicketRevenueLiveView(views.APIView):
+    """
+    GET /analytics/tickets/live/?date=YYYY-MM-DD
+    Live running totals for the calling tenant (ticket counts / QR codes
+    issued / cash collected) — the "live money/ticket dashboard" requirement.
+    Computed on-the-fly from apps.ticketing.Ticket every call, no snapshot
+    table involved, so a dashboard polling this every few seconds always
+    reflects tickets issued moments ago. Defaults to today.
+    """
+    permission_classes = [IsOperationsRole | IsFinanceRole]
+
+    def get(self, request):
+        from django.db.models import Count, Sum
+        from backend.apps.ticketing.models import Ticket
+
+        target_date, error = _parse_target_date(request)
+        if error is not None:
+            return error
+
+        tickets = Ticket.objects.filter(issued_at__date=target_date, is_deleted=False)
+        ticket_count = tickets.count()
+        total_collected = float(tickets.aggregate(t=Sum("fare_paid"))["t"] or 0)
+        cash_collected = float(
+            tickets.filter(payment_method=Ticket.PaymentMethod.CASH)
+            .aggregate(t=Sum("fare_paid"))["t"] or 0
+        )
+        by_payment_method = {
+            row["payment_method"]: {"count": row["count"], "total": float(row["total"] or 0)}
+            for row in tickets.values("payment_method").annotate(count=Count("id"), total=Sum("fare_paid"))
+        }
+
+        return api_response(data={
+            "date": target_date.isoformat(),
+            "ticket_count": ticket_count,
+            # Every Ticket gets exactly one QR at creation (TicketSerializer.create()) —
+            # always equal to ticket_count, kept as its own field since that's how the
+            # requirement was phrased ("ticket counts, QR codes").
+            "qr_codes_issued": ticket_count,
+            "total_collected": total_collected,
+            "cash_collected": cash_collected,
+            "by_payment_method": by_payment_method,
+        })
+
+
+class CityTicketRevenueLiveView(views.APIView):
+    """
+    GET /analytics/city/tickets/live/?date=YYYY-MM-DD
+    Same running totals as TicketRevenueLiveView, live-aggregated across
+    every ACTIVE tenant. Ticket is tenant-scoped (schema-per-tenant), so
+    there is no single table to sum — this iterates each tenant's schema
+    (same schema_context pattern apps.analytics.tasks.refresh_city_analytics
+    already uses for its nightly snapshot), just computed on-the-fly instead
+    of snapshotted, so it can be polled for a live platform-wide total.
+    """
+    permission_classes = [IsTransportAuthority]
+
+    def get(self, request):
+        from django.db.models import Count, Sum
+        from django_tenants.utils import schema_context
+        from backend.apps.tenants.models import Tenant
+
+        target_date, error = _parse_target_date(request)
+        if error is not None:
+            return error
+
+        total_ticket_count = 0
+        total_collected = 0.0
+        total_cash_collected = 0.0
+        by_tenant = []
+
+        for tenant in Tenant.objects.filter(status=Tenant.Status.ACTIVE):
+            try:
+                with schema_context(tenant.schema_name):
+                    from backend.apps.ticketing.models import Ticket
+                    tickets = Ticket.objects.filter(issued_at__date=target_date, is_deleted=False)
+                    count = tickets.count()
+                    collected = float(tickets.aggregate(t=Sum("fare_paid"))["t"] or 0)
+                    cash = float(
+                        tickets.filter(payment_method=Ticket.PaymentMethod.CASH)
+                        .aggregate(t=Sum("fare_paid"))["t"] or 0
+                    )
+            except Exception:
+                # One tenant's schema being mid-migration or otherwise broken must
+                # never take down the whole platform aggregate.
+                continue
+
+            total_ticket_count += count
+            total_collected += collected
+            total_cash_collected += cash
+            by_tenant.append({
+                "tenant_schema": tenant.schema_name,
+                "tenant_name": tenant.name,
+                "ticket_count": count,
+                "total_collected": collected,
+                "cash_collected": cash,
+            })
+
+        return api_response(data={
+            "date": target_date.isoformat(),
+            "ticket_count": total_ticket_count,
+            "qr_codes_issued": total_ticket_count,
+            "total_collected": total_collected,
+            "cash_collected": total_cash_collected,
+            "by_tenant": by_tenant,
+        })
