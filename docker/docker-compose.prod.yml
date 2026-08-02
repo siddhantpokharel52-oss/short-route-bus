@@ -62,7 +62,15 @@ services:
       context: ..
       dockerfile: docker/Dockerfiles/Dockerfile.fastapi
     restart: always
-    command: uvicorn backend.fastapi_services.main:app --host 0.0.0.0 --port 8001 --workers 4
+    # --workers 1, deliberately: WS /public-api/v1/ws/tickets/ (ticket-delivery push)
+    # holds its connected passengers in an in-memory dict per process, with no
+    # cross-worker fan-out. Under >1 worker, a ticket issued via one process can
+    # only reach a passenger whose socket happened to land on that same process —
+    # multiple workers would make delivery unreliable, not just slower. Revisit
+    # once real traffic needs more than one process (add Redis pub/sub so every
+    # worker can relay to its own connections) — GET /tickets/my/?since= polling
+    # stays correct regardless of worker count in the meantime.
+    command: uvicorn backend.fastapi_services.main:app --host 0.0.0.0 --port 8001 --workers 1
     expose:
       - "8001"
     depends_on:

@@ -146,6 +146,14 @@ services:
       - VITE_API_URL=http://localhost:8000
       - VITE_FASTAPI_URL=http://localhost:8001
       - VITE_WS_URL=ws://localhost:8000
+      # vite.config.ts's dev-server proxy (server.proxy, used only when Vite
+      # is hit directly, e.g. :3002 — nginx doesn't go through this) reads
+      # these two, not the VITE_*_URL vars above. Without them it falls back
+      # to hardcoded http://localhost:8000/8001, which inside this container
+      # is the container's own loopback — nothing listens there, so every
+      # proxied /api, /api/v1/live, /public-api, /ws, /media call 500s.
+      - DJANGO_HOST=http://django:8000
+      - FASTAPI_HOST=http://fastapi:8001
     restart: on-failure
 
   nginx:

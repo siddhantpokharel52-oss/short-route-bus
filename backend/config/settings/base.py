@@ -67,7 +67,7 @@ TENANT_DOMAIN_MODEL = "tenants.Domain"
 # Suffix appended to a tenant's chosen subdomain when creating its Domain record,
 # e.g. subdomain "test" -> "test.{TENANT_BASE_DOMAIN}". Overridden to "localhost"
 # in development so subdomains resolve on a local machine without real DNS.
-TENANT_BASE_DOMAIN = config("TENANT_BASE_DOMAIN", default="kvbms.com.np")
+TENANT_BASE_DOMAIN = config("TENANT_BASE_DOMAIN", default="citybus.com.np")
 
 MIDDLEWARE = [
     "django_tenants.middleware.main.TenantMainMiddleware",
@@ -205,6 +205,18 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "Kathmandu Valley Bus Management System API",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    # Without this, every endpoint's auto-derived tag collapses to the shared
+    # "v1" path segment (api/v1/...) instead of the distinguishing app name
+    # right after it (accounting, fleet, ticketing, ...) — the whole schema
+    # showed up as one flat ~180-endpoint "v1" list with no grouping at all.
+    # SCHEMA_PATH_PREFIX alone is enough for correct tag derivation. Do NOT
+    # also set SCHEMA_PATH_PREFIX_TRIM: it doesn't just change how the path is
+    # *displayed* — it strips "/api/v1" from the actual path in the generated
+    # schema. With no `servers` entry to compensate, Swagger's "Try it out"
+    # then builds every request against the wrong URL (e.g. POST
+    # /auth/login/ instead of /api/v1/auth/login/) and 404s. Learned this the
+    # hard way — don't re-add it without also fixing that.
+    "SCHEMA_PATH_PREFIX": r"/api/v1",
 }
 
 # Celery
