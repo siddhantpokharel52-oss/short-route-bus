@@ -29,18 +29,22 @@ A management platform for short-route bus operations: fleet, scheduling, dispatc
    docker compose up -d
    ```
 3. Services (default local ports):
-   - Frontend: http://localhost:3001
-   - Django API: http://localhost:8000
+   - Frontend: http://localhost:3002
+   - Django API: http://localhost:8002
    - FastAPI service: http://localhost:8001
-   - Nginx (reverse proxy): http://localhost:8080
-   - Postgres: localhost:5433
-   - Redis: localhost:6380
+   - Nginx (reverse proxy): http://localhost:8090
+   - Postgres: localhost:5435
+   - Redis: localhost:6381
 
-   Ports for Postgres, Redis, and Nginx are remapped from their defaults to avoid clashing with services that may already be running locally (e.g. a system Postgres/Redis/Apache on the host).
+   Ports for Postgres, Redis, Django, Frontend, and Nginx are remapped from their defaults to avoid clashing with services that may already be running locally (e.g. a system Postgres/Redis/Apache on the host).
 
 4. Check container status: `docker compose ps`
 
-For production, use `docker/docker-compose.prod.yml` instead.
+For production, use `docker/docker-compose.prod.yml` instead. Note: `nginx.conf` expects a real wildcard TLS certificate already present on the host at `/etc/letsencrypt/live/citybus.com.np/` — nginx will fail to start without it, and nothing in this repo obtains or renews it automatically (a one-time `certbot` DNS-01 step on the host is required first).
+
+## API documentation
+
+See **[`docs/API.md`](docs/API.md)** for the full reference — the master consumer API (`/public-api/v1/`, used by the Yatroo mobile app) is documented first, followed by the Django REST API and the internal FastAPI GPS/live-ops service. Auto-generated interactive docs (Swagger/ReDoc) are also available once the stack is running — see that file for exact URLs.
 
 ## Environment variables
 
