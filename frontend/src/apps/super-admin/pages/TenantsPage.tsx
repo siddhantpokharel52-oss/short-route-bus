@@ -14,6 +14,20 @@ import tenantService, { Tenant, TenantCreateResult } from '@services/tenantServi
 import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
 
+// Real tenant domains (anything other than *.localhost) are always served over
+// HTTPS on the standard port — matching nginx.conf's HTTPS server block, there's
+// never a port in a real login URL. Falls back to the super admin's own current
+// protocol/port only for *.localhost, so the preview/link stays clickable and
+// testable in local dev (where the frontend is served from a non-standard port).
+function buildLoginUrl(domain: string): string {
+  if (!domain) return ''
+  if (domain === 'localhost' || domain.endsWith('.localhost')) {
+    const port = window.location.port ? `:${window.location.port}` : ''
+    return `${window.location.protocol}//${domain}${port}/login`
+  }
+  return `https://${domain}/login`
+}
+
 interface CreateTenantForm {
   name: string
   subdomain: string
@@ -78,9 +92,8 @@ export default function TenantsPage() {
 
   const subdomainValue = watch('subdomain') ?? ''
   const baseDomain = import.meta.env.VITE_BASE_DOMAIN || 'localhost'
-  const port = window.location.port ? `:${window.location.port}` : ''
   const previewLoginUrl = subdomainValue.trim()
-    ? `${window.location.protocol}//${subdomainValue.trim().toLowerCase()}.${baseDomain}${port}/login`
+    ? buildLoginUrl(`${subdomainValue.trim().toLowerCase()}.${baseDomain}`)
     : null
 
   const sanitizeSubdomain = useCallback((value: string) =>
@@ -323,8 +336,7 @@ export default function TenantsPage() {
               </p>
               {(() => {
                 const domain = (newTenantCreds.domains?.find((d) => d.is_primary) ?? newTenantCreds.domains?.[0])?.domain ?? ''
-                const port = window.location.port ? `:${window.location.port}` : ''
-                const loginUrl = `${window.location.protocol}//${domain}${port}/login`
+                const loginUrl = buildLoginUrl(domain)
                 return (
                   <div className="mb-4">
                     <p className="mb-1 text-xs text-green-600">{t('platform:tenants.credentialsModal.shareNote')}</p>

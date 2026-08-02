@@ -77,10 +77,13 @@ export default function DashboardPage() {
     refetchInterval: 5 * 60 * 1000,
   })
 
-  // All tenants for search dropdown
+  // All tenants for search dropdown — no status filter, see BillingPage's
+  // identical fix: a freshly-created tenant defaults to PENDING and stays
+  // that way until separately activated, so this was hiding every new
+  // tenant from fleet search.
   const { data: allTenants = [] } = useQuery({
     queryKey: ['tenants-search-dropdown'],
-    queryFn: async () => (await tenantService.list({ page_size: 200, status: 'ACTIVE' })).tenants,
+    queryFn: async () => (await tenantService.list({ page_size: 200 })).tenants,
     staleTime: 5 * 60 * 1000,
   })
 

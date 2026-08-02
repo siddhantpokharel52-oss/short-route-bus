@@ -143,7 +143,11 @@ function SubscriptionsTab() {
 
   const { data: tenants = [] } = useQuery({
     queryKey: ['tenants-dropdown'],
-    queryFn: async () => (await tenantService.list({ page_size: 200, status: 'ACTIVE' })).tenants,
+    // No status filter — a freshly-created tenant defaults to PENDING and stays
+    // that way until separately activated, so filtering to ACTIVE only hid every
+    // newly-created tenant from this dropdown. Matches TenantsPage's own list
+    // query, which is unfiltered by status.
+    queryFn: async () => (await tenantService.list({ page_size: 200 })).tenants,
     staleTime: 5 * 60 * 1000,
   })
 

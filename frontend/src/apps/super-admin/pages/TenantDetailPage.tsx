@@ -228,7 +228,11 @@ export default function TenantDetailPage() {
             <dt className="text-gray-400">{t('platform:tenantDetail.subdomain')}</dt>
             <dd>
               <code className="rounded bg-gray-100 px-2 py-0.5 text-xs dark:bg-gray-700">
-                {tenant.schema_name}.kvbms.com.np
+                {/* The tenant's actual registered domain — never hardcode the base
+                    domain here, it differs per environment (localhost in dev,
+                    citybus.com.np in production) and this is the one place that
+                    already carries the real value from the backend. */}
+                {tenant.domains?.find((d) => d.is_primary)?.domain ?? tenant.domains?.[0]?.domain ?? tenant.schema_name}
               </code>
             </dd>
           </div>

@@ -74,7 +74,7 @@
     },
     "createModal": {
       "companyName": "Company Name",
-      "subdomainHint": "e.g. sajha → sajha.kvbms.com.np",
+      "subdomainHint": "e.g. sajha → sajha.citybus.com.np",
       "contactNumber": "Contact Number",
       "contactNumberHint": "e.g. 9801234567",
       "emailAddress": "Email Address",
