@@ -42,8 +42,8 @@ Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 # redundant with the explicit tag order once set, but keeps the two in sync
 # for anyone skimming just this file.
 app.include_router(public_router, prefix="/public-api/v1", tags=["Public API"])
-app.include_router(gps_router, prefix="/api/v1/live", tags=["GPS & Live Operations"])
-app.include_router(live_ops_router, prefix="/api/v1/live", tags=["Live Operations"])
+app.include_router(gps_router, prefix="/api/v1/live", tags=["GPS & Live Operations"], include_in_schema=False)
+app.include_router(live_ops_router, prefix="/api/v1/live", tags=["Live Operations"], include_in_schema=False)
 
 
 @app.get("/health")
