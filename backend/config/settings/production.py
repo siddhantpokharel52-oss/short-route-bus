@@ -16,18 +16,29 @@ SECURE_HSTS_PRELOAD = SECURE_SSL_REDIRECT
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 
-STORAGES = {
-    "default": {
-        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
-        "OPTIONS": {
-            "bucket_name": AWS_S3_BUCKET,
-            "region_name": AWS_S3_REGION_NAME,
+if AWS_S3_BUCKET and AWS_ACCESS_KEY_ID:
+    STORAGES = {
+        "default": {
+            "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+            "OPTIONS": {
+                "bucket_name": AWS_S3_BUCKET,
+                "region_name": AWS_S3_REGION_NAME,
+            },
         },
-    },
-    "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
-    },
-}
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    }
+else:
+    STORAGES = {
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+            "OPTIONS": {"location": str(MEDIA_ROOT)},
+        },
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    }
 
 SENTRY_DSN = config("SENTRY_DSN", default="")
 if SENTRY_DSN:
