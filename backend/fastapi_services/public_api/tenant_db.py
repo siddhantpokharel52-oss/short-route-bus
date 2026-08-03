@@ -837,6 +837,53 @@ def _self_service_account_email(schema: str) -> str:
     return f"self-service-ticketing+{safe}@internal.kvbms"
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# apps.staff.BusCompany reads — tenant-scoped, for e-ticket operator branding
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def fetch_company_info(schema: str) -> Optional[dict]:
+    """Company name and logo path from this tenant's BusCompany record.
+    Mirrors apps.staff.models.BusCompany (table staff_buscompany). Returns only
+    the fields needed for a passenger-facing e-ticket; excludes registration/
+    contact details. Returns None if no company record exists yet."""
+    safe = _safe_schema(schema)
+    engine = get_engine()
+    async with engine.connect() as conn:
+        try:
+            result = await conn.execute(
+                text(f'SELECT company_name, logo FROM "{safe}".staff_buscompany LIMIT 1')
+            )
+            row = result.first()
+            return _row_to_dict(row) if row else None
+        except Exception:
+            return None
+
+
+async def find_ticket_by_uid(ticket_uid: str) -> Optional[tuple[str, dict]]:
+    """Cross-schema lookup by the human-readable ticket_uid (e.g. KV-XXXXXXXX),
+    not the internal UUID. Same O(n) fan-out as find_ticket_by_id — see that
+    function's scaling note. Returns (schema, row) or None."""
+    schemas = await list_tenant_schemas()
+    engine = get_engine()
+    async with engine.connect() as conn:
+        for schema in schemas:
+            safe = _safe_schema(schema)
+            query = text(
+                f'SELECT {_TICKET_COLUMNS} FROM "{safe}".ticketing_ticket '
+                'WHERE ticket_uid = :ticket_uid AND is_deleted = false'
+            )
+            try:
+                result = await conn.execute(query, {"ticket_uid": ticket_uid})
+                row = result.first()
+            except Exception:
+                continue
+            if row:
+                d = _row_to_dict(row)
+                d["tenant_schema"] = schema
+                return schema, d
+    return None
+
+
 async def get_or_create_self_service_account(schema: str) -> str:
     """Returns this tenant's self-service account user_id, creating it on first use.
     Idempotent (INSERT ... ON CONFLICT DO NOTHING on the unique email, then re-SELECT)

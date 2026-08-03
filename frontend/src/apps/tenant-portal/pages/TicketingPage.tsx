@@ -112,113 +112,110 @@ function SourceBadge({ source }: { source: string }) {
   )
 }
 
-// ─── Ticket Receipt ───────────────────────────────────────────────────────────
-function TicketReceipt({
+// ─── E-Ticket ─────────────────────────────────────────────────────────────────
+interface CompanyInfo { company_name: string; logo: string | null }
+
+function ETicket({
   ticket,
+  company,
   onNewTicket,
 }: {
   ticket: TicketRecord
+  company: CompanyInfo | null
   onNewTicket: () => void
 }) {
   const { t } = useTranslation('tenant')
   const fmtDate = useDateFormatter()
   const { language } = useUiStore()
-  const issuedDate = new Date(ticket.issued_at)
+
+  const initials = company?.company_name
+    ? company.company_name.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase()
+    : 'BUS'
 
   return (
     <div className="flex flex-col items-center gap-4 p-2">
-      {/* Receipt card */}
-      <div className="w-full max-w-xs rounded-2xl border-2 border-dashed border-primary-200 bg-white shadow-lg overflow-hidden">
+      <div id="eticket-print" className="w-full max-w-xs overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg">
+
         {/* Header */}
-        <div className="bg-primary-600 px-5 py-3 text-center text-white">
-          <div className="flex items-center justify-center gap-2 text-sm font-bold">
-            <Ticket className="h-4 w-4" />
-            <span>{t('ticketing.busTicket')}</span>
-          </div>
-          <p className="mt-0.5 font-mono text-lg font-extrabold tracking-wider">
-            {ticket.ticket_uid}
-          </p>
-        </div>
-
-        {/* Route section */}
-        <div className="px-5 py-4">
-          <div className="flex items-center gap-2">
-            <div className="flex-1">
-              <p className="text-xs text-gray-400 uppercase tracking-wide">{t('ticketing.from')}</p>
-              <p className="font-semibold text-gray-900 text-sm">
-                {ticket.from_stop_name ?? '—'}
-              </p>
-            </div>
-            <ArrowRight className="h-5 w-5 flex-shrink-0 text-primary-400" />
-            <div className="flex-1 text-right">
-              <p className="text-xs text-gray-400 uppercase tracking-wide">{t('ticketing.to')}</p>
-              <p className="font-semibold text-gray-900 text-sm">
-                {ticket.to_stop_name ?? '—'}
-              </p>
-            </div>
+        <div className="relative px-5 py-4" style={{ background: '#0D4A38' }}>
+          {/* Logo — top-right circle */}
+          <div className="absolute right-4 top-3 flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 bg-white" style={{ borderColor: 'rgba(255,255,255,0.25)' }}>
+            {company?.logo
+              ? <img src={company.logo} alt={company.company_name} className="h-full w-full object-cover" />
+              : <span className="text-[10px] font-semibold" style={{ color: '#0D4A38' }}>{initials}</span>
+            }
           </div>
 
-          <div className="mt-3 border-t border-dashed border-gray-200 pt-3 space-y-1.5">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">{t('ticketing.dateTime')}</span>
-              <span className="font-medium text-gray-800">
-                {fmtDate(issuedDate)}
-              </span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">{t('ticketing.price')}</span>
-              <span className="font-bold text-primary-700 text-base">
-                {formatNPR(Number(ticket.fare_paid), language as 'en' | 'ne')}
-              </span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">{t('ticketing.payment')}</span>
-              <span className="font-medium">{ticket.payment_method}</span>
-            </div>
-            {ticket.passenger_name && (
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">{t('ticketing.passenger')}</span>
-                <span className="font-medium text-gray-800">{ticket.passenger_name}</span>
-              </div>
-            )}
+          <div className="pr-16">
+            <p className="text-[10px] uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.5)' }}>
+              {company?.company_name ?? t('ticketing.busTicket')}
+            </p>
+            <p className="mt-0.5 text-xl font-medium text-white">e-Ticket</p>
+            <span className="mt-2 inline-block rounded-full px-3 py-0.5 text-[10px] font-medium tracking-wider" style={{ background: '#1FC87A', color: '#063D22' }}>
+              VALID
+            </span>
           </div>
         </div>
 
-        {/* QR Code */}
-        {ticket.qr_code && (
-          <div className="border-t border-dashed border-gray-200 flex flex-col items-center px-5 py-4 gap-2">
-            <img
-              src={`data:image/png;base64,${ticket.qr_code}`}
-              alt="Ticket QR"
-              className="h-32 w-32 rounded-lg"
-            />
-            <p className="text-xs text-gray-400">{t('ticketing.scanToVerify')}</p>
+        {/* Route */}
+        <div className="border-b border-gray-100 px-5 py-3.5">
+          <p className="mb-2.5 text-[10px] uppercase tracking-widest text-gray-400">{t('routes.title')}</p>
+          <div className="grid items-center gap-2" style={{ gridTemplateColumns: '1fr 28px 1fr' }}>
+            <div>
+              <p className="text-sm font-medium leading-snug text-gray-900">{ticket.from_stop_name ?? '—'}</p>
+              <p className="mt-1 text-[11px] text-gray-400">{t('ticketing.from')}</p>
+            </div>
+            <div className="flex justify-center">
+              <ArrowRight className="h-4 w-4" style={{ color: '#C8830A' }} />
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-medium leading-snug text-gray-900">{ticket.to_stop_name ?? '—'}</p>
+              <p className="mt-1 text-right text-[11px] text-gray-400">{t('ticketing.to')}</p>
+            </div>
           </div>
-        )}
+        </div>
 
-        {/* Footer */}
-        <div className="bg-gray-50 px-5 py-2 text-center">
-          <p className="text-xs text-gray-400">
-            {t('ticketing.validUntil')} &nbsp;•&nbsp; <span className="text-primary-600 font-medium">KVBMS</span>
-          </p>
+        {/* Details grid */}
+        <div className="grid grid-cols-2 gap-x-3 gap-y-3.5 border-b border-gray-100 px-5 py-3.5">
+          {[
+            { label: t('ticketing.passenger'), value: ticket.passenger_name || '—' },
+            { label: t('ticketing.price'), value: formatNPR(Number(ticket.fare_paid), language as 'en' | 'ne') },
+            { label: t('ticketing.dateTime'), value: fmtDate(ticket.issued_at) },
+            { label: t('ticketing.payment'), value: ticket.payment_method },
+            { label: t('ticketing.source'), value: ticket.issued_by },
+          ].map(({ label, value }) => (
+            <div key={label}>
+              <p className="text-[10px] uppercase tracking-widest text-gray-400">{label}</p>
+              <p className="mt-0.5 text-[13px] font-medium text-gray-900">{value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Tear line */}
+        <div className="mx-4 border-t-2 border-dashed border-gray-200" />
+
+        {/* QR + UID */}
+        <div className="flex items-center gap-4 px-5 py-3.5">
+          {ticket.qr_code
+            ? <img src={`data:image/png;base64,${ticket.qr_code}`} alt="Ticket QR" className="h-20 w-20 flex-shrink-0 rounded-md border border-gray-100" />
+            : <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-md border border-gray-100 bg-gray-50"><QrCode className="h-8 w-8 text-gray-300" /></div>
+          }
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] uppercase tracking-widest text-gray-400">{t('ticketing.ticketId')}</p>
+            <p className="mt-0.5 break-all font-mono text-[12px] font-semibold text-gray-900">{ticket.ticket_uid}</p>
+            <p className="mt-2.5 flex items-center gap-1 text-[11px] text-gray-400">
+              <QrCode className="h-3.5 w-3.5" />{t('ticketing.scanToVerify')}
+            </p>
+          </div>
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex gap-3 w-full max-w-xs">
-        <Button
-          variant="outline"
-          className="flex-1"
-          leftIcon={<Printer className="h-4 w-4" />}
-          onClick={() => window.print()}
-        >
+      <div className="flex w-full max-w-xs gap-3">
+        <Button variant="outline" className="flex-1" leftIcon={<Printer className="h-4 w-4" />} onClick={() => window.print()}>
           {t('ticketing.print')}
         </Button>
-        <Button
-          className="flex-1"
-          leftIcon={<RotateCcw className="h-4 w-4" />}
-          onClick={onNewTicket}
-        >
+        <Button className="flex-1" leftIcon={<RotateCcw className="h-4 w-4" />} onClick={onNewTicket}>
           {t('ticketing.newTicket')}
         </Button>
       </div>
@@ -263,6 +260,15 @@ export default function TicketingPage() {
       return (Array.isArray(data.data) ? data.data : []) as RouteListItem[]
     },
     staleTime: 5 * 60 * 1000,
+  })
+
+  const { data: company = null } = useQuery<CompanyInfo | null>({
+    queryKey: ['company-info'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/staff/company/')
+      return data.data as CompanyInfo
+    },
+    staleTime: 10 * 60 * 1000,
   })
 
   // Today stats from the loaded tickets
@@ -524,12 +530,13 @@ export default function TicketingPage() {
       <Modal
         open={showPos}
         onClose={handleClosePOS}
-        title={issuedTicket ? `🎫 ${t('ticketing.ticketIssued')}` : t('ticketing.issueTicketTitle')}
+        title={issuedTicket ? t('ticketing.ticketIssued') : t('ticketing.issueTicketTitle')}
         size="md"
       >
         {issuedTicket ? (
-          <TicketReceipt
+          <ETicket
             ticket={issuedTicket}
+            company={company}
             onNewTicket={() => { setIssuedTicket(null); reset({ payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '', fare_paid: '', passenger_name: '' }) }}
           />
         ) : (

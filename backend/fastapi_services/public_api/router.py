@@ -987,6 +987,62 @@ async def my_tickets(
     return _ok(data=[_serialize_ticket(t) for t in tickets])
 
 
+def _build_logo_url(logo_path: Optional[str], domain: Optional[str]) -> Optional[str]:
+    if not logo_path or not domain:
+        return None
+    return f"https://{domain}/media/{logo_path}"
+
+
+def _serialize_eticket(ticket: dict, company: Optional[dict], domain: Optional[str]) -> dict:
+    return {
+        **_serialize_ticket(ticket),
+        "operator": {
+            "schema": ticket.get("tenant_schema"),
+            "domain": domain,
+            "company_name": company.get("company_name") if company else None,
+            "logo_url": _build_logo_url(
+                company.get("logo") if company else None,
+                domain,
+            ),
+        },
+    }
+
+
+async def _eticket_response(ticket_id: str, user: dict, by_uid: bool = False):
+    """Shared logic for the two e-ticket lookup variants (by UUID / by ticket_uid)."""
+    if by_uid:
+        found = await tenant_db.find_ticket_by_uid(ticket_id)
+    else:
+        found = await tenant_db.find_ticket_by_id(ticket_id)
+    if not found:
+        return _error("Ticket not found.", 404)
+    schema, ticket = found
+
+    is_owner = str(ticket.get("passenger_id")) == str(user.get("user_id"))
+    is_issuing_tenant_staff = user.get("tenant_schema") == schema
+    if not (is_owner or is_issuing_tenant_staff):
+        return _error("You are not authorized to view this ticket.", 403)
+
+    await tenant_db.enrich_stop_names([ticket])
+    await tenant_db.enrich_payment_references([ticket])
+    await tenant_db.enrich_passenger_details([ticket])
+    company, domain = await asyncio.gather(
+        tenant_db.fetch_company_info(schema),
+        tenant_db.get_domain_for_schema(schema),
+    )
+    return _ok(data=_serialize_eticket(ticket, company, domain))
+
+
+@router.get("/tickets/uid/{ticket_uid}/eticket/")
+async def get_eticket_by_uid(ticket_uid: str, user: dict = Depends(get_current_user)):
+    """E-ticket for a ticket looked up by its human-readable **ticket_uid** (e.g.
+    `KV-XXXXXXXX`) instead of the internal UUID. Useful when the mobile app only
+    has the printed UID. Returns ticket data + operator company name and logo URL.
+    `403` if the caller is neither the ticket's passenger nor staff of the issuing
+    operator; `404` if not found."""
+    return await _eticket_response(ticket_uid, user, by_uid=True)
+
+
 @router.get("/tickets/{ticket_id}/")
 async def get_ticket(ticket_id: str, user: dict = Depends(get_current_user)):
     """Single ticket lookup by ID — for support/dispute handling. Restricted to the
@@ -1005,6 +1061,17 @@ async def get_ticket(ticket_id: str, user: dict = Depends(get_current_user)):
     await tenant_db.enrich_payment_references([ticket])
     await tenant_db.enrich_passenger_details([ticket])
     return _ok(data=_serialize_ticket(ticket))
+
+
+@router.get("/tickets/{ticket_id}/eticket/")
+async def get_eticket(ticket_id: str, user: dict = Depends(get_current_user)):
+    """E-ticket view for a ticket by its internal **UUID**. Returns all ticket fields
+    from `GET /tickets/{ticket_id}/` plus an `operator` object containing the issuing
+    bus company's `company_name` and `logo_url` — the minimum a mobile app needs to
+    render a branded e-ticket without a second request. Same access rules as the plain
+    ticket lookup: restricted to the ticket's own passenger or staff of the issuing
+    operator; `403`/`404` otherwise."""
+    return await _eticket_response(ticket_id, user)
 
 
 @router.post("/tickets/{ticket_id}/validate/")
