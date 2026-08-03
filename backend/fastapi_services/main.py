@@ -14,8 +14,6 @@ from .public_api.router import router as public_router
 # internal/staff-facing and follow.
 openapi_tags = [
     {"name": "Public API"},
-    {"name": "GPS & Live Operations"},
-    {"name": "Live Operations"},
 ]
 
 app = FastAPI(
