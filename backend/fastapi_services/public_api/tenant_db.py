@@ -841,6 +841,139 @@ def _self_service_account_email(schema: str) -> str:
 # apps.staff.BusCompany reads — tenant-scoped, for e-ticket operator branding
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+# E-ticket crew lookups — driver, conductor, vehicle; all tenant-scoped
+#
+# Relationship map (no FK columns — all UUIDFields joined by value):
+#   ticketing_ticket.trip_id        → scheduling_trip.id
+#   scheduling_trip.driver_id       → staff_driver.id      (staff profile)
+#   scheduling_trip.conductor_id    → staff_conductor.id   (staff profile)
+#   scheduling_trip.vehicle_id      → fleet_vehicle.id
+#   ticketing_ticket.conductor_id   → users_user.id        (set to request.user.id
+#                                                            at issuance time)
+#   staff_conductor.user_id         → users_user.id        (optional link back)
+#
+# Tickets issued via POS without a trip assignment have trip_id=NULL but still
+# carry conductor_id (the user_id of whoever pressed "Issue"). In that case we
+# fall back to find_conductor_by_user_id so the e-ticket still shows conductor
+# info even without a full trip record. Driver and vehicle are omitted when
+# there is no trip (no trip = no assigned driver/vehicle to show).
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def fetch_trip_details(schema: str, trip_id: str) -> Optional[dict]:
+    """driver_id / conductor_id / vehicle_id from the trip (all staff profile IDs)."""
+    safe = _safe_schema(schema)
+    engine = get_engine()
+    async with engine.connect() as conn:
+        try:
+            result = await conn.execute(
+                text(
+                    f"""
+                    SELECT id, trip_code, driver_id, conductor_id, vehicle_id
+                    FROM "{safe}".scheduling_trip
+                    WHERE id = :trip_id AND is_deleted = false
+                    """
+                ),
+                {"trip_id": trip_id},
+            )
+            row = result.first()
+            return _row_to_dict(row) if row else None
+        except Exception:
+            return None
+
+
+async def fetch_driver_for_eticket(schema: str, driver_id: str) -> Optional[dict]:
+    """Staff driver profile by staff_driver.id (from scheduling_trip.driver_id)."""
+    safe = _safe_schema(schema)
+    engine = get_engine()
+    async with engine.connect() as conn:
+        try:
+            result = await conn.execute(
+                text(
+                    f"""
+                    SELECT employee_id, full_name_en, full_name_ne, phone, photo,
+                           license_no, license_category, license_expiry
+                    FROM "{safe}".staff_driver
+                    WHERE id = :driver_id
+                    """
+                ),
+                {"driver_id": driver_id},
+            )
+            row = result.first()
+            return _row_to_dict(row) if row else None
+        except Exception:
+            return None
+
+
+async def fetch_conductor_for_eticket(schema: str, conductor_id: str) -> Optional[dict]:
+    """Staff conductor profile by staff_conductor.id (from scheduling_trip.conductor_id)."""
+    safe = _safe_schema(schema)
+    engine = get_engine()
+    async with engine.connect() as conn:
+        try:
+            result = await conn.execute(
+                text(
+                    f"""
+                    SELECT employee_id, full_name_en, full_name_ne, phone, photo
+                    FROM "{safe}".staff_conductor
+                    WHERE id = :conductor_id
+                    """
+                ),
+                {"conductor_id": conductor_id},
+            )
+            row = result.first()
+            return _row_to_dict(row) if row else None
+        except Exception:
+            return None
+
+
+async def fetch_conductor_by_user_id(schema: str, user_id: str) -> Optional[dict]:
+    """Staff conductor profile by user_id (fallback for POS tickets with no trip —
+    ticketing_ticket.conductor_id is request.user.id, not staff_conductor.id)."""
+    safe = _safe_schema(schema)
+    engine = get_engine()
+    async with engine.connect() as conn:
+        try:
+            result = await conn.execute(
+                text(
+                    f"""
+                    SELECT employee_id, full_name_en, full_name_ne, phone, photo
+                    FROM "{safe}".staff_conductor
+                    WHERE user_id = :user_id
+                    LIMIT 1
+                    """
+                ),
+                {"user_id": user_id},
+            )
+            row = result.first()
+            return _row_to_dict(row) if row else None
+        except Exception:
+            return None
+
+
+async def fetch_vehicle_for_eticket(schema: str, vehicle_id: str) -> Optional[dict]:
+    """Vehicle display info (registration, bus number, make/model/year) for e-ticket."""
+    safe = _safe_schema(schema)
+    engine = get_engine()
+    async with engine.connect() as conn:
+        try:
+            result = await conn.execute(
+                text(
+                    f"""
+                    SELECT registration_no, bus_number, make, model, year,
+                           vehicle_type, capacity_seated
+                    FROM "{safe}".fleet_vehicle
+                    WHERE id = :vehicle_id
+                    """
+                ),
+                {"vehicle_id": vehicle_id},
+            )
+            row = result.first()
+            return _row_to_dict(row) if row else None
+        except Exception:
+            return None
+
+
 async def fetch_company_info(schema: str) -> Optional[dict]:
     """Company name and logo path from this tenant's BusCompany record.
     Mirrors apps.staff.models.BusCompany (table staff_buscompany). Returns only

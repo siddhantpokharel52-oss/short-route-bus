@@ -987,24 +987,72 @@ async def my_tickets(
     return _ok(data=[_serialize_ticket(t) for t in tickets])
 
 
-def _build_logo_url(logo_path: Optional[str], domain: Optional[str]) -> Optional[str]:
-    if not logo_path or not domain:
+def _media_url(path: Optional[str], domain: Optional[str]) -> Optional[str]:
+    if not path or not domain:
         return None
-    return f"https://{domain}/media/{logo_path}"
+    return f"https://{domain}/media/{path}"
 
 
-def _serialize_eticket(ticket: dict, company: Optional[dict], domain: Optional[str]) -> dict:
+def _serialize_crew(
+    driver: Optional[dict],
+    conductor: Optional[dict],
+    vehicle: Optional[dict],
+    domain: Optional[str],
+) -> dict:
+    def _driver_out(d: dict) -> dict:
+        return {
+            "employee_id": d.get("employee_id"),
+            "full_name_en": d.get("full_name_en"),
+            "full_name_ne": d.get("full_name_ne"),
+            "phone": d.get("phone"),
+            "photo_url": _media_url(d.get("photo"), domain),
+            "license_no": d.get("license_no"),
+            "license_category": d.get("license_category"),
+            "license_expiry": str(d["license_expiry"]) if d.get("license_expiry") else None,
+        }
+
+    def _conductor_out(c: dict) -> dict:
+        return {
+            "employee_id": c.get("employee_id"),
+            "full_name_en": c.get("full_name_en"),
+            "full_name_ne": c.get("full_name_ne"),
+            "phone": c.get("phone"),
+            "photo_url": _media_url(c.get("photo"), domain),
+        }
+
+    def _vehicle_out(v: dict) -> dict:
+        return {
+            "registration_no": v.get("registration_no"),
+            "bus_number": v.get("bus_number"),
+            "make": v.get("make"),
+            "model": v.get("model"),
+            "year": v.get("year"),
+            "vehicle_type": v.get("vehicle_type"),
+            "capacity_seated": v.get("capacity_seated"),
+        }
+
+    return {
+        "driver": _driver_out(driver) if driver else None,
+        "conductor": _conductor_out(conductor) if conductor else None,
+        "vehicle": _vehicle_out(vehicle) if vehicle else None,
+    }
+
+
+def _serialize_eticket(
+    ticket: dict,
+    company: Optional[dict],
+    domain: Optional[str],
+    crew: Optional[dict] = None,
+) -> dict:
     return {
         **_serialize_ticket(ticket),
         "operator": {
             "schema": ticket.get("tenant_schema"),
             "domain": domain,
             "company_name": company.get("company_name") if company else None,
-            "logo_url": _build_logo_url(
-                company.get("logo") if company else None,
-                domain,
-            ),
+            "logo_url": _media_url(company.get("logo") if company else None, domain),
         },
+        "crew": crew or {"driver": None, "conductor": None, "vehicle": None},
     }
 
 
@@ -1026,11 +1074,35 @@ async def _eticket_response(ticket_id: str, user: dict, by_uid: bool = False):
     await tenant_db.enrich_stop_names([ticket])
     await tenant_db.enrich_payment_references([ticket])
     await tenant_db.enrich_passenger_details([ticket])
+
     company, domain = await asyncio.gather(
         tenant_db.fetch_company_info(schema),
         tenant_db.get_domain_for_schema(schema),
     )
-    return _ok(data=_serialize_eticket(ticket, company, domain))
+
+    # ── Crew: driver + conductor (staff profiles) + vehicle ──────────────────
+    driver = conductor = vehicle = None
+    trip_id = ticket.get("trip_id")
+
+    async def _none() -> None:
+        return None
+
+    if trip_id:
+        trip = await tenant_db.fetch_trip_details(schema, str(trip_id))
+        if trip:
+            driver, conductor, vehicle = await asyncio.gather(
+                tenant_db.fetch_driver_for_eticket(schema, str(trip["driver_id"])) if trip.get("driver_id") else _none(),
+                tenant_db.fetch_conductor_for_eticket(schema, str(trip["conductor_id"])) if trip.get("conductor_id") else _none(),
+                tenant_db.fetch_vehicle_for_eticket(schema, str(trip["vehicle_id"])) if trip.get("vehicle_id") else _none(),
+            )
+    else:
+        # POS ticket without a trip — look up conductor by user_id fallback
+        ticket_conductor_user_id = ticket.get("conductor_id")
+        if ticket_conductor_user_id:
+            conductor = await tenant_db.fetch_conductor_by_user_id(schema, str(ticket_conductor_user_id))
+
+    crew = _serialize_crew(driver, conductor, vehicle, domain)
+    return _ok(data=_serialize_eticket(ticket, company, domain, crew))
 
 
 @router.get("/tickets/uid/{ticket_uid}/eticket/")
