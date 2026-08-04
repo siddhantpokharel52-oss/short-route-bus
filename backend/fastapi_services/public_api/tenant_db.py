@@ -891,8 +891,7 @@ async def fetch_driver_for_eticket(schema: str, driver_id: str) -> Optional[dict
             result = await conn.execute(
                 text(
                     f"""
-                    SELECT employee_id, full_name_en, full_name_ne, phone, photo,
-                           license_no, license_category, license_expiry
+                    SELECT full_name_en
                     FROM "{safe}".staff_driver
                     WHERE id = :driver_id
                     """
@@ -914,7 +913,7 @@ async def fetch_conductor_for_eticket(schema: str, conductor_id: str) -> Optiona
             result = await conn.execute(
                 text(
                     f"""
-                    SELECT employee_id, full_name_en, full_name_ne, phone, photo
+                    SELECT full_name_en
                     FROM "{safe}".staff_conductor
                     WHERE id = :conductor_id
                     """
@@ -937,7 +936,7 @@ async def fetch_conductor_by_user_id(schema: str, user_id: str) -> Optional[dict
             result = await conn.execute(
                 text(
                     f"""
-                    SELECT employee_id, full_name_en, full_name_ne, phone, photo
+                    SELECT full_name_en
                     FROM "{safe}".staff_conductor
                     WHERE user_id = :user_id
                     LIMIT 1
@@ -960,8 +959,7 @@ async def fetch_vehicle_for_eticket(schema: str, vehicle_id: str) -> Optional[di
             result = await conn.execute(
                 text(
                     f"""
-                    SELECT registration_no, bus_number, make, model, year,
-                           vehicle_type, capacity_seated, owner_name, owner_phone
+                    SELECT registration_no, owner_name
                     FROM "{safe}".fleet_vehicle
                     WHERE id = :vehicle_id
                     """
