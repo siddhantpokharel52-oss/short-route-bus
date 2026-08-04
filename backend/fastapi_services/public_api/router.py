@@ -999,44 +999,11 @@ def _serialize_crew(
     vehicle: Optional[dict],
     domain: Optional[str],
 ) -> dict:
-    def _driver_out(d: dict) -> dict:
-        return {
-            "employee_id": d.get("employee_id"),
-            "full_name_en": d.get("full_name_en"),
-            "full_name_ne": d.get("full_name_ne"),
-            "phone": d.get("phone"),
-            "photo_url": _media_url(d.get("photo"), domain),
-            "license_no": d.get("license_no"),
-            "license_category": d.get("license_category"),
-            "license_expiry": str(d["license_expiry"]) if d.get("license_expiry") else None,
-        }
-
-    def _conductor_out(c: dict) -> dict:
-        return {
-            "employee_id": c.get("employee_id"),
-            "full_name_en": c.get("full_name_en"),
-            "full_name_ne": c.get("full_name_ne"),
-            "phone": c.get("phone"),
-            "photo_url": _media_url(c.get("photo"), domain),
-        }
-
-    def _vehicle_out(v: dict) -> dict:
-        return {
-            "registration_no": v.get("registration_no"),
-            "bus_number": v.get("bus_number"),
-            "make": v.get("make"),
-            "model": v.get("model"),
-            "year": v.get("year"),
-            "vehicle_type": v.get("vehicle_type"),
-            "capacity_seated": v.get("capacity_seated"),
-            "owner_name": v.get("owner_name") or None,
-            "owner_phone": v.get("owner_phone") or None,
-        }
-
     return {
-        "driver": _driver_out(driver) if driver else None,
-        "conductor": _conductor_out(conductor) if conductor else None,
-        "vehicle": _vehicle_out(vehicle) if vehicle else None,
+        "vehicle_no": vehicle.get("registration_no") if vehicle else None,
+        "driver_name": driver.get("full_name_en") if driver else None,
+        "conductor_name": conductor.get("full_name_en") if conductor else None,
+        "owner_name": (vehicle.get("owner_name") or None) if vehicle else None,
     }
 
 
