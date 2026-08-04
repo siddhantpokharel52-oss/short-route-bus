@@ -1,0 +1,235 @@
+{
+  "info": {
+    "name": "KVBMS Internal/Admin API (Ours)",
+    "description": "Django-side endpoints used by our own tenant portal / staff tooling and QA setup -- NOT part of the Yatroo Master API. Covers auth (including the tenant-scoped conductor login), user/tenant/conductor management, the internal ticketing viewset the Master API proxies to, and health checks. Everything here is per-tenant / staff-authenticated, which is exactly the trust model the Master API was built to avoid exposing to consumers.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://citybus.com.np" },
+    { "key": "tenant_slug", "value": "mayurbus" },
+    { "key": "super_admin_email", "value": "admin@kvbms.com.np" },
+    { "key": "super_admin_password", "value": "Admin@12345" },
+    { "key": "company_admin_email", "value": "nikesh@gmail.com" },
+    { "key": "company_admin_password", "value": "" },
+    { "key": "super_admin_token", "value": "" },
+    { "key": "company_admin_token", "value": "" },
+    { "key": "refresh_token", "value": "" },
+    { "key": "new_tenant_schema", "value": "" },
+    { "key": "ticket_uid", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "Login - Super Admin",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{super_admin_email}}\",\n  \"password\": \"{{super_admin_password}}\"\n}" },
+            "url": { "raw": "{{base_url}}/api/v1/auth/login/", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "login", ""] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data.access) {",
+                  "    pm.collectionVariables.set('super_admin_token', body.data.access);",
+                  "    pm.collectionVariables.set('refresh_token', body.data.refresh);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login - Company Admin (tenant-scoped)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Slug", "value": "{{tenant_slug}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{company_admin_email}}\",\n  \"password\": \"{{company_admin_password}}\"\n}" },
+            "url": { "raw": "{{base_url}}/api/v1/auth/login/", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "login", ""] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data.access) {",
+                  "    pm.collectionVariables.set('company_admin_token', body.data.access);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Token Refresh",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refresh\": \"{{refresh_token}}\"\n}" },
+            "url": { "raw": "{{base_url}}/api/v1/auth/token/refresh/", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "token", "refresh", ""] }
+          }
+        },
+        {
+          "name": "Profile (whoami)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{super_admin_token}}" }],
+            "url": { "raw": "{{base_url}}/api/v1/auth/profile/", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "profile", ""] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Users",
+      "item": [
+        {
+          "name": "Search Users (Super Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{super_admin_token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/users/?search=qa.passenger",
+              "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "users", ""],
+              "query": [{ "key": "search", "value": "qa.passenger" }]
+            }
+          }
+        },
+        {
+          "name": "Create User (Super Admin only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{super_admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newuser@citybus.com.np\",\n  \"full_name_en\": \"New User\",\n  \"role\": \"PASSENGER\",\n  \"language_preference\": \"en\",\n  \"password\": \"SomePassword123\",\n  \"password_confirm\": \"SomePassword123\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/v1/auth/users/", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "users", ""] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Tenants",
+      "item": [
+        {
+          "name": "List Tenants (Super Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{super_admin_token}}" }],
+            "url": { "raw": "{{base_url}}/api/v1/platform/tenants/", "host": ["{{base_url}}"], "path": ["api", "v1", "platform", "tenants", ""] }
+          }
+        },
+        {
+          "name": "Create Tenant (Super Admin) -- auto-provisions schema",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{super_admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schema_name\": \"newbus\",\n  \"name\": \"New Bus Company\",\n  \"domain_prefix\": \"newbus\",\n  \"admin_email\": \"admin@newbus.com.np\",\n  \"admin_password\": \"NewBus@12345\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/v1/platform/tenants/", "host": ["{{base_url}}"], "path": ["api", "v1", "platform", "tenants", ""] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Staff / Conductors",
+      "item": [
+        {
+          "name": "List Conductors (Company Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{company_admin_token}}" },
+              { "key": "X-Tenant-Slug", "value": "{{tenant_slug}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/v1/operator/conductors/", "host": ["{{base_url}}"], "path": ["api", "v1", "operator", "conductors", ""] }
+          }
+        },
+        {
+          "name": "Create Conductor HR Record (HR role) -- NOTE: not login-linked, see docs/YATROO_AUTH_GAP.md",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{company_admin_token}}" },
+              { "key": "X-Tenant-Slug", "value": "{{tenant_slug}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name_en\": \"New Conductor\",\n  \"citizenship_no\": \"12345\",\n  \"phone\": \"+9779800000002\",\n  \"employment_type\": \"PERMANENT\",\n  \"basic_salary\": \"20000\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/v1/operator/conductors/", "host": ["{{base_url}}"], "path": ["api", "v1", "operator", "conductors", ""] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Ticketing (internal -- what the Master API proxies to)",
+      "item": [
+        {
+          "name": "List Tickets (Staff)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{company_admin_token}}" },
+              { "key": "X-Tenant-Slug", "value": "{{tenant_slug}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/v1/ticketing/tickets/", "host": ["{{base_url}}"], "path": ["api", "v1", "ticketing", "tickets", ""] }
+          }
+        },
+        {
+          "name": "Verify Ticket (legacy GET, wrapped by Master API's validate/)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{company_admin_token}}" },
+              { "key": "X-Tenant-Slug", "value": "{{tenant_slug}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/v1/ticketing/tickets/{{ticket_uid}}/verify/", "host": ["{{base_url}}"], "path": ["api", "v1", "ticketing", "tickets", "{{ticket_uid}}", "verify", ""] }
+          }
+        },
+        {
+          "name": "Cancel Ticket (internal, wrapped by Master API's cancel/)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{company_admin_token}}" },
+              { "key": "X-Tenant-Slug", "value": "{{tenant_slug}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/v1/ticketing/tickets/{{ticket_uid}}/cancel/", "host": ["{{base_url}}"], "path": ["api", "v1", "ticketing", "tickets", "{{ticket_uid}}", "cancel", ""] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Health",
+      "item": [
+        {
+          "name": "Django Health",
+          "request": { "method": "GET", "url": { "raw": "{{base_url}}/health/", "host": ["{{base_url}}"], "path": ["health", ""] } }
+        },
+        {
+          "name": "FastAPI Health",
+          "request": { "method": "GET", "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] } }
+        }
+      ]
+    }
+  ]
+}

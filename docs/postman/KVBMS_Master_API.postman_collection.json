@@ -1,0 +1,309 @@
+{
+  "info": {
+    "name": "KVBMS Master API (Yatroo Integration)",
+    "description": "The single consumer-facing API Yatroo (or any external integrator) calls: /public-api/v1/ on mobile-api.citybus.com.np. Covers route search, fares, ticket issuance/validation/cancellation, ticket history, and stop autocomplete. The Login folder is a convenience only — auth itself is a separate service (see the internal collection) and is not part of the Master API surface.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "auth_base_url", "value": "https://citybus.com.np" },
+    { "key": "mobile_api_url", "value": "https://mobile-api.citybus.com.np" },
+    { "key": "tenant_slug", "value": "mayurbus" },
+    { "key": "passenger_email", "value": "qa.passenger@citybus.com.np" },
+    { "key": "passenger_password", "value": "QaTest@123" },
+    { "key": "conductor_email", "value": "qa.conductor@citybus.com.np" },
+    { "key": "conductor_password", "value": "QaTest@123" },
+    { "key": "passenger_token", "value": "" },
+    { "key": "conductor_token", "value": "" },
+    { "key": "route_id", "value": "" },
+    { "key": "trip_id", "value": "" },
+    { "key": "ticket_id", "value": "" },
+    { "key": "from_stop", "value": "" },
+    { "key": "to_stop", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0. Login (helper, not part of Master API)",
+      "item": [
+        {
+          "name": "Login - Passenger",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{passenger_email}}\",\n  \"password\": \"{{passenger_password}}\"\n}"
+            },
+            "url": { "raw": "{{auth_base_url}}/api/v1/auth/login/", "host": ["{{auth_base_url}}"], "path": ["api", "v1", "auth", "login", ""] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data.access) {",
+                  "    pm.collectionVariables.set('passenger_token', body.data.access);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login - Conductor",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Slug", "value": "{{tenant_slug}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{conductor_email}}\",\n  \"password\": \"{{conductor_password}}\"\n}"
+            },
+            "url": { "raw": "{{auth_base_url}}/api/v1/auth/login/", "host": ["{{auth_base_url}}"], "path": ["api", "v1", "auth", "login", ""] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data.access) {",
+                  "    pm.collectionVariables.set('conductor_token', body.data.access);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Routes",
+      "item": [
+        {
+          "name": "List Routes",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{mobile_api_url}}/routes/?status=APPROVED", "host": ["{{mobile_api_url}}"], "path": ["routes", ""], "query": [{ "key": "status", "value": "APPROVED" }] }
+          }
+        },
+        {
+          "name": "Nearby Routes",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{mobile_api_url}}/routes/?lat=27.7172&lon=85.3240&radius_km=2",
+              "host": ["{{mobile_api_url}}"], "path": ["routes", ""],
+              "query": [{ "key": "lat", "value": "27.7172" }, { "key": "lon", "value": "85.3240" }, { "key": "radius_km", "value": "2" }]
+            }
+          }
+        },
+        {
+          "name": "Routes by Stop Pair",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{mobile_api_url}}/routes/?from_stop={{from_stop}}&to_stop={{to_stop}}",
+              "host": ["{{mobile_api_url}}"], "path": ["routes", ""],
+              "query": [{ "key": "from_stop", "value": "{{from_stop}}" }, { "key": "to_stop", "value": "{{to_stop}}" }]
+            }
+          }
+        },
+        {
+          "name": "Route Detail",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{mobile_api_url}}/routes/{{route_id}}/", "host": ["{{mobile_api_url}}"], "path": ["routes", "{{route_id}}", ""] }
+          }
+        },
+        {
+          "name": "Route Stops",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{mobile_api_url}}/routes/{{route_id}}/stops/", "host": ["{{mobile_api_url}}"], "path": ["routes", "{{route_id}}", "stops", ""] }
+          }
+        },
+        {
+          "name": "Route Timetable",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{mobile_api_url}}/routes/{{route_id}}/timetable/?day_type=WEEKDAY",
+              "host": ["{{mobile_api_url}}"], "path": ["routes", "{{route_id}}", "timetable", ""],
+              "query": [{ "key": "day_type", "value": "WEEKDAY" }]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Stops",
+      "item": [
+        {
+          "name": "Stop Autocomplete",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{mobile_api_url}}/stops/autocomplete/?q=Kal&limit=10",
+              "host": ["{{mobile_api_url}}"], "path": ["stops", "autocomplete", ""],
+              "query": [{ "key": "q", "value": "Kal" }, { "key": "limit", "value": "10" }]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Fares",
+      "item": [
+        {
+          "name": "Get Fares",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{mobile_api_url}}/fares/?route_id={{route_id}}&from_stop={{from_stop}}&to_stop={{to_stop}}",
+              "host": ["{{mobile_api_url}}"], "path": ["fares", ""],
+              "query": [
+                { "key": "route_id", "value": "{{route_id}}" },
+                { "key": "from_stop", "value": "{{from_stop}}" },
+                { "key": "to_stop", "value": "{{to_stop}}" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Tickets",
+      "item": [
+        {
+          "name": "Get Trip QR (Conductor)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{conductor_token}}" }],
+            "url": { "raw": "{{mobile_api_url}}/trips/{{trip_id}}/qr/", "host": ["{{mobile_api_url}}"], "path": ["trips", "{{trip_id}}", "qr", ""] }
+          }
+        },
+        {
+          "name": "Issue Ticket - Conductor Direct",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{conductor_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from_stop_id\": \"{{from_stop}}\",\n  \"to_stop_id\": \"{{to_stop}}\",\n  \"passenger_name\": \"Test Passenger\",\n  \"passenger_phone\": \"+9779800000001\",\n  \"fare_paid\": \"30.00\",\n  \"payment_method\": \"CASH\",\n  \"idempotency_key\": \"postman-test-001\"\n}"
+            },
+            "url": { "raw": "{{mobile_api_url}}/tickets/", "host": ["{{mobile_api_url}}"], "path": ["tickets", ""] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data.id) {",
+                  "    pm.collectionVariables.set('ticket_id', body.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Issue Ticket - Passenger Scan-to-Book",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{passenger_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trip_qr_token\": \"<token from Get Trip QR response>\",\n  \"from_stop_id\": \"{{from_stop}}\",\n  \"to_stop_id\": \"{{to_stop}}\"\n}"
+            },
+            "url": { "raw": "{{mobile_api_url}}/tickets/", "host": ["{{mobile_api_url}}"], "path": ["tickets", ""] }
+          }
+        },
+        {
+          "name": "Issue Ticket - Passenger Self-Service",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{passenger_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route_id\": \"{{route_id}}\",\n  \"from_stop_id\": \"{{from_stop}}\",\n  \"to_stop_id\": \"{{to_stop}}\",\n  \"fare_paid\": \"25.00\",\n  \"payment_method\": \"ESEWA\",\n  \"payment_reference\": \"ESEWA-TXN-TEST-001\",\n  \"idempotency_key\": \"postman-test-002\"\n}"
+            },
+            "url": { "raw": "{{mobile_api_url}}/tickets/", "host": ["{{mobile_api_url}}"], "path": ["tickets", ""] }
+          }
+        },
+        {
+          "name": "Validate Ticket (Conductor)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{conductor_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"boarding_stop_id\": \"{{from_stop}}\"\n}"
+            },
+            "url": { "raw": "{{mobile_api_url}}/tickets/{{ticket_id}}/validate/", "host": ["{{mobile_api_url}}"], "path": ["tickets", "{{ticket_id}}", "validate", ""] }
+          }
+        },
+        {
+          "name": "Cancel Ticket",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{passenger_token}}" }],
+            "url": { "raw": "{{mobile_api_url}}/tickets/{{ticket_id}}/cancel/", "host": ["{{mobile_api_url}}"], "path": ["tickets", "{{ticket_id}}", "cancel", ""] }
+          }
+        },
+        {
+          "name": "Get Ticket by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{passenger_token}}" }],
+            "url": { "raw": "{{mobile_api_url}}/tickets/{{ticket_id}}/", "host": ["{{mobile_api_url}}"], "path": ["tickets", "{{ticket_id}}", ""] }
+          }
+        },
+        {
+          "name": "Get E-Ticket",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{passenger_token}}" }],
+            "url": { "raw": "{{mobile_api_url}}/tickets/{{ticket_id}}/eticket/", "host": ["{{mobile_api_url}}"], "path": ["tickets", "{{ticket_id}}", "eticket", ""] }
+          }
+        },
+        {
+          "name": "My Tickets (Passenger)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{passenger_token}}" }],
+            "url": { "raw": "{{mobile_api_url}}/tickets/my/", "host": ["{{mobile_api_url}}"], "path": ["tickets", "my", ""] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Docs",
+      "item": [
+        {
+          "name": "Swagger UI",
+          "request": { "method": "GET", "url": { "raw": "{{mobile_api_url}}/docs", "host": ["{{mobile_api_url}}"], "path": ["docs"] } }
+        },
+        {
+          "name": "Health",
+          "request": { "method": "GET", "url": { "raw": "{{mobile_api_url}}/health", "host": ["{{mobile_api_url}}"], "path": ["health"] } }
+        }
+      ]
+    }
+  ]
+}
