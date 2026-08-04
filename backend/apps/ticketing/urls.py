@@ -8,6 +8,7 @@ router.register("tickets", views.TicketViewSet, basename="ticket")
 urlpatterns = [
     path("", include(router.urls)),
     path("tickets/<str:uid>/verify/", views.VerifyTicketView.as_view(), name="verify-ticket"),
+    path("tickets/<str:uid>/cancel/", views.CancelTicketView.as_view(), name="cancel-ticket"),
     path("passes/daily/issue/", views.IssueDailyPassView.as_view(), name="issue-daily-pass"),
     path("passes/monthly/issue/", views.IssueMonthlyPassView.as_view(), name="issue-monthly-pass"),
     path("passes/student/issue/", views.IssueStudentPassView.as_view(), name="issue-student-pass"),

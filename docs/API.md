@@ -359,6 +359,22 @@ updated to send its current stop, which is a client rollout this API can't
 force — a conductor whose app hasn't been updated yet keeps the exact
 previous exists/unused/unexpired behavior, unchanged.
 
+#### `POST /tickets/{ticket_id}/cancel/`
+Voids a ticket. Same authorization as `GET /tickets/{ticket_id}/`: the
+ticket's **owning passenger** or **staff of the issuing tenant** — `403`
+otherwise. Wraps a new `apps.ticketing.CancelTicketView`, same proxy pattern
+as `validate/`. Exists specifically for the Yatroo integration brief's §8
+requirement — *"the corresponding void/cancel is posted to your
+platform"* after an integrator processes a refund on its own payment
+gateway — but works equally for a passenger-initiated cancellation.
+
+Status rules: a ticket already `USED` (boarded) or `EXPIRED` returns `400`
+and is left untouched; a ticket already `CANCELLED` returns `200`
+unchanged (idempotent — a retried cancel/void report isn't an error).
+Otherwise the ticket moves `VALID → CANCELLED`. On success, broadcasts
+`{"event": "ticket_cancelled", "data": {...}}` over `WS /ws/tickets/` to
+the owning passenger, same delivery mechanism as ticket issuance.
+
 ### 1.5 Ticket response shape
 
 `_serialize_ticket()` — an explicit field allowlist, not a passthrough of

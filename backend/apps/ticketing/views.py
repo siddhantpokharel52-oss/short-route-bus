@@ -106,6 +106,37 @@ class VerifyTicketView(views.APIView):
         return api_response(data=TicketSerializer(ticket).data, message="Ticket valid and marked as used.")
 
 
+class CancelTicketView(views.APIView):
+    """Voids a ticket — called by the public API proxy after Yatroo (or any integrator)
+    processes a refund on their side and reports it back (brief §8: "the corresponding
+    void/cancel is posted to your platform"). AllowAny for the same reason as
+    VerifyTicketView above: the public API's proxy layer (public_api/router.py
+    cancel_ticket()) already checks ownership/tenant staff before this is ever reached."""
+    permission_classes = [AllowAny]
+
+    def post(self, request, uid):
+        try:
+            ticket = Ticket.objects.get(ticket_uid=uid, is_deleted=False)
+        except Ticket.DoesNotExist:
+            return api_response(
+                success=False,
+                message="Ticket not found.",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        if ticket.status == Ticket.Status.CANCELLED:
+            # Idempotent — a retried cancel/void report shouldn't error, same
+            # philosophy as store_payment_reference's upsert elsewhere in this stack.
+            return api_response(data=TicketSerializer(ticket).data, message="Ticket already cancelled.")
+        if ticket.status == Ticket.Status.USED:
+            return api_response(success=False, message="Cannot cancel a ticket that has already been used.", status_code=400)
+        if ticket.status == Ticket.Status.EXPIRED:
+            return api_response(success=False, message="Cannot cancel an expired ticket.", status_code=400)
+
+        ticket.status = Ticket.Status.CANCELLED
+        ticket.save(update_fields=["status"])
+        return api_response(data=TicketSerializer(ticket).data, message="Ticket cancelled.")
+
+
 class IssueDailyPassView(generics.CreateAPIView):
     serializer_class = DailyPassSerializer
     permission_classes = [IsConductor | IsOperationsRole]

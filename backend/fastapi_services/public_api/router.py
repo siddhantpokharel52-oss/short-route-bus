@@ -1104,6 +1104,65 @@ async def get_ticket(ticket_id: str, user: dict = Depends(get_current_user)):
     return _ok(data=_serialize_ticket(ticket))
 
 
+@router.post("/tickets/{ticket_id}/cancel/")
+async def cancel_ticket(
+    ticket_id: str,
+    user: dict = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+):
+    """Voids a ticket — for a passenger-initiated cancellation, or for an integrator
+    (e.g. Yatroo) reporting a refund it already processed on its own payment gateway
+    (brief §8: "the corresponding void/cancel is posted to your platform"). Same
+    access rule as `GET /tickets/{id}/`: the ticket's own passenger or staff of the
+    issuing operator; `403`/`404` otherwise. A ticket already `USED` (boarded) or
+    `EXPIRED` cannot be cancelled; cancelling an already-`CANCELLED` ticket is
+    idempotent, not an error."""
+    found = await tenant_db.find_ticket_by_id(ticket_id)
+    if not found:
+        return _error("Ticket not found.", 404)
+    schema, ticket = found
+
+    is_owner = str(ticket.get("passenger_id")) == str(user.get("user_id"))
+    is_issuing_tenant_staff = user.get("tenant_schema") == schema
+    if not (is_owner or is_issuing_tenant_staff):
+        return _error("You are not authorized to cancel this ticket.", 403)
+
+    domain = await tenant_db.get_domain_for_schema(schema)
+    if not domain:
+        return _error(f"No domain configured for tenant '{schema}'.", 500)
+
+    resp = await _proxy_to_django(
+        "POST",
+        f"/api/v1/ticketing/tickets/{ticket['ticket_uid']}/cancel/",
+        schema,
+        domain,
+        credentials.credentials,
+    )
+
+    try:
+        body = resp.json()
+    except ValueError:
+        body = None
+    if isinstance(body, dict) and 200 <= resp.status_code < 300:
+        ticket_passenger_id = (body.get("data") or {}).get("passenger_id")
+        if ticket_passenger_id:
+            try:
+                await ticket_ws_manager.broadcast(
+                    {"event": "ticket_cancelled", "data": body.get("data")},
+                    group=f"passenger_{ticket_passenger_id}",
+                )
+            except Exception:
+                # Same rule as issue_ticket()'s broadcast: a WS failure must never
+                # fail the cancellation itself — the ticket is already voided in
+                # Django by the time this runs.
+                logger.warning(
+                    "Failed to broadcast ticket_cancelled over WebSocket for passenger %s.",
+                    ticket_passenger_id,
+                    exc_info=True,
+                )
+    return _passthrough(resp)
+
+
 @router.get("/tickets/{ticket_id}/eticket/")
 async def get_eticket(ticket_id: str, user: dict = Depends(get_current_user)):
     """E-ticket view for a ticket by its internal **UUID**. Returns all ticket fields
