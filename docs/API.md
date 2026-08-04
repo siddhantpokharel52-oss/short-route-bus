@@ -136,6 +136,17 @@ not found or deleted.
 Ordered stops for a route (`RouteStop.sequence_no` ascending). `404` if the
 route doesn't exist.
 
+#### `GET /stops/autocomplete/`
+Typeahead search for a stop-picker UI (e.g. an origin/destination field) —
+not part of the original brief's C1–C8 list, requested separately. Matches
+`q` (required, min length 1) against a stop's `name_en`, `name_ne`, **and**
+`stop_code`, so a query in either script finds the right stop. Only `ACTIVE`
+stops. Ordered by where the match occurs in the string — a match at the
+start ranks above one buried in the middle — a cheap relevance heuristic
+that needs no extra Postgres extension. `limit` (optional, default `10`, max
+`20`) caps the result count. Platform-wide, independent of any one route —
+not a replacement for `GET /routes/{id}/stops/`.
+
 #### `GET /fares/`
 `apps.platform.FareMatrix` for one specific route + boarding/dropping stop pair.
 **All three params are required** — `400` if any is missing. This answers

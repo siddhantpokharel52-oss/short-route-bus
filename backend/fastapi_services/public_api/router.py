@@ -555,6 +555,31 @@ async def get_route_stops(route_id: str):
     return _ok(data=[_serialize_route_stop(s) for s in stops])
 
 
+def _serialize_stop(s: dict) -> dict:
+    return {
+        "id": s["id"],
+        "stop_code": s.get("stop_code"),
+        "name_en": s.get("name_en"),
+        "name_ne": s.get("name_ne"),
+        "latitude": s.get("latitude"),
+        "longitude": s.get("longitude"),
+    }
+
+
+@router.get("/stops/autocomplete/")
+async def autocomplete_stops(
+    q: str = Query(..., min_length=1, description="Partial stop name (English or Nepali) or stop code"),
+    limit: int = Query(10, gt=0, le=20, description="Max results to return"),
+):
+    """Typeahead search for a stop-picker UI — e.g. Yatroo's origin/destination field.
+    Matches `q` against a stop's English name, Nepali name, or stop_code, ranked by
+    where the match occurs (an earlier/prefix match ranks first). Only ACTIVE stops.
+    Not a replacement for `GET /routes/{id}/stops/` — this searches every stop
+    platform-wide, independent of any one route."""
+    stops = await tenant_db.search_stops(q.strip(), limit=limit)
+    return _ok(data=[_serialize_stop(s) for s in stops])
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Fares — apps.platform.FareMatrix (public reference data)
 # ─────────────────────────────────────────────────────────────────────────────

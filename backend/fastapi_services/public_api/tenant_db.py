@@ -360,6 +360,41 @@ async def fetch_routes_by_stop_pair(from_stop_code: str, to_stop_code: str) -> l
         return rows
 
 
+# Mirrors apps.platform.models.Stop (table platform_stop) — same "single
+# shared-schema query, no tenant looping needed" category as
+# fetch_routes_near/fetch_routes_by_stop_pair above. Added for the Yatroo
+# app's origin/destination typeahead: matches name_en, name_ne, AND
+# stop_code so a Nepali-script query still finds the right stop, ordered by
+# where the match occurs in the string (an exact prefix match ranks above a
+# match buried in the middle of a longer name) — a cheap relevance
+# heuristic that needs no extra Postgres extension (no pg_trgm), good
+# enough for a first version. Restricted to ACTIVE stops only: no point
+# suggesting a stop with no live service.
+async def search_stops(query: str, limit: int = 10) -> list[dict]:
+    sql = """
+        SELECT id, stop_code, name_en, name_ne, latitude, longitude,
+               LEAST(
+                   NULLIF(position(lower(:q) in lower(name_en)), 0),
+                   NULLIF(position(lower(:q) in lower(name_ne)), 0),
+                   NULLIF(position(lower(:q) in lower(stop_code)), 0)
+               ) AS match_position
+        FROM public.platform_stop
+        WHERE is_deleted = false AND status = 'ACTIVE'
+          AND (name_en ILIKE :contains OR name_ne ILIKE :contains OR stop_code ILIKE :contains)
+        ORDER BY match_position ASC NULLS LAST, name_en ASC
+        LIMIT :limit
+    """
+    engine = get_engine()
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(sql), {"q": query, "contains": f"%{query}%", "limit": limit}
+        )
+        rows = [_row_to_dict(r) for r in result.fetchall()]
+        for row in rows:
+            row.pop("match_position", None)  # only existed to drive ORDER BY
+        return rows
+
+
 # Mirrors apps.platform.models.FareMatrix joined to apps.platform.models.
 # TicketType (tables platform_farematrix, platform_tickettype). Deliberately
 # excludes FareMatrix.updated_by — if a migration adds a new admin-only
