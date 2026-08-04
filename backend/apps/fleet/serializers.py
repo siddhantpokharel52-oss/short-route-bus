@@ -40,6 +40,8 @@ class VehicleSerializer(serializers.ModelSerializer):
         fields = [
             # identifiers
             "id", "registration_no", "bus_number",
+            # ownership
+            "owner_name", "owner_phone",
             # basic info
             "vehicle_type", "make", "model", "year", "color",
             # vehicle identification
