@@ -49,6 +49,10 @@ class Vehicle(models.Model):
     fuel_type = models.CharField(max_length=10, choices=FuelType.choices, default=FuelType.DIESEL)
     engine_capacity_cc = models.PositiveIntegerField(null=True, blank=True)
 
+    # ── Ownership ────────────────────────────────────────────────
+    owner_name = models.CharField(max_length=255, blank=True)
+    owner_phone = models.CharField(max_length=20, blank=True)
+
     # ── Operational ──────────────────────────────────────────────
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
     assigned_route_id = models.UUIDField(null=True, blank=True)

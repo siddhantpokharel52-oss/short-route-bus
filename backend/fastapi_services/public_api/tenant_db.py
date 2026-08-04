@@ -961,7 +961,7 @@ async def fetch_vehicle_for_eticket(schema: str, vehicle_id: str) -> Optional[di
                 text(
                     f"""
                     SELECT registration_no, bus_number, make, model, year,
-                           vehicle_type, capacity_seated
+                           vehicle_type, capacity_seated, owner_name, owner_phone
                     FROM "{safe}".fleet_vehicle
                     WHERE id = :vehicle_id
                     """

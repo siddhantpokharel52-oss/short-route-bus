@@ -1029,6 +1029,8 @@ def _serialize_crew(
             "year": v.get("year"),
             "vehicle_type": v.get("vehicle_type"),
             "capacity_seated": v.get("capacity_seated"),
+            "owner_name": v.get("owner_name") or None,
+            "owner_phone": v.get("owner_phone") or None,
         }
 
     return {
