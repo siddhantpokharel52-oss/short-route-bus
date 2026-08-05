@@ -133,9 +133,9 @@ async def federated_login(
         algorithm=settings.JWT_ALGORITHM,
     )
 
-    return {
-        "success": True,
-        "data": {"access_token": access_token, "expires_in": expiry_seconds, "citybus_user_id": user_id},
-        "message": "Success",
-        "errors": None,
-    }
+    # Deliberately NOT the {success, data, message, errors} envelope every
+    # other endpoint in this codebase uses -- Yatroo's own spec (step 4d)
+    # names this exact flat shape as what CityBus returns, and their backend
+    # will presumably parse response.access_token directly, not
+    # response.data.access_token.
+    return {"access_token": access_token, "expires_in": expiry_seconds, "citybus_user_id": user_id}

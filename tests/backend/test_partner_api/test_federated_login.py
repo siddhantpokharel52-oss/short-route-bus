@@ -17,7 +17,7 @@ import hashlib
 import hmac
 import json
 import time
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -27,6 +27,7 @@ from backend.fastapi_services.config import settings as fastapi_settings
 from backend.fastapi_services.dependencies import get_redis
 from backend.fastapi_services.main import app
 from backend.fastapi_services.partner_api import router as partner_api_router
+from backend.fastapi_services.public_api import router as public_api_router
 
 SECRET = fastapi_settings.YATROO_HMAC_SECRET
 JWT_SECRET = fastapi_settings.JWT_SECRET_KEY
@@ -118,13 +119,43 @@ def test_valid_request_returns_scoped_token(client):
         )
 
     assert resp.status_code == 200, resp.text
-    data = resp.json()["data"]
+    data = resp.json()
+    assert set(data.keys()) == {"access_token", "expires_in", "citybus_user_id"}, (
+        "must be the flat shape Yatroo's doc specifies, not our usual {success, data, ...} envelope"
+    )
     assert data["citybus_user_id"] == "11111111-1111-1111-1111-111111111111"
     assert data["expires_in"] == fastapi_settings.FEDERATED_LOGIN_TOKEN_EXPIRY_SECONDS
     claims = jose_jwt.decode(data["access_token"], JWT_SECRET, algorithms=[JWT_ALG])
     assert claims["role"] == "PASSENGER"
     assert claims["tenant_schema"] == ""
     assert claims["user_id"] == "11111111-1111-1111-1111-111111111111"
+
+
+def test_minted_token_actually_works_against_a_real_master_api_endpoint(client):
+    """This is the part of Yatroo's doc (step 5) that matters most: 'App -> CityBus
+    directly, from now on, using that token ... whatever CityBus exposes.' Proves the
+    token isn't just structurally similar to a real passenger JWT -- it IS one, accepted
+    by an existing, unrelated Master API endpoint (GET /tickets/my/) with zero special-
+    casing anywhere in that endpoint's code."""
+    body = {"external_user_id": "yatroo-user-2", "email": "rider2@example.com", "name": "Rider Two"}
+    with patch.object(partner_api_router.httpx, "AsyncClient", return_value=_django_ok(user_id="22222222-2222-2222-2222-222222222222")):
+        login_resp = client.post(
+            "/public-api/v1/partner/federated-login", json=body, headers=_headers(body, nonce="interop-1")
+        )
+    assert login_resp.status_code == 200, login_resp.text
+    access_token = login_resp.json()["access_token"]
+
+    with patch.object(
+        public_api_router.tenant_db, "find_tickets_for_passenger", new=AsyncMock(return_value=[])
+    ) as mock_find:
+        my_tickets_resp = client.get(
+            "/public-api/v1/tickets/my/", headers={"Authorization": f"Bearer {access_token}"}
+        )
+
+    assert my_tickets_resp.status_code == 200, my_tickets_resp.text
+    assert my_tickets_resp.json()["data"] == []
+    mock_find.assert_awaited_once()
+    assert mock_find.await_args.args[0] == "22222222-2222-2222-2222-222222222222"
 
 
 def test_missing_signature_headers_rejected(client):
@@ -232,4 +263,4 @@ def test_repeat_call_same_external_user_id_returns_same_citybus_user_id(client):
         )
 
     assert first.status_code == 200 and second.status_code == 200
-    assert first.json()["data"]["citybus_user_id"] == second.json()["data"]["citybus_user_id"]
+    assert first.json()["citybus_user_id"] == second.json()["citybus_user_id"]
