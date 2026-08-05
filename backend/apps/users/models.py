@@ -64,6 +64,12 @@ class User(AbstractBaseUser, PermissionsMixin):
     failed_login_attempts = models.PositiveSmallIntegerField(default=0)
     locked_until = models.DateTimeField(null=True, blank=True)
     tenant_schema = models.CharField(max_length=100, blank=True)
+    # Federated-login identity for an external partner (e.g. Yatroo) — see
+    # apps.users.views.PartnerProvisionView. partner="" for every normal
+    # account created through the regular login/admin paths; only set on
+    # accounts auto-provisioned via a partner's server-to-server call.
+    partner = models.CharField(max_length=50, blank=True)
+    external_partner_id = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -77,6 +83,16 @@ class User(AbstractBaseUser, PermissionsMixin):
             models.Index(fields=["email"]),
             models.Index(fields=["role"]),
             models.Index(fields=["tenant_schema"]),
+            models.Index(fields=["partner", "external_partner_id"]),
+        ]
+        constraints = [
+            # Only enforced among rows that actually have a partner set — never
+            # collides with the empty-string default every non-partner user has.
+            models.UniqueConstraint(
+                fields=["partner", "external_partner_id"],
+                condition=models.Q(partner__gt=""),
+                name="unique_partner_external_id",
+            ),
         ]
 
     def __str__(self):

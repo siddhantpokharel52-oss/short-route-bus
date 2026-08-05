@@ -5,6 +5,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from .gps.router import router as gps_router
 from .live_ops.router import router as live_ops_router
 from .public_api.router import router as public_router
+from .partner_api.router import router as partner_router
 
 # Explicit order for the Swagger/ReDoc tag sections (no description text — see
 # docs/API.md for the real reference instead). Without this, tags default to
@@ -14,6 +15,7 @@ from .public_api.router import router as public_router
 # internal/staff-facing and follow.
 openapi_tags = [
     {"name": "Public API"},
+    {"name": "Partner Integration"},
 ]
 
 app = FastAPI(
@@ -40,6 +42,10 @@ Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 # redundant with the explicit tag order once set, but keeps the two in sync
 # for anyone skimming just this file.
 app.include_router(public_router, prefix="/public-api/v1", tags=["Public API"])
+# Same URL prefix as the Master API above -- deliberate, see partner_api/router.py's
+# module docstring for why (avoids an nginx change to expose a second path shape).
+# Separate tag keeps it visually distinct in /docs from the consumer-facing surface.
+app.include_router(partner_router, prefix="/public-api/v1/partner", tags=["Partner Integration"])
 app.include_router(gps_router, prefix="/api/v1/live", tags=["GPS & Live Operations"], include_in_schema=False)
 app.include_router(live_ops_router, prefix="/api/v1/live", tags=["Live Operations"], include_in_schema=False)
 

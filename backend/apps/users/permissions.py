@@ -1,5 +1,19 @@
+from django.conf import settings
 from rest_framework.permissions import BasePermission
 from .models import User
+
+
+class IsInternalService(BasePermission):
+    """Gates a Django endpoint meant to be called only by our own FastAPI
+    service over the internal docker network — never by an end user or an
+    external partner directly, even though (like every apps.users URL) it's
+    technically reachable through nginx's /api/ passthrough. Checked via a
+    shared secret header rather than a user session, since there is no user
+    on this call — it's server-to-server. See PartnerProvisionView."""
+    def has_permission(self, request, view):
+        provided = request.headers.get("X-Internal-Service-Key", "")
+        expected = getattr(settings, "INTERNAL_SERVICE_KEY", "")
+        return bool(expected) and provided == expected
 
 
 class IsSuperAdmin(BasePermission):

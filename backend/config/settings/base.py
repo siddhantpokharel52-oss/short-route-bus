@@ -6,6 +6,12 @@ from decouple import config, Csv
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 SECRET_KEY = config("SECRET_KEY", default="change-me-in-production")
+# Shared secret between this Django service and the FastAPI service, checked
+# by apps.users.permissions.IsInternalService — proves a request to an
+# internal-only endpoint (e.g. partner account provisioning) actually came
+# from our own FastAPI container over the docker network, not an external
+# caller who happened to guess the URL.
+INTERNAL_SERVICE_KEY = config("INTERNAL_SERVICE_KEY", default="change-me-in-production")
 DEBUG = config("DEBUG", default=False, cast=bool)
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1", cast=Csv())
 

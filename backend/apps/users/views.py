@@ -9,7 +9,7 @@ from .serializers import (
     CustomTokenObtainPairSerializer, UserSerializer,
     UserCreateSerializer, ChangePasswordSerializer,
 )
-from .permissions import IsSuperAdmin, IsPlatformRole
+from .permissions import IsSuperAdmin, IsPlatformRole, IsInternalService
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -141,6 +141,69 @@ class UserListCreateView(generics.ListCreateAPIView):
     serializer_class = UserSerializer
     permission_classes = [IsSuperAdmin]
     queryset = User.objects.all()
+
+
+class PartnerProvisionView(views.APIView):
+    """Internal-only — called by our own FastAPI service (see
+    fastapi_services/partner_api/router.py) after it has already verified an
+    external partner's (e.g. Yatroo) HMAC-signed federated-login request.
+    This view trusts that verification already happened; its only job is
+    look-up-or-create against (partner, external_partner_id).
+
+    Deliberately idempotent: the same (partner, external_partner_id) always
+    resolves to the same User row, never a new one on a repeat call — a
+    partner's backend may call this on every token-cache-miss, and their own
+    debug mapping table assumes our user_id is stable across calls."""
+    permission_classes = [IsInternalService]
+
+    def post(self, request):
+        partner = (request.data.get("partner") or "").strip()
+        external_partner_id = (request.data.get("external_partner_id") or "").strip()
+        email = (request.data.get("email") or "").strip().lower()
+        name = (request.data.get("name") or "").strip()
+
+        if not partner or not external_partner_id:
+            return Response({
+                "success": False, "data": None,
+                "message": "partner and external_partner_id are both required.",
+                "errors": None,
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.filter(partner=partner, external_partner_id=external_partner_id).first()
+        created = False
+        if user is None:
+            # email is unique on User — a partner's user emailing in as
+            # something already registered some other way (e.g. they later
+            # sign up directly) is an edge case deliberately left as a manual
+            # support case for now rather than silently merging accounts.
+            if email and User.objects.filter(email=email).exists():
+                return Response({
+                    "success": False, "data": None,
+                    "message": "An account with this email already exists under a different identity.",
+                    "errors": None,
+                }, status=status.HTTP_409_CONFLICT)
+            user = User(
+                email=email or f"{partner}-{external_partner_id}@partner.invalid",
+                full_name_en=name or "Partner User",
+                role=User.Role.PASSENGER,
+                partner=partner,
+                external_partner_id=external_partner_id,
+            )
+            user.set_unusable_password()
+            user.save()
+            created = True
+        elif name and user.full_name_en != name:
+            # Keep the display name fresh on every call -- external_partner_id
+            # stays the permanent lookup key regardless (see the FastAPI side).
+            user.full_name_en = name
+            user.save(update_fields=["full_name_en", "updated_at"])
+
+        return Response({
+            "success": True,
+            "data": {"user_id": str(user.id), "created": created},
+            "message": "Provisioned." if created else "Existing account.",
+            "errors": None,
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
     def get_serializer_class(self):
         if self.request.method == "POST":

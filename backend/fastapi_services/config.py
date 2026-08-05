@@ -16,6 +16,19 @@ class Settings(BaseSettings):
     # so their existing business logic is reused rather than reimplemented here.
     DJANGO_INTERNAL_BASE_URL: str = "http://django:8000"
 
+    # Federated login (see partner_api/router.py) — token-exchange for external
+    # partners (Yatroo first, more later). One shared secret per partner, keyed
+    # by the "partner" string each partner sends in its signed request.
+    YATROO_HMAC_SECRET: str = "change-me-in-production"
+    # Same value as Django's settings.INTERNAL_SERVICE_KEY — proves the
+    # partner-provision call actually came from this service, not an external
+    # caller who found the URL. Two copies of one shared secret, not two
+    # different secrets.
+    INTERNAL_SERVICE_KEY: str = "change-me-in-production"
+    FEDERATED_LOGIN_TOKEN_EXPIRY_SECONDS: int = 3600
+    FEDERATED_LOGIN_TIMESTAMP_WINDOW_SECONDS: int = 120
+    FEDERATED_LOGIN_NONCE_TTL_SECONDS: int = 300
+
     class Config:
         env_file = ".env"
 
