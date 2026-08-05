@@ -1,7 +1,6 @@
 """
 Tests for POST /public-api/v1/partner/federated-login (backend/fastapi_services/
-partner_api/router.py) -- the partner token-exchange endpoint (Yatroo first,
-built to support more partners via X-Partner + settings.PARTNER_HMAC_SECRETS).
+partner_api/router.py) -- the Yatroo token-exchange endpoint.
 
 Same style as the rest of this suite: FastAPI app via TestClient, the Django
 provisioning call mocked (httpx.AsyncClient), Redis swapped via FastAPI's own
@@ -31,8 +30,7 @@ from backend.fastapi_services.main import app
 from backend.fastapi_services.partner_api import router as partner_api_router
 from backend.fastapi_services.public_api import router as public_api_router
 
-PARTNER = "yatroo"
-SECRET = fastapi_settings.PARTNER_HMAC_SECRETS[PARTNER]
+SECRET = fastapi_settings.YATROO_HMAC_SECRET
 JWT_SECRET = fastapi_settings.JWT_SECRET_KEY
 JWT_ALG = fastapi_settings.JWT_ALGORITHM
 
@@ -43,17 +41,14 @@ def _sign(timestamp: str, nonce: str, body: dict, secret: str = SECRET) -> str:
     return hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()
 
 
-def _headers(body: dict, timestamp=None, nonce="test-nonce-1", secret=SECRET, partner=PARTNER):
+def _headers(body: dict, timestamp=None, nonce="test-nonce-1", secret=SECRET):
     ts = str(timestamp if timestamp is not None else int(time.time()))
-    headers = {
+    return {
         "X-Signature": _sign(ts, nonce, body, secret),
         "X-Timestamp": ts,
         "X-Nonce": nonce,
         "Content-Type": "application/json",
     }
-    if partner is not None:
-        headers["X-Partner"] = partner
-    return headers
 
 
 class FakeRedis:
@@ -172,25 +167,6 @@ def test_missing_signature_headers_rejected(client):
     assert resp.status_code == 401
 
 
-def test_missing_partner_header_rejected(client):
-    body = {"external_user_id": "u1"}
-    headers = _headers(body, partner=None)
-    resp = client.post("/public-api/v1/partner/federated-login", json=body, headers=headers)
-    assert resp.status_code == 401
-
-
-def test_unknown_partner_rejected(client):
-    body = {"external_user_id": "u1"}
-    # Signed correctly for a partner whose secret isn't in PARTNER_HMAC_SECRETS at all --
-    # must be rejected on the partner lookup, before ever touching the signature check.
-    headers = _headers(body, partner="some-partner-nobody-configured")
-    with patch.object(partner_api_router.httpx, "AsyncClient") as mock_client:
-        resp = client.post("/public-api/v1/partner/federated-login", json=body, headers=headers)
-    assert resp.status_code == 401
-    assert "unknown partner" in resp.json()["detail"].lower()
-    mock_client.assert_not_called()
-
-
 def test_tampered_body_rejected_before_django_call(client):
     body = {"external_user_id": "u1", "email": "a@b.com", "name": "A"}
     headers = _headers(body)
@@ -291,10 +267,9 @@ def test_repeat_call_same_external_user_id_returns_same_citybus_user_id(client):
     assert first.json()["citybus_user_id"] == second.json()["citybus_user_id"]
 
 
-def test_partner_sent_to_provisioning_matches_header_not_hardcoded(client):
-    """Confirms the partner identity actually flows from X-Partner through to the
-    Django provisioning call, rather than being hardcoded -- this is the whole
-    point of the multi-partner design."""
+def test_partner_name_sent_to_provisioning_is_yatroo(client):
+    """Confirms the hardcoded partner name actually reaches the Django
+    provisioning call, matching PARTNER_NAME in the router."""
     body = {"external_user_id": "u1"}
     with patch.object(
         partner_api_router.httpx, "AsyncClient", return_value=_django_ok()

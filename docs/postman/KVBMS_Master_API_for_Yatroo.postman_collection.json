@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "KVBMS Master API (for Yatroo)",
-    "description": "The single consumer-facing API for the City Bus vertical: /public-api/v1/ on mobile-api.citybus.com.np. Covers route search, fares, stop autocomplete, ticket issuance (all 3 paths), validation, cancellation, and ticket history.\n\nAUTH NOTE: POST /partner/federated-login is now built on our side (see the '0. Federated Login' folder below), against the wire format we proposed: X-Partner/X-Signature/X-Timestamp/X-Nonce headers, HMAC-SHA256 over `{timestamp}\\n{nonce}\\n{compact_json_body}`. This is NOT yet verified against a real signed request from your backend -- please confirm or correct the canonical-string format, exchange the actual HMAC_SECRET with us via a secure channel (never paste it into this file), and let us know if a signed example/test vector from your side would help. Once you have a real secret, set it as the `partner_hmac_secret` collection variable and the pre-request script signs every call automatically -- nothing to hand-compute.\n\nEvery other endpoint here has already been built and live-tested against production.\n\nTEST DATA: route_id/from_stop/to_stop below point at a real, live, clearly-labeled test route (route_code TEST-01, stops named '(Test)') seeded specifically for this collection -- not a real production route. Safe to search/read/issue test tickets against; every no-auth request (Routes, Stops, Fares) will return real data immediately, no setup needed on your end. trip_id is intentionally left blank -- generating a QR for a trip requires a conductor token, which isn't available until a real trip exists in this test environment.",
+    "description": "The single consumer-facing API for the City Bus vertical: /public-api/v1/ on mobile-api.citybus.com.np. Covers route search, fares, stop autocomplete, ticket issuance (all 3 paths), validation, cancellation, and ticket history.\n\nAUTH NOTE: POST /partner/federated-login is now built on our side (see the '0. Federated Login' folder below), against the wire format we proposed: X-Signature/X-Timestamp/X-Nonce headers, HMAC-SHA256 over `{timestamp}\\n{nonce}\\n{compact_json_body}`. This is NOT yet verified against a real signed request from your backend -- please confirm or correct the canonical-string format, exchange the actual HMAC_SECRET with us via a secure channel (never paste it into this file), and let us know if a signed example/test vector from your side would help. Once you have a real secret, set it as the `yatroo_hmac_secret` collection variable and the pre-request script signs every call automatically -- nothing to hand-compute.\n\nEvery other endpoint here has already been built and live-tested against production.\n\nTEST DATA: route_id/from_stop/to_stop below point at a real, live, clearly-labeled test route (route_code TEST-01, stops named '(Test)') seeded specifically for this collection -- not a real production route. Safe to search/read/issue test tickets against; every no-auth request (Routes, Stops, Fares) will return real data immediately, no setup needed on your end. trip_id is intentionally left blank -- generating a QR for a trip requires a conductor token, which isn't available until a real trip exists in this test environment.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -13,8 +13,7 @@
     { "key": "ticket_id", "value": "" },
     { "key": "from_stop", "value": "TEST-STOP-A" },
     { "key": "to_stop", "value": "TEST-STOP-B" },
-    { "key": "partner_hmac_secret", "value": "", "description": "Fill this in once the real secret is exchanged with us via a secure channel -- do not paste a real secret into this file if you save/version it." },
-    { "key": "partner_name", "value": "yatroo" },
+    { "key": "yatroo_hmac_secret", "value": "", "description": "Fill this in once the real secret is exchanged with us via a secure channel -- do not paste a real secret into this file if you save/version it." },
     { "key": "citybus_user_id", "value": "" }
   ],
   "item": [
@@ -38,16 +37,14 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "const secret = pm.collectionVariables.get('partner_hmac_secret');",
-                  "if (!secret) { throw new Error('Set the partner_hmac_secret collection variable first -- see its description.'); }",
-                  "const partner = pm.collectionVariables.get('partner_name') || 'yatroo';",
+                  "const secret = pm.collectionVariables.get('yatroo_hmac_secret');",
+                  "if (!secret) { throw new Error('Set the yatroo_hmac_secret collection variable first -- see its description.'); }",
                   "const rawBody = pm.request.body.raw; // must already be compact + sorted-keys, see this request's description",
                   "const timestamp = Math.floor(Date.now() / 1000).toString();",
                   "const nonce = pm.variables.replaceIn('{{$guid}}');",
                   "const canonical = timestamp + \"\\n\" + nonce + \"\\n\" + rawBody;",
                   "const signature = CryptoJS.HmacSHA256(canonical, secret).toString(CryptoJS.enc.Hex);",
                   "",
-                  "pm.request.headers.upsert({ key: 'X-Partner', value: partner });",
                   "pm.request.headers.upsert({ key: 'X-Timestamp', value: timestamp });",
                   "pm.request.headers.upsert({ key: 'X-Nonce', value: nonce });",
                   "pm.request.headers.upsert({ key: 'X-Signature', value: signature });"

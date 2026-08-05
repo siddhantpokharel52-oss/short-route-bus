@@ -19,8 +19,7 @@
     { "key": "ticket_id", "value": "" },
     { "key": "from_stop", "value": "TEST-STOP-A" },
     { "key": "to_stop", "value": "TEST-STOP-B" },
-    { "key": "partner_hmac_secret", "value": "test-hmac-secret", "description": "Local/test placeholder only -- this feature isn't deployed to production yet, so there's no real secret to protect here. Never put a real production PARTNER_HMAC_SECRETS value in a committed file." },
-    { "key": "partner_name", "value": "yatroo" },
+    { "key": "yatroo_hmac_secret", "value": "test-hmac-secret", "description": "Local/test placeholder only -- this feature isn't deployed to production yet, so there's no real secret to protect here. Never put a real production YATROO_HMAC_SECRET value in a committed file." },
     { "key": "citybus_user_id", "value": "" }
   ],
   "item": [
@@ -44,15 +43,13 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "const secret = pm.collectionVariables.get('partner_hmac_secret');",
-                  "const partner = pm.collectionVariables.get('partner_name') || 'yatroo';",
+                  "const secret = pm.collectionVariables.get('yatroo_hmac_secret');",
                   "const rawBody = pm.request.body.raw; // must already be compact + sorted-keys, see this request's description",
                   "const timestamp = Math.floor(Date.now() / 1000).toString();",
                   "const nonce = pm.variables.replaceIn('{{$guid}}');",
                   "const canonical = timestamp + \"\\n\" + nonce + \"\\n\" + rawBody;",
                   "const signature = CryptoJS.HmacSHA256(canonical, secret).toString(CryptoJS.enc.Hex);",
                   "",
-                  "pm.request.headers.upsert({ key: 'X-Partner', value: partner });",
                   "pm.request.headers.upsert({ key: 'X-Timestamp', value: timestamp });",
                   "pm.request.headers.upsert({ key: 'X-Nonce', value: nonce });",
                   "pm.request.headers.upsert({ key: 'X-Signature', value: signature });"

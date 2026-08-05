@@ -25,8 +25,7 @@ from backend.fastapi_services.main import app
 from backend.fastapi_services.partner_api import router as partner_api_router
 from backend.fastapi_services.public_api import router as public_api_router
 
-PARTNER = "yatroo"
-SECRET = fastapi_settings.PARTNER_HMAC_SECRETS[PARTNER]
+SECRET = fastapi_settings.YATROO_HMAC_SECRET
 CITYBUS_USER_ID = "33333333-3333-3333-3333-333333333333"
 ROUTE_ID = "route-journey-1"
 SCHEMA = "mayurbus"
@@ -97,7 +96,7 @@ def _sign_and_login(client, external_user_id="yatroo-journey-user"):
     compact = json.dumps(body, sort_keys=True, separators=(",", ":"))
     canonical = f"{ts}\n{nonce}\n{compact}"
     signature = hmac.new(SECRET.encode(), canonical.encode(), hashlib.sha256).hexdigest()
-    headers = {"X-Partner": PARTNER, "X-Signature": signature, "X-Timestamp": ts, "X-Nonce": nonce}
+    headers = {"X-Signature": signature, "X-Timestamp": ts, "X-Nonce": nonce}
 
     django_ok = _MockAsyncClient(_MockDjangoResponse(
         201, {"success": True, "data": {"user_id": CITYBUS_USER_ID, "created": True}, "message": "", "errors": None}

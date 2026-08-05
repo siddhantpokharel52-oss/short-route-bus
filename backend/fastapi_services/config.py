@@ -16,13 +16,10 @@ class Settings(BaseSettings):
     # so their existing business logic is reused rather than reimplemented here.
     DJANGO_INTERNAL_BASE_URL: str = "http://django:8000"
 
-    # Federated login (see partner_api/router.py) — token-exchange for external
-    # partners. One shared secret per partner, keyed by the X-Partner header
-    # value each partner sends. Set via a single JSON env var, e.g.:
-    #   PARTNER_HMAC_SECRETS={"yatroo": "<secret>", "some-other-partner": "<secret>"}
-    # pydantic-settings JSON-decodes a dict-typed field from one env var
-    # automatically — no custom parsing needed here.
-    PARTNER_HMAC_SECRETS: dict[str, str] = {}
+    # Federated login (see partner_api/router.py) — token-exchange for Yatroo.
+    # Yatroo-specific by design, not a generic multi-partner system — see
+    # that module's docstring for why.
+    YATROO_HMAC_SECRET: str = "change-me-in-production"
     # Same value as Django's settings.INTERNAL_SERVICE_KEY — proves the
     # partner-provision call actually came from this service, not an external
     # caller who found the URL. Two copies of one shared secret, not two

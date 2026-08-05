@@ -81,7 +81,7 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - DATABASE_URL=postgresql+asyncpg://kvbms_user:${DB_PASSWORD}@db:5432/kvbms
       - INTERNAL_SERVICE_KEY=${INTERNAL_SERVICE_KEY}
-      - PARTNER_HMAC_SECRETS=${PARTNER_HMAC_SECRETS}
+      - YATROO_HMAC_SECRET=${YATROO_HMAC_SECRET}
 
   celery:
     build:
