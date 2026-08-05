@@ -14,16 +14,65 @@
     { "key": "conductor_password", "value": "QaTest@123" },
     { "key": "passenger_token", "value": "" },
     { "key": "conductor_token", "value": "" },
-    { "key": "route_id", "value": "" },
+    { "key": "route_id", "value": "ffc53ed7-07fc-406e-998f-c594c680f3ba" },
     { "key": "trip_id", "value": "" },
     { "key": "ticket_id", "value": "" },
-    { "key": "from_stop", "value": "" },
-    { "key": "to_stop", "value": "" }
+    { "key": "from_stop", "value": "TEST-STOP-A" },
+    { "key": "to_stop", "value": "TEST-STOP-B" },
+    { "key": "partner_hmac_secret", "value": "test-hmac-secret", "description": "Local/test placeholder only -- this feature isn't deployed to production yet, so there's no real secret to protect here. Never put a real production PARTNER_HMAC_SECRETS value in a committed file." },
+    { "key": "partner_name", "value": "yatroo" },
+    { "key": "citybus_user_id", "value": "" }
   ],
   "item": [
     {
       "name": "0. Login (helper, not part of Master API)",
       "item": [
+        {
+          "name": "Federated Login (Partner token exchange)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"rider@example.com\",\"external_user_id\":\"yatroo-test-user-1\",\"name\":\"Test Rider\"}"
+            },
+            "url": { "raw": "{{mobile_api_url}}/partner/federated-login", "host": ["{{mobile_api_url}}"], "path": ["partner", "federated-login"] },
+            "description": "Simulates what Yatroo's backend calls (never a mobile app directly). The body above is intentionally a fixed, literal string -- compact JSON, keys already alphabetically sorted (email, external_user_id, name) -- because the pre-request script below signs pm.request.body.raw exactly as written. If you edit this body, keep it compact with sorted keys, or the signature computed here won't match what's actually sent."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const secret = pm.collectionVariables.get('partner_hmac_secret');",
+                  "const partner = pm.collectionVariables.get('partner_name') || 'yatroo';",
+                  "const rawBody = pm.request.body.raw; // must already be compact + sorted-keys, see this request's description",
+                  "const timestamp = Math.floor(Date.now() / 1000).toString();",
+                  "const nonce = pm.variables.replaceIn('{{$guid}}');",
+                  "const canonical = timestamp + \"\\n\" + nonce + \"\\n\" + rawBody;",
+                  "const signature = CryptoJS.HmacSHA256(canonical, secret).toString(CryptoJS.enc.Hex);",
+                  "",
+                  "pm.request.headers.upsert({ key: 'X-Partner', value: partner });",
+                  "pm.request.headers.upsert({ key: 'X-Timestamp', value: timestamp });",
+                  "pm.request.headers.upsert({ key: 'X-Nonce', value: nonce });",
+                  "pm.request.headers.upsert({ key: 'X-Signature', value: signature });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.access_token) {",
+                  "    pm.collectionVariables.set('passenger_token', body.access_token);",
+                  "    pm.collectionVariables.set('citybus_user_id', body.citybus_user_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
         {
           "name": "Login - Passenger",
           "request": {

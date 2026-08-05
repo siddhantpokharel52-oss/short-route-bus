@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "KVBMS Master API (for Yatroo)",
-    "description": "The single consumer-facing API for the City Bus vertical: /public-api/v1/ on mobile-api.citybus.com.np. Covers route search, fares, stop autocomplete, ticket issuance (all 3 paths), validation, cancellation, and ticket history.\n\nAUTH NOTE: authentication is not yet finalized on our side. The design we're building toward is token exchange (per your brief's Section 3) -- your backend will call a server-to-server endpoint with a service credential and receive a scoped, short-lived token back, which your app then uses as the `passenger_token`/`conductor_token` variables below. That endpoint doesn't exist yet; see the open questions we've raised separately (credential mechanism, identity fields, timeline). Once you have a token by whatever means, paste it into the relevant collection variable and every request below will use it automatically.\n\nEvery endpoint here has already been built and live-tested against production.\n\nTEST DATA: route_id/from_stop/to_stop below point at a real, live, clearly-labeled test route (route_code TEST-01, stops named '(Test)') seeded specifically for this collection -- not a real production route. Safe to search/read/issue test tickets against; every no-auth request (Routes, Stops, Fares) will return real data immediately, no setup needed on your end. trip_id is intentionally left blank -- generating a QR for a trip requires a conductor token, which isn't available until token exchange exists.",
+    "description": "The single consumer-facing API for the City Bus vertical: /public-api/v1/ on mobile-api.citybus.com.np. Covers route search, fares, stop autocomplete, ticket issuance (all 3 paths), validation, cancellation, and ticket history.\n\nAUTH NOTE: POST /partner/federated-login is now built on our side (see the '0. Federated Login' folder below), against the wire format we proposed: X-Partner/X-Signature/X-Timestamp/X-Nonce headers, HMAC-SHA256 over `{timestamp}\\n{nonce}\\n{compact_json_body}`. This is NOT yet verified against a real signed request from your backend -- please confirm or correct the canonical-string format, exchange the actual HMAC_SECRET with us via a secure channel (never paste it into this file), and let us know if a signed example/test vector from your side would help. Once you have a real secret, set it as the `partner_hmac_secret` collection variable and the pre-request script signs every call automatically -- nothing to hand-compute.\n\nEvery other endpoint here has already been built and live-tested against production.\n\nTEST DATA: route_id/from_stop/to_stop below point at a real, live, clearly-labeled test route (route_code TEST-01, stops named '(Test)') seeded specifically for this collection -- not a real production route. Safe to search/read/issue test tickets against; every no-auth request (Routes, Stops, Fares) will return real data immediately, no setup needed on your end. trip_id is intentionally left blank -- generating a QR for a trip requires a conductor token, which isn't available until a real trip exists in this test environment.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -12,9 +12,64 @@
     { "key": "trip_id", "value": "" },
     { "key": "ticket_id", "value": "" },
     { "key": "from_stop", "value": "TEST-STOP-A" },
-    { "key": "to_stop", "value": "TEST-STOP-B" }
+    { "key": "to_stop", "value": "TEST-STOP-B" },
+    { "key": "partner_hmac_secret", "value": "", "description": "Fill this in once the real secret is exchanged with us via a secure channel -- do not paste a real secret into this file if you save/version it." },
+    { "key": "partner_name", "value": "yatroo" },
+    { "key": "citybus_user_id", "value": "" }
   ],
   "item": [
+    {
+      "name": "0. Federated Login",
+      "item": [
+        {
+          "name": "Federated Login (your backend calls this, never the app directly)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"rider@example.com\",\"external_user_id\":\"yatroo-test-user-1\",\"name\":\"Test Rider\"}"
+            },
+            "url": { "raw": "{{mobile_api_url}}/partner/federated-login", "host": ["{{mobile_api_url}}"], "path": ["partner", "federated-login"] },
+            "description": "The body here is a fixed, literal string -- compact JSON, keys already alphabetically sorted (email, external_user_id, name) -- because the pre-request script signs pm.request.body.raw exactly as written. If you edit it, keep it compact with sorted keys, or the signature won't match what's sent. Swap in real values matching whatever external_user_id/email/name your backend would actually send."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const secret = pm.collectionVariables.get('partner_hmac_secret');",
+                  "if (!secret) { throw new Error('Set the partner_hmac_secret collection variable first -- see its description.'); }",
+                  "const partner = pm.collectionVariables.get('partner_name') || 'yatroo';",
+                  "const rawBody = pm.request.body.raw; // must already be compact + sorted-keys, see this request's description",
+                  "const timestamp = Math.floor(Date.now() / 1000).toString();",
+                  "const nonce = pm.variables.replaceIn('{{$guid}}');",
+                  "const canonical = timestamp + \"\\n\" + nonce + \"\\n\" + rawBody;",
+                  "const signature = CryptoJS.HmacSHA256(canonical, secret).toString(CryptoJS.enc.Hex);",
+                  "",
+                  "pm.request.headers.upsert({ key: 'X-Partner', value: partner });",
+                  "pm.request.headers.upsert({ key: 'X-Timestamp', value: timestamp });",
+                  "pm.request.headers.upsert({ key: 'X-Nonce', value: nonce });",
+                  "pm.request.headers.upsert({ key: 'X-Signature', value: signature });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.access_token) {",
+                  "    pm.collectionVariables.set('passenger_token', body.access_token);",
+                  "    pm.collectionVariables.set('citybus_user_id', body.citybus_user_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
     {
       "name": "1. Routes",
       "item": [
