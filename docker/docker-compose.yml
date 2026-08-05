@@ -87,7 +87,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - INTERNAL_SERVICE_KEY=${INTERNAL_SERVICE_KEY:-local-dev-internal-key}
-      - YATROO_HMAC_SECRET=${YATROO_HMAC_SECRET:-local-dev-yatroo-secret}
+      - 'PARTNER_HMAC_SECRETS=${PARTNER_HMAC_SECRETS:-{"yatroo": "local-dev-yatroo-secret"}}'
 
   celery:
     build:
