@@ -160,6 +160,7 @@ class PartnerProvisionView(views.APIView):
         partner = (request.data.get("partner") or "").strip()
         external_partner_id = (request.data.get("external_partner_id") or "").strip()
         email = (request.data.get("email") or "").strip().lower()
+        phone = (request.data.get("phone") or "").strip()
         name = (request.data.get("name") or "").strip()
 
         if not partner or not external_partner_id:
@@ -185,6 +186,7 @@ class PartnerProvisionView(views.APIView):
             user = User(
                 email=email or f"{partner}-{external_partner_id}@partner.invalid",
                 full_name_en=name or "Partner User",
+                phone=phone,
                 role=User.Role.PASSENGER,
                 partner=partner,
                 external_partner_id=external_partner_id,
@@ -192,11 +194,19 @@ class PartnerProvisionView(views.APIView):
             user.set_unusable_password()
             user.save()
             created = True
-        elif name and user.full_name_en != name:
-            # Keep the display name fresh on every call -- external_partner_id
-            # stays the permanent lookup key regardless (see the FastAPI side).
-            user.full_name_en = name
-            user.save(update_fields=["full_name_en", "updated_at"])
+        else:
+            # Keep display name and phone fresh on every call --
+            # external_partner_id stays the permanent lookup key regardless
+            # (see the FastAPI side).
+            update_fields = []
+            if name and user.full_name_en != name:
+                user.full_name_en = name
+                update_fields.append("full_name_en")
+            if phone and user.phone != phone:
+                user.phone = phone
+                update_fields.append("phone")
+            if update_fields:
+                user.save(update_fields=[*update_fields, "updated_at"])
 
         return Response({
             "success": True,

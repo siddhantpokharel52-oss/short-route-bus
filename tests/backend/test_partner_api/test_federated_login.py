@@ -279,6 +279,32 @@ def test_partner_name_sent_to_provisioning_is_yatroo(client):
     mock_client_factory.assert_called_once()
 
 
+def test_phone_only_body_is_accepted_and_forwarded(client):
+    """Yatroo's own implementation sends {external_user_id, phone, name} --
+    no email. Confirms that body shape signs/verifies correctly (the
+    signature covers whatever keys are actually present) and that phone
+    reaches the Django provisioning call."""
+    body = {"external_user_id": "yatroo-rider-1", "phone": "+9779800000000", "name": "Rider One"}
+    captured = {}
+
+    class _RecordingAsyncClient(_MockAsyncClient):
+        async def post(self, *args, **kwargs):
+            captured.update(kwargs.get("json") or {})
+            return self._response
+
+    with patch.object(
+        partner_api_router.httpx, "AsyncClient",
+        return_value=_RecordingAsyncClient(_MockDjangoResponse(
+            201, {"success": True, "data": {"user_id": "u-phone-1", "created": True}, "message": "", "errors": None}
+        )),
+    ):
+        resp = client.post("/public-api/v1/partner/federated-login", json=body, headers=_headers(body))
+
+    assert resp.status_code == 200, resp.text
+    assert captured["phone"] == "+9779800000000"
+    assert captured["email"] == ""
+
+
 def test_successful_attempt_is_logged_without_leaking_secret_or_token(client, caplog):
     body = {"external_user_id": "log-test-user"}
     with caplog.at_level(logging.INFO, logger="backend.fastapi_services.partner_api.router"):

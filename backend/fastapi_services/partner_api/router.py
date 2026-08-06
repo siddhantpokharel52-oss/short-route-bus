@@ -22,15 +22,28 @@ unused complexity now. The Django-side account
 column -- hardcoded to "yatroo" here -- so that future addition wouldn't
 need a data-model change either.
 
-Wire format -- our own proposal, sent to Yatroo for confirmation, not yet
-verified against a real signed request from their side:
+Wire format -- confirmed against Yatroo's own implementation (their
+2026-08-06 message): their canonical-string construction, JSON key-sorting,
+and header names match this exactly, byte for byte -- no changes needed on
+that front.
 
   Headers: X-Signature, X-Timestamp, X-Nonce
-  Body:    {"external_user_id": "...", "email": "...", "name": "..."}
+  Body:    {"external_user_id": "...", "email": "...", "phone": "...", "name": "..."}
+            -- external_user_id required; email, phone, name all optional,
+            but at least one of email/phone should be present so the
+            provisioned account is reachable. Yatroo's own preference is to
+            send phone (OTP-verified, unique) rather than email.
 
   canonical_string = f"{timestamp}\\n{nonce}\\n{compact_json_body}"
   compact_json_body = json.dumps(body, sort_keys=True, separators=(",", ":"))
   signature = hex(HMAC_SHA256(YATROO_HMAC_SECRET, canonical_string))
+
+Client-facing URL on mobile-api.citybus.com.np: POST /partner/federated-login
+(no /public-api/v1/ prefix -- nginx's catch-all adds that automatically. The
+path shown here in Swagger, /public-api/v1/partner/federated-login, is the
+*internal* FastAPI mount and also works, since nginx passes that prefix
+through as-is too -- see docker/nginx/nginx.conf. Either path works; use
+whichever this doc/Swagger shows you.)
 """
 import hashlib
 import hmac
@@ -43,6 +56,7 @@ import httpx
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Body, Depends, Header, HTTPException
 from jose import jwt as jose_jwt
+from pydantic import BaseModel
 
 from ..config import settings
 from ..dependencies import get_redis
@@ -51,6 +65,12 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 PARTNER_NAME = "yatroo"
+
+
+class FederatedLoginResponse(BaseModel):
+    access_token: str
+    expires_in: int
+    citybus_user_id: str
 
 
 def _canonical_string(timestamp: str, nonce: str, body: dict) -> str:
@@ -71,7 +91,31 @@ def _log(success: bool, reason: str, external_user_id: str = "") -> None:
     )
 
 
-@router.post("/federated-login")
+@router.post(
+    "/federated-login",
+    response_model=FederatedLoginResponse,
+    summary="Federated login (Yatroo)",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "required": ["external_user_id"],
+                        "properties": {
+                            "external_user_id": {"type": "string", "description": "Yatroo's permanent rider id -- the lookup key for the CityBus account."},
+                            "phone": {"type": "string", "description": "Rider's phone number. Preferred over email (OTP-verified, unique)."},
+                            "email": {"type": "string", "description": "Rider's email, if available."},
+                            "name": {"type": "string", "description": "Rider's display name."},
+                        },
+                    },
+                    "example": {"external_user_id": "yatroo-rider-123", "phone": "+9779800000000", "name": "Rider Name"},
+                }
+            },
+        }
+    },
+)
 async def federated_login(
     body: dict = Body(...),
     x_signature: Optional[str] = Header(None),
@@ -131,13 +175,14 @@ async def federated_login(
         _log(False, "missing external_user_id", external_user_id)
         raise HTTPException(status_code=400, detail="external_user_id is required.")
     email = str(body.get("email") or "").strip()
+    phone = str(body.get("phone") or "").strip()
     name = str(body.get("name") or "").strip()
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.post(
             f"{settings.DJANGO_INTERNAL_BASE_URL}/api/v1/auth/partner-provision/",
             headers={"X-Internal-Service-Key": settings.INTERNAL_SERVICE_KEY},
-            json={"partner": PARTNER_NAME, "external_partner_id": external_user_id, "email": email, "name": name},
+            json={"partner": PARTNER_NAME, "external_partner_id": external_user_id, "email": email, "phone": phone, "name": name},
         )
     if resp.status_code >= 400:
         _log(False, "account provisioning failed", external_user_id)
