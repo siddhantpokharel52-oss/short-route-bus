@@ -68,7 +68,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     # apps.users.views.PartnerProvisionView. partner="" for every normal
     # account created through the regular login/admin paths; only set on
     # accounts auto-provisioned via a partner's server-to-server call.
-    partner = models.CharField(max_length=50, blank=True)
+    partner = models.CharField(max_length=50, blank=True, default="")
     external_partner_id = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

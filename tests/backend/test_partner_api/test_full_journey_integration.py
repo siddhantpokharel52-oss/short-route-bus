@@ -223,6 +223,8 @@ def test_full_passenger_journey_with_one_federated_login_token(client):
     ), patch.object(
         public_api_router.tenant_db, "get_domain_for_schema", new=AsyncMock(return_value=f"{SCHEMA}.citybus.com.np")
     ), patch.object(
+        public_api_router.tenant_db, "get_or_create_self_service_account", new=AsyncMock(return_value="svc-1")
+    ), patch.object(
         public_api_router,
         "_proxy_to_django",
         new=AsyncMock(return_value=_MockDjangoResponse(

@@ -130,6 +130,13 @@ def test_valid_request_returns_scoped_token(client):
     assert claims["role"] == "PASSENGER"
     assert claims["tenant_schema"] == ""
     assert claims["user_id"] == "11111111-1111-1111-1111-111111111111"
+    # Caught live, not by a mock: rest_framework_simplejwt's AccessToken.verify()
+    # hard-requires both of these on any token proxied through to Django (e.g.
+    # POST /tickets/{id}/cancel/) -- "Token has no id"/"Token has no type"
+    # otherwise. A mocked _proxy_to_django can't fail on a claim it never
+    # actually decodes, which is exactly how this was missing undetected.
+    assert claims["token_type"] == "access"
+    assert claims["jti"]
 
 
 def test_minted_token_actually_works_against_a_real_master_api_endpoint(client):

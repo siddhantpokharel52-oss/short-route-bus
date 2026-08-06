@@ -87,6 +87,8 @@ def test_ticket_owner_can_cancel_own_ticket(client):
     ), patch.object(
         public_api_router.tenant_db, "get_domain_for_schema", new=AsyncMock(return_value="tenant-a.kvbms.com.np")
     ), patch.object(
+        public_api_router.tenant_db, "get_or_create_self_service_account", new=AsyncMock(return_value="svc-1")
+    ), patch.object(
         public_api_router, "_proxy_to_django", new=AsyncMock(return_value=_cancelled_django_response())
     ) as mock_proxy:
         resp = client.post(
@@ -102,8 +104,48 @@ def test_ticket_owner_can_cancel_own_ticket(client):
     assert mock_proxy.await_args.args[2] == "tenant_a"
 
 
+def test_owner_cancel_uses_scoped_self_service_token_not_raw_passenger_token(client):
+    """Caught live, not by a mock: a real passenger's own DB row has
+    tenant_schema="" (correct -- passengers aren't tied to one operator), so
+    forwarding their raw token to Django's TenantSchemaMiddleware as-is gets
+    a 403 ("X-Tenant-Slug does not match your account's tenant") -- that
+    middleware checks the *authenticated user's own DB row*, not any claim in
+    the JWT payload, so simply changing what's in the token doesn't help
+    either. The fix mirrors issue_ticket()'s self-service purchase path:
+    authenticate the proxied call as the tenant's own self-service system
+    account (whose DB row genuinely has tenant_schema=schema), not the real
+    passenger. This test would have passed even with the bug present, since
+    _proxy_to_django is mocked -- but it does verify the *fix*, i.e. that the
+    real passenger's own raw credentials are never what's forwarded."""
+    ticket = {**BASE_TICKET}
+    raw_passenger_token = _passenger_token()
+    with patch.object(
+        public_api_router.tenant_db, "find_ticket_by_id", new=AsyncMock(return_value=("tenant_a", ticket))
+    ), patch.object(
+        public_api_router.tenant_db, "get_domain_for_schema", new=AsyncMock(return_value="tenant-a.kvbms.com.np")
+    ), patch.object(
+        public_api_router.tenant_db, "get_or_create_self_service_account", new=AsyncMock(return_value="svc-acct-1")
+    ) as mock_get_account, patch.object(
+        public_api_router, "_mint_self_service_token", return_value="scoped-service-token"
+    ) as mock_mint, patch.object(
+        public_api_router, "_proxy_to_django", new=AsyncMock(return_value=_cancelled_django_response())
+    ) as mock_proxy:
+        resp = client.post(
+            f"/public-api/v1/tickets/{TICKET_ID}/cancel/",
+            headers={"Authorization": f"Bearer {raw_passenger_token}"},
+        )
+
+    assert resp.status_code == 200, resp.text
+    mock_get_account.assert_awaited_once_with("tenant_a")
+    mock_mint.assert_called_once_with("svc-acct-1", "tenant_a")
+    bearer_token_arg = mock_proxy.await_args.args[4]
+    assert bearer_token_arg == "scoped-service-token"
+    assert bearer_token_arg != raw_passenger_token
+
+
 def test_issuing_tenant_staff_can_cancel_ticket(client):
     ticket = {**BASE_TICKET, "passenger_id": "someone-else"}
+    staff_token = _conductor_token("tenant_a")
     with patch.object(
         public_api_router.tenant_db, "find_ticket_by_id", new=AsyncMock(return_value=("tenant_a", ticket))
     ), patch.object(
@@ -113,11 +155,14 @@ def test_issuing_tenant_staff_can_cancel_ticket(client):
     ) as mock_proxy:
         resp = client.post(
             f"/public-api/v1/tickets/{TICKET_ID}/cancel/",
-            headers={"Authorization": f"Bearer {_conductor_token('tenant_a')}"},
+            headers={"Authorization": f"Bearer {staff_token}"},
         )
 
     assert resp.status_code == 200, resp.text
     mock_proxy.assert_awaited_once()
+    # Staff's own tenant_schema already matches -- their real token is
+    # forwarded unchanged, no self-service account substitution needed.
+    assert mock_proxy.await_args.args[4] == staff_token
 
 
 def test_non_owner_non_staff_cannot_cancel_ticket(client):
@@ -175,6 +220,8 @@ def test_cancel_broadcasts_ticket_cancelled_over_websocket(client):
     ), patch.object(
         public_api_router.tenant_db, "get_domain_for_schema", new=AsyncMock(return_value="tenant-a.kvbms.com.np")
     ), patch.object(
+        public_api_router.tenant_db, "get_or_create_self_service_account", new=AsyncMock(return_value="svc-1")
+    ), patch.object(
         public_api_router, "_proxy_to_django", new=AsyncMock(return_value=_cancelled_django_response())
     ), patch.object(
         public_api_router.ticket_ws_manager, "broadcast", new=AsyncMock()
@@ -200,6 +247,8 @@ def test_broadcast_failure_does_not_break_cancellation(client):
     ), patch.object(
         public_api_router.tenant_db, "get_domain_for_schema", new=AsyncMock(return_value="tenant-a.kvbms.com.np")
     ), patch.object(
+        public_api_router.tenant_db, "get_or_create_self_service_account", new=AsyncMock(return_value="svc-1")
+    ), patch.object(
         public_api_router, "_proxy_to_django", new=AsyncMock(return_value=_cancelled_django_response())
     ), patch.object(
         public_api_router.ticket_ws_manager, "broadcast", new=AsyncMock(side_effect=RuntimeError("boom"))
@@ -219,6 +268,8 @@ def test_no_broadcast_when_django_response_has_no_passenger_id(client):
         public_api_router.tenant_db, "find_ticket_by_id", new=AsyncMock(return_value=("tenant_a", ticket))
     ), patch.object(
         public_api_router.tenant_db, "get_domain_for_schema", new=AsyncMock(return_value="tenant-a.kvbms.com.np")
+    ), patch.object(
+        public_api_router.tenant_db, "get_or_create_self_service_account", new=AsyncMock(return_value="svc-1")
     ), patch.object(
         public_api_router,
         "_proxy_to_django",
@@ -246,6 +297,8 @@ def test_cancel_failure_response_from_django_is_passed_through(client):
         public_api_router.tenant_db, "find_ticket_by_id", new=AsyncMock(return_value=("tenant_a", ticket))
     ), patch.object(
         public_api_router.tenant_db, "get_domain_for_schema", new=AsyncMock(return_value="tenant-a.kvbms.com.np")
+    ), patch.object(
+        public_api_router.tenant_db, "get_or_create_self_service_account", new=AsyncMock(return_value="svc-1")
     ), patch.object(
         public_api_router,
         "_proxy_to_django",

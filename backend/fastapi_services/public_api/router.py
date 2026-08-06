@@ -1156,12 +1156,30 @@ async def cancel_ticket(
     if not domain:
         return _error(f"No domain configured for tenant '{schema}'.", 500)
 
+    # A passenger's own DB row has tenant_schema="" (correct -- passengers
+    # aren't tied to one operator), which TenantSchemaMiddleware's
+    # X-Tenant-Slug check rejects as a mismatch against the ticket's operator
+    # schema -- and putting a different tenant_schema in the JWT payload
+    # doesn't help, since that middleware reads the *authenticated user's own
+    # DB row*, not the JWT claim. issue_ticket()'s self-service purchase path
+    # already works around exactly this by authenticating the proxied call as
+    # the tenant's own lazily-created self-service system account (whose DB
+    # row genuinely has tenant_schema=schema) rather than the real passenger
+    # -- same fix needed here, for the same reason. Staff cancelling a ticket
+    # issued by their own tenant already has a matching tenant_schema, so
+    # their own token is used unchanged.
+    if is_issuing_tenant_staff:
+        bearer_token = credentials.credentials
+    else:
+        account_id = await tenant_db.get_or_create_self_service_account(schema)
+        bearer_token = _mint_self_service_token(account_id, schema)
+
     resp = await _proxy_to_django(
         "POST",
         f"/api/v1/ticketing/tickets/{ticket['ticket_uid']}/cancel/",
         schema,
         domain,
-        credentials.credentials,
+        bearer_token,
     )
 
     try:

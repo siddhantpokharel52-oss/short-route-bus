@@ -50,6 +50,7 @@ import hmac
 import json
 import logging
 import time
+import uuid
 from typing import Optional
 
 import httpx
@@ -202,6 +203,17 @@ async def federated_login(
             "tenant_schema": "",
             "full_name": name,
             "language": "en",
+            # token_type/jti are not decorative -- rest_framework_simplejwt's
+            # AccessToken.verify() hard-requires both on any token proxied
+            # straight through to Django (e.g. POST /tickets/{id}/cancel/),
+            # raising "Token has no type"/"Token has no id" otherwise. Same
+            # requirement already hit and fixed for
+            # public_api._mint_self_service_token/_mint_service_conductor_token
+            # -- caught here the same way, via a real call through a live
+            # Django container rather than a mock (mocked _proxy_to_django
+            # can't fail on a claim it never actually decodes).
+            "token_type": "access",
+            "jti": uuid.uuid4().hex,
             "iat": now,
             "exp": now + expiry_seconds,
         },
