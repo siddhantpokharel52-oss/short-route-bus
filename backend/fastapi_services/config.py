@@ -15,6 +15,16 @@ class Settings(BaseSettings):
     # ticket creation/validation through the real Django views (see public_api/router.py)
     # so their existing business logic is reused rather than reimplemented here.
     DJANGO_INTERNAL_BASE_URL: str = "http://django:8000"
+    # django-tenants resolves which schema/urlconf to use purely from the
+    # request's Host header -- it has no idea "django:8000" (the docker
+    # network hostname baked into DJANGO_INTERNAL_BASE_URL above) means
+    # anything. Every other internal call to Django (see _proxy_to_django in
+    # public_api/router.py) is tenant-scoped and already sets its own
+    # Host header to the right tenant's real domain; this one is for the
+    # public-schema-only apps.users.PartnerProvisionView, so it needs the
+    # public schema's own registered domain instead. Same value as Django's
+    # TENANT_BASE_DOMAIN setting, which is exactly this.
+    DJANGO_PUBLIC_DOMAIN: str = "citybus.com.np"
 
     # Federated login (see partner_api/router.py) — token-exchange for Yatroo.
     # Yatroo-specific by design, not a generic multi-partner system — see

@@ -182,7 +182,16 @@ async def federated_login(
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.post(
             f"{settings.DJANGO_INTERNAL_BASE_URL}/api/v1/auth/partner-provision/",
-            headers={"X-Internal-Service-Key": settings.INTERNAL_SERVICE_KEY},
+            headers={
+                # Without this, django-tenants has no Host header it
+                # recognizes (DJANGO_INTERNAL_BASE_URL's "django:8000" isn't
+                # a registered tenant domain) and 404s before even reaching
+                # this view -- caught live against a real signed request,
+                # not by the mocked tests (they patch httpx.AsyncClient
+                # entirely, so no real Host-based routing ever runs).
+                "Host": settings.DJANGO_PUBLIC_DOMAIN,
+                "X-Internal-Service-Key": settings.INTERNAL_SERVICE_KEY,
+            },
             json={"partner": PARTNER_NAME, "external_partner_id": external_user_id, "email": email, "phone": phone, "name": name},
         )
     if resp.status_code >= 400:

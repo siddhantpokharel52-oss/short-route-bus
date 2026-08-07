@@ -88,6 +88,7 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - INTERNAL_SERVICE_KEY=${INTERNAL_SERVICE_KEY:-local-dev-internal-key}
       - YATROO_HMAC_SECRET=${YATROO_HMAC_SECRET:-local-dev-yatroo-secret}
+      - DJANGO_PUBLIC_DOMAIN=${TENANT_BASE_DOMAIN:-localhost}
 
   celery:
     build:

@@ -312,6 +312,37 @@ def test_phone_only_body_is_accepted_and_forwarded(client):
     assert captured["email"] == ""
 
 
+def test_provisioning_call_sets_host_header_to_public_domain(client):
+    """Caught live against a real signed request in production, not by any
+    mock: django-tenants resolves which schema/urlconf to use purely from the
+    Host header. DJANGO_INTERNAL_BASE_URL's hostname ("django", the docker
+    network service name) isn't a registered tenant domain in production, so
+    without an explicit Host header here, Django 404s on this path before
+    even reaching PartnerProvisionView -- every other internal proxy call
+    (_proxy_to_django in public_api/router.py) is tenant-scoped and already
+    sets its own Host header for exactly this reason; this is the first call
+    to a public-schema-only endpoint, and needed the same treatment."""
+    body = {"external_user_id": "yatroo-host-check-1"}
+    captured_headers = {}
+
+    class _RecordingAsyncClient(_MockAsyncClient):
+        async def post(self, *args, **kwargs):
+            captured_headers.update(kwargs.get("headers") or {})
+            return self._response
+
+    with patch.object(
+        partner_api_router.httpx, "AsyncClient",
+        return_value=_RecordingAsyncClient(_MockDjangoResponse(
+            201, {"success": True, "data": {"user_id": "u-host-check-1", "created": True}, "message": "", "errors": None}
+        )),
+    ):
+        resp = client.post("/public-api/v1/partner/federated-login", json=body, headers=_headers(body))
+
+    assert resp.status_code == 200, resp.text
+    assert captured_headers.get("Host") == fastapi_settings.DJANGO_PUBLIC_DOMAIN
+    assert captured_headers.get("Host") != "django"
+
+
 def test_successful_attempt_is_logged_without_leaking_secret_or_token(client, caplog):
     body = {"external_user_id": "log-test-user"}
     with caplog.at_level(logging.INFO, logger="backend.fastapi_services.partner_api.router"):

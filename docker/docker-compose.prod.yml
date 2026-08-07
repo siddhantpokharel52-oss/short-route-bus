@@ -82,6 +82,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://kvbms_user:${DB_PASSWORD}@db:5432/kvbms
       - INTERNAL_SERVICE_KEY=${INTERNAL_SERVICE_KEY}
       - YATROO_HMAC_SECRET=${YATROO_HMAC_SECRET}
+      - DJANGO_PUBLIC_DOMAIN=${TENANT_BASE_DOMAIN:-citybus.com.np}
 
   celery:
     build:
