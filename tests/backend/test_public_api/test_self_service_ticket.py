@@ -156,6 +156,92 @@ def test_self_service_purchase_succeeds_for_single_operator_route(client):
     assert "trip_id" not in sent_payload  # city-bus tickets are never tied to a trip
 
 
+def test_self_service_purchase_with_ticket_type_resolves_and_forwards_id(client):
+    """Yatroo's spec wants a ticket_type (e.g. ADULT/STUDENT) selectable at
+    purchase time -- Ticket stores ticket_type_id (a FK), not the code, so
+    this must resolve via tenant_db before reaching Django."""
+    with patch.object(
+        public_api_router.tenant_db, "get_route_operator_schemas", new=AsyncMock(return_value=[SCHEMA_A])
+    ), patch.object(
+        public_api_router.tenant_db, "get_or_create_self_service_account", new=AsyncMock(return_value=SERVICE_ACCOUNT_ID)
+    ), patch.object(
+        public_api_router.tenant_db, "get_domain_for_schema", new=AsyncMock(return_value="tenant-a.kvbms.com.np")
+    ), patch.object(
+        public_api_router.tenant_db, "resolve_ticket_type_id", new=AsyncMock(return_value="tt-adult-1")
+    ) as mock_resolve, patch.object(
+        public_api_router,
+        "_proxy_to_django",
+        new=AsyncMock(
+            return_value=FakeDjangoResponse(
+                201,
+                {"success": True, "data": {"ticket_uid": "TKT-SELF2", "passenger_id": PASSENGER_ID}, "message": "", "errors": None},
+            )
+        ),
+    ) as mock_proxy:
+        resp = client.post(
+            "/public-api/v1/tickets/",
+            json=_base_payload(ticket_type="adult"),
+            headers={"Authorization": f"Bearer {_passenger_token()}"},
+        )
+
+    assert resp.status_code == 201, resp.text
+    mock_resolve.assert_awaited_once_with("ADULT")  # normalized to uppercase
+    sent_payload = mock_proxy.await_args.kwargs["json_body"]
+    assert sent_payload["ticket_type_id"] == "tt-adult-1"
+    assert "ticket_type" not in sent_payload  # the code itself is never a real Ticket field
+
+
+def test_self_service_purchase_with_unknown_ticket_type_returns_400(client):
+    with patch.object(
+        public_api_router.tenant_db, "get_route_operator_schemas", new=AsyncMock(return_value=[SCHEMA_A])
+    ), patch.object(
+        public_api_router.tenant_db, "get_or_create_self_service_account", new=AsyncMock()
+    ) as mock_account, patch.object(
+        public_api_router.tenant_db, "resolve_ticket_type_id", new=AsyncMock(return_value=None)
+    ), patch.object(public_api_router, "_proxy_to_django", new=AsyncMock()) as mock_proxy:
+        resp = client.post(
+            "/public-api/v1/tickets/",
+            json=_base_payload(ticket_type="NOT-A-REAL-TYPE"),
+            headers={"Authorization": f"Bearer {_passenger_token()}"},
+        )
+
+    assert resp.status_code == 400, resp.text
+    mock_account.assert_not_called()
+    mock_proxy.assert_not_called()
+
+
+def test_self_service_purchase_without_ticket_type_omits_it(client):
+    """ticket_type stays optional -- existing callers that never send it keep working
+    unchanged, with no ticket_type_id forced onto the Django payload."""
+    with patch.object(
+        public_api_router.tenant_db, "get_route_operator_schemas", new=AsyncMock(return_value=[SCHEMA_A])
+    ), patch.object(
+        public_api_router.tenant_db, "get_or_create_self_service_account", new=AsyncMock(return_value=SERVICE_ACCOUNT_ID)
+    ), patch.object(
+        public_api_router.tenant_db, "get_domain_for_schema", new=AsyncMock(return_value="tenant-a.kvbms.com.np")
+    ), patch.object(
+        public_api_router.tenant_db, "resolve_ticket_type_id", new=AsyncMock()
+    ) as mock_resolve, patch.object(
+        public_api_router,
+        "_proxy_to_django",
+        new=AsyncMock(
+            return_value=FakeDjangoResponse(
+                201,
+                {"success": True, "data": {"ticket_uid": "TKT-SELF3", "passenger_id": PASSENGER_ID}, "message": "", "errors": None},
+            )
+        ),
+    ) as mock_proxy:
+        resp = client.post(
+            "/public-api/v1/tickets/",
+            json=_base_payload(),
+            headers={"Authorization": f"Bearer {_passenger_token()}"},
+        )
+
+    assert resp.status_code == 201, resp.text
+    mock_resolve.assert_not_called()
+    assert "ticket_type_id" not in mock_proxy.await_args.kwargs["json_body"]
+
+
 def test_self_service_purchase_requires_payment_reference(client):
     with patch.object(public_api_router, "_proxy_to_django", new=AsyncMock()) as mock_proxy, patch.object(
         public_api_router.tenant_db, "get_route_operator_schemas", new=AsyncMock()

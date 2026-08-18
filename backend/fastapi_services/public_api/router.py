@@ -450,6 +450,7 @@ def _serialize_route_stop(s: dict) -> dict:
         "route_stop_id": s["route_stop_id"],
         "sequence_no": s["sequence_no"],
         "estimated_time_from_start": s.get("estimated_time_from_start"),
+        "distance_from_start_km": s.get("distance_from_start_km"),
         "stop_id": s["stop_id"],
         "stop_code": s.get("stop_code"),
         "name_en": s.get("name_en"),
@@ -471,6 +472,11 @@ def _serialize_fare(f: dict) -> dict:
         "ticket_type_id": f.get("ticket_type_id"),
         "ticket_type_code": f.get("ticket_type_code"),
         "ticket_type_name": f.get("ticket_type_name"),
+        # Only present when the query included route_id -- a bare zone match
+        # (from_stop/to_stop with no route_id) has no single "the" distance,
+        # since different routes can connect that zone pair differently.
+        "distance_km": f.get("distance_km"),
+        "time_minutes": f.get("time_minutes"),
     }
 
 
@@ -501,6 +507,7 @@ async def list_routes(
     radius_km: float = Query(5.0, gt=0, description="Search radius in km — only used together with lat/lon"),
     from_stop: Optional[str] = Query(None, description="Origin stop_code — routes serving from_stop→to_stop, in order"),
     to_stop: Optional[str] = Query(None, description="Destination stop_code — used together with from_stop"),
+    stop: Optional[str] = Query(None, description="A single stop_code — routes serving this stop, any position/direction"),
 ):
     """List routes, optionally filtered by `status`/`route_type`.
 
@@ -510,8 +517,15 @@ async def list_routes(
     Pass `lat` + `lon` to instead find nearby routes within `radius_km` — each result
     includes `nearest_stop_distance_km`, ordered closest first.
 
-    These two search modes are mutually exclusive; each requires both of its params
-    (`400` if only one is given). See docs/API.md §1.4 for full details.
+    Pass `stop` alone to find every route serving that one stop, regardless of position
+    or direction — e.g. after a passenger picks a single destination (no origin yet) from
+    `GET /stops/autocomplete/`.
+
+    Each of these three modes requires exactly its own param(s) (`400` if only one of a
+    required pair is given). If a caller somehow combines more than one mode, precedence
+    is deterministic rather than an error: `from_stop`/`to_stop` wins over `lat`/`lon`,
+    which wins over `stop` — not a scenario a real client should construct, but resolved
+    consistently rather than rejected outright. See docs/API.md §1.4 for full details.
     """
     if (lat is None) != (lon is None):
         return _error("Both lat and lon are required for a nearby-route search.", 400)
@@ -524,6 +538,8 @@ async def list_routes(
         routes = await tenant_db.fetch_routes_near(
             lat=lat, lon=lon, radius_km=radius_km, status=status, route_type=route_type,
         )
+    elif stop is not None:
+        routes = await tenant_db.fetch_routes_by_single_stop(stop)
     else:
         routes = await tenant_db.fetch_routes(status=status, route_type=route_type)
     return _ok(data=[_serialize_route(r) for r in routes])
@@ -532,7 +548,14 @@ async def list_routes(
 @router.get("/routes/{route_id}/")
 async def get_route(route_id: str):
     """Single route detail, with its ordered stop list embedded as `stops` and route
-    geometry as `geojson_path`. `404` if not found."""
+    geometry as `geojson_path`. Also bundles the summary fields a route-detail screen
+    needs in one call (Yatroo's route-detail spec) rather than requiring a separate
+    `GET /routes/{id}/timetable/` round trip: `total_stops`, `estimated_duration_minutes`
+    (the last stop's `estimated_time_from_start` — the whole route's own duration
+    estimate), `first_bus`/`last_bus`/`frequency_minutes_min`/`frequency_minutes_max`
+    (from today's scheduled timetable, all `null` if none is published yet), and
+    `total_buses` (vehicles currently assigned to this route, across every operator
+    running it). `404` if the route doesn't exist."""
     route = await tenant_db.fetch_route(route_id)
     if not route:
         return _error("Route not found.", 404)
@@ -540,8 +563,25 @@ async def get_route(route_id: str):
     # by list_routes(), where fetching+embedding every route's full stop list would turn
     # a single request into N extra queries for however many routes are in the list.
     stops = await tenant_db.fetch_route_stops(route_id)
+    day_type = _resolve_day_type(None, None)
+    slots, total_buses = await asyncio.gather(
+        tenant_db.fetch_timetable_for_route(route_id, day_type),
+        tenant_db.count_operating_buses_for_route(route_id),
+    )
+
     data = _serialize_route(route)
     data["stops"] = [_serialize_route_stop(s) for s in stops]
+    data["total_stops"] = len(stops)
+    data["estimated_duration_minutes"] = max(
+        (s.get("estimated_time_from_start") or 0 for s in stops), default=None
+    )
+    departures = sorted(s["departure_time"] for s in slots)
+    frequencies = sorted(s["frequency_minutes"] for s in slots if s.get("frequency_minutes") is not None)
+    data["first_bus"] = departures[0] if departures else None
+    data["last_bus"] = departures[-1] if departures else None
+    data["frequency_minutes_min"] = frequencies[0] if frequencies else None
+    data["frequency_minutes_max"] = frequencies[-1] if frequencies else None
+    data["total_buses"] = total_buses
     return _ok(data=data)
 
 
@@ -556,7 +596,7 @@ async def get_route_stops(route_id: str):
 
 
 def _serialize_stop(s: dict) -> dict:
-    return {
+    data = {
         "id": s["id"],
         "stop_code": s.get("stop_code"),
         "name_en": s.get("name_en"),
@@ -564,19 +604,30 @@ def _serialize_stop(s: dict) -> dict:
         "latitude": s.get("latitude"),
         "longitude": s.get("longitude"),
     }
+    # Only present when the search itself was location-aware (autocomplete_stops
+    # called with lat/lon) -- absent, not null, otherwise: a null would read as
+    # "we don't know the distance" rather than "distance wasn't requested".
+    if "distance_km" in s:
+        data["distance_km"] = s["distance_km"]
+    return data
 
 
 @router.get("/stops/autocomplete/")
 async def autocomplete_stops(
     q: str = Query(..., min_length=1, description="Partial stop name (English or Nepali) or stop code"),
     limit: int = Query(10, gt=0, le=20, description="Max results to return"),
+    lat: Optional[float] = Query(None, description="Passenger's latitude — when given (with lon), results are ordered by walking distance instead of match quality"),
+    lon: Optional[float] = Query(None, description="Passenger's longitude — required together with lat"),
 ):
     """Typeahead search for a stop-picker UI — e.g. Yatroo's origin/destination field.
-    Matches `q` against a stop's English name, Nepali name, or stop_code, ranked by
-    where the match occurs (an earlier/prefix match ranks first). Only ACTIVE stops.
-    Not a replacement for `GET /routes/{id}/stops/` — this searches every stop
-    platform-wide, independent of any one route."""
-    stops = await tenant_db.search_stops(q.strip(), limit=limit)
+    Matches `q` against a stop's English name, Nepali name, or stop_code. Ranked by where
+    the match occurs (an earlier/prefix match ranks first) by default; ranked by distance
+    from (lat, lon) instead when both are given. Only ACTIVE stops. Not a replacement for
+    `GET /routes/{id}/stops/` — this searches every stop platform-wide, independent of any
+    one route."""
+    if (lat is None) != (lon is None):
+        return _error("Both lat and lon are required together.", 400)
+    stops = await tenant_db.search_stops(q.strip(), limit=limit, lat=lat, lon=lon)
     return _ok(data=[_serialize_stop(s) for s in stops])
 
 
@@ -722,7 +773,9 @@ async def issue_ticket(
       token is invalid, expired, or missing.
     - **Passenger, self-service**: include `route_id` (no QR needed) plus a
       **required** `payment_reference`. If the route has more than one operator, also
-      include `tenant_schema` — otherwise `400` with the valid choices.
+      include `tenant_schema` — otherwise `400` with the valid choices. Optionally
+      include `ticket_type` (e.g. `ADULT`/`STUDENT`, matching a `GET /fares/` result's
+      `ticket_type_code`) — `400` if it doesn't match a known ticket type.
 
     Optional on any path: `idempotency_key` (retried requests with the same key return
     the original result instead of duplicating) and `from_stop_id`/`to_stop_id` (also
@@ -799,6 +852,13 @@ async def issue_ticket(
                     )
                 schema = requested_schema
 
+            ticket_type_code = payload.get("ticket_type")
+            ticket_type_id_override = None
+            if isinstance(ticket_type_code, str) and ticket_type_code.strip():
+                ticket_type_id_override = await tenant_db.resolve_ticket_type_id(ticket_type_code.strip().upper())
+                if ticket_type_id_override is None:
+                    return _error(f"Unknown ticket_type: {ticket_type_code!r}.", 400)
+
             account_id = await tenant_db.get_or_create_self_service_account(schema)
             bearer_token = _mint_self_service_token(account_id, schema)
             issued_by_override = "MOBILE"
@@ -850,7 +910,7 @@ async def issue_ticket(
     django_payload = {
         k: v
         for k, v in payload.items()
-        if k not in ("idempotency_key", "payment_reference", "trip_qr_token", "passenger_phone", "document_id")
+        if k not in ("idempotency_key", "payment_reference", "trip_qr_token", "passenger_phone", "document_id", "ticket_type")
     }
     if trip_id_override is not None:
         # Scan-to-book: trip_id/passenger_id come from the validated QR token and the
@@ -863,11 +923,14 @@ async def issue_ticket(
         # the caller sent for it. route_id/tenant_schema were this endpoint's own routing
         # inputs (used above to resolve `schema`), not Ticket fields — Django's serializer
         # would silently ignore them anyway (no such fields on Ticket), but drop them here
-        # too rather than send noise.
+        # too rather than send noise. ticket_type (a code like "ADULT") isn't a real Ticket
+        # field either — Ticket stores ticket_type_id (a FK), resolved above.
         django_payload["passenger_id"] = passenger_id
         django_payload["issued_by"] = issued_by_override
         django_payload.pop("route_id", None)
         django_payload.pop("tenant_schema", None)
+        if ticket_type_id_override is not None:
+            django_payload["ticket_type_id"] = ticket_type_id_override
 
     resp = await _proxy_to_django(
         "POST", "/api/v1/ticketing/tickets/", schema, domain, bearer_token, json_body=django_payload,

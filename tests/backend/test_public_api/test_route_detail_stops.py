@@ -77,7 +77,11 @@ def test_route_detail_embeds_ordered_stop_list_matching_dedicated_endpoint(clien
         public_api_router.tenant_db, "fetch_route", new=AsyncMock(return_value=ROUTE)
     ), patch.object(
         public_api_router.tenant_db, "fetch_route_stops", new=AsyncMock(return_value=STOPS)
-    ) as mock_stops:
+    ) as mock_stops, patch.object(
+        public_api_router.tenant_db, "fetch_timetable_for_route", new=AsyncMock(return_value=[])
+    ), patch.object(
+        public_api_router.tenant_db, "count_operating_buses_for_route", new=AsyncMock(return_value=0)
+    ):
         detail_resp = client.get(f"/public-api/v1/routes/{ROUTE_ID}/")
         list_resp = client.get(f"/public-api/v1/routes/{ROUTE_ID}/stops/")
 
@@ -119,6 +123,60 @@ def test_route_detail_stops_endpoint_unchanged_shape(client):
     assert isinstance(body, list)
     assert len(body) == 3
     assert "route_code" not in body[0]  # a stop entry, not a route entry
+
+
+def test_route_detail_bundles_summary_fields(client):
+    """Yatroo's route-detail spec wants total_stops, estimated_duration_minutes,
+    first_bus/last_bus/frequency, and total_buses in the same call as the route
+    detail itself, rather than a separate GET /routes/{id}/timetable/ round trip."""
+    slots = [
+        {"timetable_id": "tt-1", "slot_id": "s-1", "departure_time": "06:30:00",
+         "arrival_time": "07:15:00", "frequency_minutes": 15, "tenant_schema": "op-a"},
+        {"timetable_id": "tt-1", "slot_id": "s-2", "departure_time": "22:00:00",
+         "arrival_time": "22:45:00", "frequency_minutes": 20, "tenant_schema": "op-a"},
+    ]
+    with patch.object(
+        public_api_router.tenant_db, "fetch_route", new=AsyncMock(return_value=ROUTE)
+    ), patch.object(
+        public_api_router.tenant_db, "fetch_route_stops", new=AsyncMock(return_value=STOPS)
+    ), patch.object(
+        public_api_router.tenant_db, "fetch_timetable_for_route", new=AsyncMock(return_value=slots)
+    ) as mock_timetable, patch.object(
+        public_api_router.tenant_db, "count_operating_buses_for_route", new=AsyncMock(return_value=4)
+    ):
+        resp = client.get(f"/public-api/v1/routes/{ROUTE_ID}/")
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["total_stops"] == 3
+    assert data["estimated_duration_minutes"] == 45  # last stop's estimated_time_from_start
+    assert data["first_bus"] == "06:30:00"
+    assert data["last_bus"] == "22:00:00"
+    assert data["frequency_minutes_min"] == 15
+    assert data["frequency_minutes_max"] == 20
+    assert data["total_buses"] == 4
+    mock_timetable.assert_awaited_once()
+
+
+def test_route_detail_summary_fields_are_null_with_no_published_timetable(client):
+    with patch.object(
+        public_api_router.tenant_db, "fetch_route", new=AsyncMock(return_value=ROUTE)
+    ), patch.object(
+        public_api_router.tenant_db, "fetch_route_stops", new=AsyncMock(return_value=STOPS)
+    ), patch.object(
+        public_api_router.tenant_db, "fetch_timetable_for_route", new=AsyncMock(return_value=[])
+    ), patch.object(
+        public_api_router.tenant_db, "count_operating_buses_for_route", new=AsyncMock(return_value=0)
+    ):
+        resp = client.get(f"/public-api/v1/routes/{ROUTE_ID}/")
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["first_bus"] is None
+    assert data["last_bus"] is None
+    assert data["frequency_minutes_min"] is None
+    assert data["frequency_minutes_max"] is None
+    assert data["total_buses"] == 0
 
 
 def test_route_detail_404_skips_stops_lookup(client):

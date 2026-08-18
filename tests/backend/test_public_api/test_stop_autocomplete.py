@@ -44,7 +44,7 @@ def test_autocomplete_returns_matching_stops(client):
     assert data[0]["stop_code"] == "KTM01"
     assert data[0]["name_en"] == "Ratnapark"
     assert data[0]["name_ne"] == "रत्नपार्क"
-    mock_search.assert_awaited_once_with("Ratna", limit=10)
+    mock_search.assert_awaited_once_with("Ratna", limit=10, lat=None, lon=None)
 
 
 def test_autocomplete_strips_whitespace_from_query(client):
@@ -54,7 +54,7 @@ def test_autocomplete_strips_whitespace_from_query(client):
         resp = client.get("/public-api/v1/stops/autocomplete/?q=  Ratna  ")
 
     assert resp.status_code == 200, resp.text
-    mock_search.assert_awaited_once_with("Ratna", limit=10)
+    mock_search.assert_awaited_once_with("Ratna", limit=10, lat=None, lon=None)
 
 
 def test_autocomplete_requires_q_param(client):
@@ -74,7 +74,7 @@ def test_autocomplete_respects_custom_limit(client):
         resp = client.get("/public-api/v1/stops/autocomplete/?q=Kal&limit=5")
 
     assert resp.status_code == 200, resp.text
-    mock_search.assert_awaited_once_with("Kal", limit=5)
+    mock_search.assert_awaited_once_with("Kal", limit=5, lat=None, lon=None)
 
 
 def test_autocomplete_rejects_limit_over_20(client):
@@ -93,3 +93,32 @@ def test_autocomplete_no_matches_returns_empty_list(client):
 
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"] == []
+
+
+def test_autocomplete_with_lat_lon_passes_through_and_surfaces_distance(client):
+    """Yatroo's home-page search wants results ordered by walking distance, not
+    just name-match quality — lat/lon flow through to tenant_db.search_stops
+    unchanged (the actual sorting is tenant_db's job, mocked here), and a
+    distance_km the mock attaches is surfaced in the response."""
+    stop_with_distance = {**STOP, "distance_km": 0.42}
+    with patch.object(
+        public_api_router.tenant_db, "search_stops", new=AsyncMock(return_value=[stop_with_distance])
+    ) as mock_search:
+        resp = client.get("/public-api/v1/stops/autocomplete/?q=Ratna&lat=27.7&lon=85.3")
+
+    assert resp.status_code == 200, resp.text
+    mock_search.assert_awaited_once_with("Ratna", limit=10, lat=27.7, lon=85.3)
+    assert resp.json()["data"][0]["distance_km"] == 0.42
+
+
+def test_autocomplete_rejects_lat_without_lon(client):
+    resp = client.get("/public-api/v1/stops/autocomplete/?q=Ratna&lat=27.7")
+    assert resp.status_code == 400, resp.text
+
+
+def test_autocomplete_without_lat_lon_omits_distance_field(client):
+    with patch.object(public_api_router.tenant_db, "search_stops", new=AsyncMock(return_value=[STOP])):
+        resp = client.get("/public-api/v1/stops/autocomplete/?q=Ratna")
+
+    assert resp.status_code == 200, resp.text
+    assert "distance_km" not in resp.json()["data"][0]

@@ -105,3 +105,32 @@ def test_routes_without_stop_pair_uses_existing_path_unchanged(client):
     assert resp.status_code == 200
     mock_all.assert_awaited_once_with(status="APPROVED", route_type=None)
     mock_pair.assert_not_called()
+
+
+def test_routes_with_single_stop_finds_routes_serving_it(client):
+    """Yatroo's Search Destination flow: passenger picks one destination stop
+    (no origin yet) — GET /routes/?stop= should find every route serving it,
+    any position/direction, distinct from the from_stop+to_stop pair search."""
+    with patch.object(
+        public_api_router.tenant_db, "fetch_routes_by_single_stop", new=AsyncMock(return_value=[STOP_PAIR_ROUTE])
+    ) as mock_single:
+        resp = client.get("/public-api/v1/routes/?stop=KTM09")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"][0]["id"] == "route-1"
+    mock_single.assert_awaited_once_with("KTM09")
+
+
+def test_stop_pair_search_takes_priority_over_single_stop(client):
+    """Same deterministic-precedence philosophy as the lat/lon case above --
+    from_stop/to_stop wins if a caller somehow combines it with stop."""
+    with patch.object(
+        public_api_router.tenant_db, "fetch_routes_by_stop_pair", new=AsyncMock(return_value=[STOP_PAIR_ROUTE])
+    ) as mock_pair, patch.object(
+        public_api_router.tenant_db, "fetch_routes_by_single_stop", new=AsyncMock()
+    ) as mock_single:
+        resp = client.get("/public-api/v1/routes/?from_stop=KTM01&to_stop=KTM09&stop=KTM05")
+
+    assert resp.status_code == 200, resp.text
+    mock_pair.assert_awaited_once()
+    mock_single.assert_not_called()

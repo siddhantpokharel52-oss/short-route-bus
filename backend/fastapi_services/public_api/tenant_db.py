@@ -164,6 +164,38 @@ async def get_route_operator_schemas(route_id: str) -> list[str]:
         return [row[0] for row in result.fetchall()]
 
 
+# Mirrors apps.fleet.models.Vehicle (table fleet_vehicle, tenant-scoped) --
+# same cross-schema fan-out pattern as fetch_timetable_for_route below,
+# scoped to just the operators actually running this route
+# (get_route_operator_schemas). RETIRED/INACTIVE/BREAKDOWN vehicles are
+# excluded -- assigned_route_id alone doesn't mean a bus is actually on the
+# road, and "Total Buses operating on route" (Yatroo's route-detail spec)
+# means the latter.
+async def count_operating_buses_for_route(route_id: str) -> int:
+    schemas = await get_route_operator_schemas(route_id)
+    if not schemas:
+        return 0
+
+    engine = get_engine()
+    total = 0
+    async with engine.connect() as conn:
+        for schema in schemas:
+            safe = _safe_schema(schema)
+            query = text(
+                f"""
+                SELECT COUNT(*) FROM "{safe}".fleet_vehicle
+                WHERE assigned_route_id = :route_id
+                  AND status NOT IN ('RETIRED', 'INACTIVE', 'BREAKDOWN')
+                """
+            )
+            try:
+                result = await conn.execute(query, {"route_id": route_id})
+            except Exception:
+                continue
+            total += result.scalar() or 0
+    return total
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # apps.platform reads (shared "public" Postgres schema)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -220,7 +252,15 @@ async def fetch_route(route_id: str) -> Optional[dict]:
 # capacity/has_shelter/has_digital_signage/zone/created_by/is_deleted — this
 # is a passenger-facing stop listing, not the admin Stop record.
 async def fetch_route_stops(route_id: str) -> list[dict]:
-    """Ordered stops for a route (apps.platform.RouteStop), ordered by sequence_no."""
+    """Ordered stops for a route (apps.platform.RouteStop), ordered by sequence_no.
+
+    Each stop also gets a `distance_from_start_km` — RouteStop has no such
+    column (only estimated_time_from_start, a duration), so this is a
+    cumulative straight-line (haversine) sum along consecutive stops'
+    lat/lon, same approximation basis as fetch_routes_near's distance
+    filter and _serialize_route's already-acknowledged-inaccurate polyline
+    (see partner_api docs sent to Yatroo: real road distance needs actual
+    route/tracking data we don't have yet)."""
     engine = get_engine()
     async with engine.connect() as conn:
         result = await conn.execute(
@@ -237,7 +277,17 @@ async def fetch_route_stops(route_id: str) -> list[dict]:
             ),
             {"route_id": route_id},
         )
-        return [_row_to_dict(r) for r in result.fetchall()]
+        rows = [_row_to_dict(r) for r in result.fetchall()]
+
+    cumulative = 0.0
+    prev = None
+    for row in rows:
+        lat, lon = row.get("latitude"), row.get("longitude")
+        if prev is not None and lat is not None and lon is not None and prev[0] is not None and prev[1] is not None:
+            cumulative += _haversine_km(float(prev[0]), float(prev[1]), float(lat), float(lon))
+        row["distance_from_start_km"] = round(cumulative, 3)
+        prev = (lat, lon)
+    return rows
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -360,6 +410,27 @@ async def fetch_routes_by_stop_pair(from_stop_code: str, to_stop_code: str) -> l
         return rows
 
 
+# Mirrors apps.platform.models.Route joined to RouteStop/Stop, same tables as
+# fetch_routes_by_stop_pair above but for a *single* stop, any position in
+# the route's sequence — the "user picked a destination, show me routes that
+# serve it" search (Yatroo's Search Destination flow), distinct from "routes
+# between these two specific stops in order".
+async def fetch_routes_by_single_stop(stop_code: str) -> list[dict]:
+    query = """
+        SELECT DISTINCT r.id, r.route_code, r.name_en, r.name_ne, r.start_stop_id, r.end_stop_id,
+               r.distance_km, r.route_type, r.status, r.geojson_path, r.created_at, r.updated_at
+        FROM public.platform_route r
+        JOIN public.platform_routestop rs ON rs.route_id = r.id
+        JOIN public.platform_stop s ON s.id = rs.stop_id AND s.stop_code = :stop_code
+        WHERE r.is_deleted = false
+        ORDER BY r.route_code
+    """
+    engine = get_engine()
+    async with engine.connect() as conn:
+        result = await conn.execute(text(query), {"stop_code": stop_code})
+        return [_row_to_dict(r) for r in result.fetchall()]
+
+
 # Mirrors apps.platform.models.Stop (table platform_stop) — same "single
 # shared-schema query, no tenant looping needed" category as
 # fetch_routes_near/fetch_routes_by_stop_pair above. Added for the Yatroo
@@ -370,7 +441,17 @@ async def fetch_routes_by_stop_pair(from_stop_code: str, to_stop_code: str) -> l
 # heuristic that needs no extra Postgres extension (no pg_trgm), good
 # enough for a first version. Restricted to ACTIVE stops only: no point
 # suggesting a stop with no live service.
-async def search_stops(query: str, limit: int = 10) -> list[dict]:
+async def search_stops(
+    query: str, limit: int = 10, lat: Optional[float] = None, lon: Optional[float] = None
+) -> list[dict]:
+    """lat/lon are optional (Yatroo's home-page search wants results ordered by
+    walking distance from the passenger, not just name-match quality) — when
+    given, distance from (lat, lon) takes over as the sort key entirely;
+    match_position is still used to select *which* stops match `q` in the
+    first place, just no longer how they're ordered. Distance math happens in
+    Python (same _haversine_km already used by fetch_routes_near), not SQL —
+    same reasoning as that function: this table is small, city-scale
+    reference data."""
     sql = """
         SELECT id, stop_code, name_en, name_ne, latitude, longitude,
                LEAST(
@@ -392,7 +473,33 @@ async def search_stops(query: str, limit: int = 10) -> list[dict]:
         rows = [_row_to_dict(r) for r in result.fetchall()]
         for row in rows:
             row.pop("match_position", None)  # only existed to drive ORDER BY
-        return rows
+
+    if lat is not None and lon is not None:
+        for row in rows:
+            if row.get("latitude") is not None and row.get("longitude") is not None:
+                row["distance_km"] = _haversine_km(lat, lon, float(row["latitude"]), float(row["longitude"]))
+            else:
+                row["distance_km"] = None
+        rows.sort(key=lambda r: (r["distance_km"] is None, r["distance_km"]))
+
+    return rows
+
+
+# Mirrors apps.platform.models.TicketType (table platform_tickettype) --
+# used by issue_ticket()'s self-service path to resolve a caller-supplied
+# `ticket_type` code (e.g. "ADULT", "STUDENT") to the ticket_type_id
+# apps.ticketing.Ticket actually stores. Returns None for an unknown code
+# rather than raising, so the caller can turn that into a normal 400 instead
+# of a 500.
+async def resolve_ticket_type_id(code: str) -> Optional[str]:
+    engine = get_engine()
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text("SELECT id FROM public.platform_tickettype WHERE code = :code AND is_active = true"),
+            {"code": code},
+        )
+        row = result.first()
+        return str(row[0]) if row else None
 
 
 # Mirrors apps.platform.models.FareMatrix joined to apps.platform.models.
@@ -436,7 +543,28 @@ async def fetch_fares(
     engine = get_engine()
     async with engine.connect() as conn:
         result = await conn.execute(text(query), params)
-        return [_row_to_dict(r) for r in result.fetchall()]
+        rows = [_row_to_dict(r) for r in result.fetchall()]
+
+    # Distance/time between the two stops is the same for every fare row
+    # returned above (it doesn't vary by ticket_type) -- computed once here,
+    # reusing fetch_route_stops' own cumulative-distance math rather than
+    # duplicating it, and only when there's a specific route_id to measure
+    # along (a bare from_stop/to_stop zone match with no route_id has no
+    # single "the" distance -- multiple routes could connect that zone pair
+    # differently).
+    if rows and route_id and from_stop and to_stop:
+        stops = await fetch_route_stops(route_id)
+        by_code = {s["stop_code"]: s for s in stops}
+        from_s, to_s = by_code.get(from_stop), by_code.get(to_stop)
+        distance_km = time_minutes = None
+        if from_s and to_s:
+            distance_km = round(abs(to_s["distance_from_start_km"] - from_s["distance_from_start_km"]), 3)
+            time_minutes = abs(to_s["estimated_time_from_start"] - from_s["estimated_time_from_start"])
+        for row in rows:
+            row["distance_km"] = distance_km
+            row["time_minutes"] = time_minutes
+
+    return rows
 
 
 # ─────────────────────────────────────────────────────────────────────────────

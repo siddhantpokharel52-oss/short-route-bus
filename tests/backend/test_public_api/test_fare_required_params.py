@@ -46,6 +46,22 @@ def test_fares_with_all_three_params_succeeds(client):
     mock_fetch.assert_awaited_once_with(route_id="route-1", from_stop="KTM01", to_stop="KTM09")
 
 
+def test_fares_surfaces_distance_and_time_when_present(client):
+    """distance_km/time_minutes are computed by tenant_db.fetch_fares itself
+    (route_id+from_stop+to_stop -> RouteStop delta, mocked away here) --
+    this only confirms the router's serialization passes them through."""
+    fare_with_distance = {**FARE, "distance_km": 9.2, "time_minutes": 35}
+    with patch.object(
+        public_api_router.tenant_db, "fetch_fares", new=AsyncMock(return_value=[fare_with_distance])
+    ):
+        resp = client.get("/public-api/v1/fares/?route_id=route-1&from_stop=KTM01&to_stop=KTM09")
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"][0]
+    assert data["distance_km"] == 9.2
+    assert data["time_minutes"] == 35
+
+
 def test_fares_missing_route_id_returns_400(client):
     with patch.object(public_api_router.tenant_db, "fetch_fares", new=AsyncMock()) as mock_fetch:
         resp = client.get("/public-api/v1/fares/?from_stop=KTM01&to_stop=KTM09")
