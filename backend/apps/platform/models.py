@@ -99,6 +99,7 @@ class Route(models.Model):
     route_type = models.CharField(max_length=20, choices=RouteType.choices, default=RouteType.EXCLUSIVE)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
     geojson_path = models.TextField(blank=True)
+    description = models.TextField(blank=True, default="")
     approved_by = models.ForeignKey(
         "users.User", null=True, blank=True, on_delete=models.SET_NULL,
         related_name="approved_routes"

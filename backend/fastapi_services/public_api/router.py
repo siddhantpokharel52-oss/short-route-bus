@@ -431,6 +431,7 @@ def _serialize_route(r: dict) -> dict:
         "route_type": r.get("route_type"),
         "status": r.get("status"),
         "geojson_path": r.get("geojson_path"),
+        "description": r.get("description"),
         "created_at": r.get("created_at"),
         "updated_at": r.get("updated_at"),
         # Only present when GET /routes/ was called with lat/lon — the distance

@@ -26,6 +26,7 @@ ROUTE = {
     "route_type": "EXCLUSIVE",
     "status": "APPROVED",
     "geojson_path": "",
+    "description": "Main exclusive route operating between Ratnapark and Kalanki.",
     "created_at": None,
     "updated_at": None,
 }
@@ -177,6 +178,24 @@ def test_route_detail_summary_fields_are_null_with_no_published_timetable(client
     assert data["frequency_minutes_min"] is None
     assert data["frequency_minutes_max"] is None
     assert data["total_buses"] == 0
+
+
+def test_route_detail_includes_description(client):
+    """Yatroo's route-detail spec lists "Route Description" as an expected
+    field -- Route had no such column at all until this was added."""
+    with patch.object(
+        public_api_router.tenant_db, "fetch_route", new=AsyncMock(return_value=ROUTE)
+    ), patch.object(
+        public_api_router.tenant_db, "fetch_route_stops", new=AsyncMock(return_value=STOPS)
+    ), patch.object(
+        public_api_router.tenant_db, "fetch_timetable_for_route", new=AsyncMock(return_value=[])
+    ), patch.object(
+        public_api_router.tenant_db, "count_operating_buses_for_route", new=AsyncMock(return_value=0)
+    ):
+        resp = client.get(f"/public-api/v1/routes/{ROUTE_ID}/")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["description"] == "Main exclusive route operating between Ratnapark and Kalanki."
 
 
 def test_route_detail_404_skips_stops_lookup(client):

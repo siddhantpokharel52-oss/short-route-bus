@@ -202,8 +202,8 @@ async def count_operating_buses_for_route(route_id: str) -> int:
 
 # Mirrors apps.platform.models.Route (table platform_route). This SELECT is
 # a deliberate allowlist for passenger-facing consumption — it must NOT grow
-# to include approved_by, approved_at, geojson_path (see fetch_route below,
-# which does need it), created_by, or is_deleted/deleted_at. If Route's
+# to include approved_by, approved_at, geojson_path/description (see fetch_route
+# below, which does need them), created_by, or is_deleted/deleted_at. If Route's
 # migrations add/rename a column this list cares about, update it here too.
 async def fetch_routes(status: Optional[str] = None, route_type: Optional[str] = None) -> list[dict]:
     query = """
@@ -228,7 +228,9 @@ async def fetch_routes(status: Optional[str] = None, route_type: Optional[str] =
 
 
 # Mirrors apps.platform.models.Route — same allowlist note as fetch_routes
-# above, plus geojson_path (needed for the single-route detail view only).
+# above, plus geojson_path/description (needed for the single-route detail
+# view only — Yatroo's route-detail spec lists "Route Description" as a
+# detail-page field, not a list-page one).
 async def fetch_route(route_id: str) -> Optional[dict]:
     engine = get_engine()
     async with engine.connect() as conn:
@@ -236,7 +238,8 @@ async def fetch_route(route_id: str) -> Optional[dict]:
             text(
                 """
                 SELECT id, route_code, name_en, name_ne, start_stop_id, end_stop_id,
-                       distance_km, route_type, status, geojson_path, created_at, updated_at
+                       distance_km, route_type, status, geojson_path, description,
+                       created_at, updated_at
                 FROM public.platform_route
                 WHERE id = :route_id AND is_deleted = false
                 """
@@ -342,7 +345,7 @@ async def fetch_routes_near(
 
         query = """
             SELECT r.id, r.route_code, r.name_en, r.name_ne, r.start_stop_id, r.end_stop_id,
-                   r.distance_km, r.route_type, r.status, r.geojson_path,
+                   r.distance_km, r.route_type, r.status, r.geojson_path, r.description,
                    r.created_at, r.updated_at, rs.stop_id
             FROM public.platform_routestop rs
             JOIN public.platform_route r ON r.id = rs.route_id
@@ -390,7 +393,8 @@ async def fetch_routes_by_stop_pair(from_stop_code: str, to_stop_code: str) -> l
     the same "most direct option first" spirit as fetch_routes_near's distance ordering."""
     query = """
         SELECT DISTINCT r.id, r.route_code, r.name_en, r.name_ne, r.start_stop_id, r.end_stop_id,
-               r.distance_km, r.route_type, r.status, r.geojson_path, r.created_at, r.updated_at,
+               r.distance_km, r.route_type, r.status, r.geojson_path, r.description,
+               r.created_at, r.updated_at,
                rs_from.sequence_no AS from_sequence_no, rs_to.sequence_no AS to_sequence_no,
                (rs_to.sequence_no - rs_from.sequence_no) AS stop_gap
         FROM public.platform_route r
@@ -418,7 +422,8 @@ async def fetch_routes_by_stop_pair(from_stop_code: str, to_stop_code: str) -> l
 async def fetch_routes_by_single_stop(stop_code: str) -> list[dict]:
     query = """
         SELECT DISTINCT r.id, r.route_code, r.name_en, r.name_ne, r.start_stop_id, r.end_stop_id,
-               r.distance_km, r.route_type, r.status, r.geojson_path, r.created_at, r.updated_at
+               r.distance_km, r.route_type, r.status, r.geojson_path, r.description,
+               r.created_at, r.updated_at
         FROM public.platform_route r
         JOIN public.platform_routestop rs ON rs.route_id = r.id
         JOIN public.platform_stop s ON s.id = rs.stop_id AND s.stop_code = :stop_code
