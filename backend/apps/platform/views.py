@@ -1,3 +1,5 @@
+from decimal import Decimal, InvalidOperation
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import generics, status, views
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -267,6 +269,120 @@ class FareMatrixViewSet(ModelViewSet):
     serializer_class = FareMatrixSerializer
     permission_classes = [IsPlatformRole]
     filterset_fields = ["route", "ticket_type"]
+
+    def _resolve_route(self, value):
+        if not value:
+            return None, None
+        try:
+            return Route.objects.get(pk=value), None
+        except (Route.DoesNotExist, ValueError, TypeError, DjangoValidationError):
+            try:
+                return Route.objects.get(route_code=value), None
+            except Route.DoesNotExist:
+                return None, f"No route matches '{value}' (tried id and route_code)."
+
+    def _resolve_ticket_type(self, value):
+        if not value:
+            return None, "ticket_type is required."
+        try:
+            return TicketType.objects.get(pk=value), None
+        except (TicketType.DoesNotExist, ValueError, TypeError, DjangoValidationError):
+            try:
+                return TicketType.objects.get(code__iexact=str(value)), None
+            except TicketType.DoesNotExist:
+                return None, f"No ticket type matches '{value}' (tried id and code)."
+
+    @action(detail=False, methods=["post"], url_path="bulk-import")
+    def bulk_import(self, request):
+        """Import a whole fare chart (e.g. a stage/zone fare sheet like an
+        operator's handwritten भाडादर table) in one call instead of one
+        FareMatrix row per stop pair.
+
+        Body: {"route": "<id or route_code>", "ticket_type": "<id or code>",
+        "fares": [{"zone_from", "zone_to", "base_fare", "peak_fare"?, "student_fare"?}, ...]}
+        route/ticket_type may also be set per-row, overriding the top-level default.
+        Upserts on (route, ticket_type, zone_from, zone_to); re-uploading a
+        revised chart updates existing rows instead of duplicating them.
+        All rows are validated before anything is written.
+        """
+        rows = request.data.get("fares")
+        if not isinstance(rows, list) or not rows:
+            return api_response(
+                success=False, message="'fares' must be a non-empty list of rows.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        default_route_val = request.data.get("route")
+        default_ticket_type_val = request.data.get("ticket_type")
+
+        resolved = []
+        errors = []
+        for i, row in enumerate(rows):
+            if not isinstance(row, dict):
+                errors.append({"row": i, "error": "Row must be an object."})
+                continue
+
+            zone_from = row.get("zone_from", "")
+            zone_to = row.get("zone_to", "")
+            if not zone_from or not zone_to:
+                errors.append({"row": i, "error": "zone_from and zone_to are required."})
+                continue
+
+            route, route_err = self._resolve_route(row.get("route", default_route_val))
+            if route_err:
+                errors.append({"row": i, "error": route_err})
+                continue
+
+            ticket_type, tt_err = self._resolve_ticket_type(row.get("ticket_type", default_ticket_type_val))
+            if tt_err:
+                errors.append({"row": i, "error": tt_err})
+                continue
+
+            base_fare = row.get("base_fare")
+            if base_fare is None:
+                errors.append({"row": i, "error": "base_fare is required."})
+                continue
+            try:
+                base_fare = Decimal(str(base_fare))
+                peak_fare = Decimal(str(row["peak_fare"])) if row.get("peak_fare") is not None else base_fare
+                student_fare = Decimal(str(row["student_fare"])) if row.get("student_fare") is not None else base_fare
+            except (InvalidOperation, ValueError):
+                errors.append({"row": i, "error": "base_fare/peak_fare/student_fare must be numeric."})
+                continue
+
+            resolved.append({
+                "route": route, "zone_from": zone_from, "zone_to": zone_to,
+                "ticket_type": ticket_type, "base_fare": base_fare,
+                "peak_fare": peak_fare, "student_fare": student_fare,
+            })
+
+        if errors:
+            return api_response(
+                success=False, message=f"{len(errors)} row(s) failed validation; nothing was imported.",
+                errors=errors, status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        created, updated = 0, 0
+        with transaction.atomic():
+            for r in resolved:
+                obj, was_created = FareMatrix.objects.update_or_create(
+                    route=r["route"], ticket_type=r["ticket_type"],
+                    zone_from=r["zone_from"], zone_to=r["zone_to"],
+                    defaults={
+                        "base_fare": r["base_fare"],
+                        "peak_fare": r["peak_fare"],
+                        "student_fare": r["student_fare"],
+                        "updated_by": request.user if request.user.is_authenticated else None,
+                    },
+                )
+                created += was_created
+                updated += not was_created
+
+        return api_response(
+            data={"created": created, "updated": updated, "total": created + updated},
+            message=f"Imported {created + updated} fare row(s) ({created} created, {updated} updated).",
+            status_code=status.HTTP_200_OK,
+        )
 
 
 class SmartCardViewSet(ModelViewSet):
