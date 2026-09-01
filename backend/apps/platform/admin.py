@@ -27,6 +27,13 @@ class TicketTypeAdmin(admin.ModelAdmin):
     list_display = ["code", "name_en", "validity_hours", "is_active"]
 
 
+@admin.register(FareMatrix)
+class FareMatrixAdmin(admin.ModelAdmin):
+    list_display = ["route", "zone_from", "zone_to", "ticket_type", "base_fare", "peak_fare", "student_fare"]
+    list_filter = ["route", "ticket_type"]
+    search_fields = ["zone_from", "zone_to"]
+
+
 @admin.register(SmartCard)
 class SmartCardAdmin(admin.ModelAdmin):
     list_display = ["card_no", "passenger", "balance", "status"]
