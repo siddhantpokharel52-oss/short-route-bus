@@ -163,13 +163,11 @@ services:
   nginx:
     image: nginx:alpine
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ./nginx/nginx.local.conf:/etc/nginx/nginx.conf:ro
       - static_files:/app/staticfiles:ro
       - media_files:/app/media:ro
     ports:
       - "80:80"
-      - "443:443"
     depends_on:
       - django
       - fastapi
