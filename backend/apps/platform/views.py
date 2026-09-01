@@ -271,9 +271,11 @@ class FareMatrixViewSet(ModelViewSet):
     filterset_fields = ["route", "ticket_type"]
 
     def get_permissions(self):
-        if self.action in ["list", "retrieve"]:
-            return [CanViewFares()]
-        return [IsPlatformRole()]
+        # Coarse gate only -- "is this user a platform role or a tenant fare
+        # role at all". Which specific route they may write to is checked
+        # per-request in _can_write_route, since it depends on the route in
+        # the request body/instance, not just the user's role.
+        return [CanViewFares()]
 
     def get_queryset(self):
         qs = FareMatrix.objects.all()
@@ -285,6 +287,49 @@ class FareMatrixViewSet(ModelViewSet):
             ).values_list("route_id", flat=True)
             return qs.filter(route_id__in=route_ids)
         return qs
+
+    def _can_write_route(self, user, route):
+        """Platform roles can write any fare. A tenant operator may only set
+        fares on an EXCLUSIVE route where they are the sole active operator --
+        on a SHARED route, multiple tenants run the same route and must
+        charge the same fare, so that stays platform-managed."""
+        if user.is_platform_role:
+            return True
+        if not route or route.route_type != Route.RouteType.EXCLUSIVE:
+            return False
+        active_tenant_schemas = list(RouteAssignment.objects.filter(
+            route=route, status=RouteAssignment.Status.ACTIVE,
+        ).values_list("tenant__schema_name", flat=True))
+        return len(active_tenant_schemas) == 1 and active_tenant_schemas[0] == user.tenant_schema
+
+    def _forbidden_route_response(self):
+        return api_response(
+            success=False,
+            message="You can only manage fares for an EXCLUSIVE route you are the sole active operator on.",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    def create(self, request, *args, **kwargs):
+        route, _ = self._resolve_route(request.data.get("route"))
+        if not self._can_write_route(request.user, route):
+            return self._forbidden_route_response()
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not self._can_write_route(request.user, instance.route):
+            return self._forbidden_route_response()
+        if "route" in request.data:
+            new_route, _ = self._resolve_route(request.data.get("route"))
+            if not self._can_write_route(request.user, new_route):
+                return self._forbidden_route_response()
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not self._can_write_route(request.user, instance.route):
+            return self._forbidden_route_response()
+        return super().destroy(request, *args, **kwargs)
 
     def _resolve_route(self, value):
         if not value:
@@ -350,6 +395,9 @@ class FareMatrixViewSet(ModelViewSet):
             route, route_err = self._resolve_route(row.get("route", default_route_val))
             if route_err:
                 errors.append({"row": i, "error": route_err})
+                continue
+            if not self._can_write_route(request.user, route):
+                errors.append({"row": i, "error": "You can only manage fares for an EXCLUSIVE route you are the sole active operator on."})
                 continue
 
             ticket_type, tt_err = self._resolve_ticket_type(row.get("ticket_type", default_ticket_type_val))
