@@ -5,6 +5,7 @@ import TenantsPage from './pages/TenantsPage'
 import TenantDetailPage from './pages/TenantDetailPage'
 import SmartCardsPage from './pages/SmartCardsPage'
 import FaresPage from './pages/FaresPage'
+import TicketTypesPage from './pages/TicketTypesPage'
 import BillingPage from './pages/BillingPage'
 import UsersPage from './pages/UsersPage'
 import SettingsPage from './pages/SettingsPage'
@@ -19,6 +20,7 @@ export default function SuperAdminApp() {
         <Route path="tenants/:id" element={<TenantDetailPage />} />
         <Route path="smart-cards" element={<SmartCardsPage />} />
         <Route path="fares" element={<FaresPage />} />
+        <Route path="ticket-types" element={<TicketTypesPage />} />
         <Route path="billing" element={<BillingPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="settings" element={<SettingsPage />} />
