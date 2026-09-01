@@ -519,15 +519,17 @@ async def fetch_fares(
 ) -> list[dict]:
     """apps.platform.FareMatrix, optionally narrowed by route and/or a from/to stop_code pair.
 
-    from_stop/to_stop are resolved to that stop's name_en, then matched against
-    FareMatrix.zone_from/zone_to -- i.e. FareMatrix rows are entered with the actual
-    boarding/dropping stop names (exactly how the admin/tenant fare UI collects them:
-    "Ghachaur" -> "Bagar", not an abstract zone label), matched case-insensitively.
+    from_stop/to_stop are resolved to that stop's name_en AND name_ne, then matched
+    (case-insensitively) against FareMatrix.zone_from/zone_to -- i.e. FareMatrix rows
+    are entered with the actual boarding/dropping stop names (exactly how the
+    admin/tenant fare UI collects them: "Ghachaur" -> "Bagar", not an abstract zone
+    label), in whichever language the operator typed it in (the fare UI's text fields
+    support the app's global Nepali/Unicode keyboard toggle same as any other field).
 
     Previously this matched via Stop.zone instead, but that field is never populated
     in practice -- every stop's zone is blank, so a real stage-fare chart entered by
     stop name was never actually findable by this lookup. Matching on the stop's own
-    name instead means fares are discoverable using exactly the data already being
+    name(s) instead means fares are discoverable using exactly the data already being
     entered, with no separate zone-tagging step required first.
     """
     query = """
@@ -542,14 +544,27 @@ async def fetch_fares(
     if route_id:
         query += " AND f.route_id = :route_id"
         params["route_id"] = route_id
+    # name_en/name_ne <> '' guards matter: name_ne is routinely left blank, and
+    # without the guard an empty FareMatrix.zone_from/zone_to (the flat,
+    # zone-independent fare pattern) would ILIKE-match that blank name_ne for
+    # *any* stop -- silently leaking the flat fare into every specific
+    # stop-pair query instead of just the stage fare for that exact pair.
     if from_stop:
-        query += """ AND f.zone_from ILIKE (
-            SELECT name_en FROM public.platform_stop WHERE stop_code = :from_stop LIMIT 1
+        query += """ AND EXISTS (
+            SELECT 1 FROM public.platform_stop s WHERE s.stop_code = :from_stop
+            AND (
+                (s.name_en <> '' AND f.zone_from ILIKE s.name_en)
+                OR (s.name_ne <> '' AND f.zone_from ILIKE s.name_ne)
+            )
         )"""
         params["from_stop"] = from_stop
     if to_stop:
-        query += """ AND f.zone_to ILIKE (
-            SELECT name_en FROM public.platform_stop WHERE stop_code = :to_stop LIMIT 1
+        query += """ AND EXISTS (
+            SELECT 1 FROM public.platform_stop s WHERE s.stop_code = :to_stop
+            AND (
+                (s.name_en <> '' AND f.zone_to ILIKE s.name_en)
+                OR (s.name_ne <> '' AND f.zone_to ILIKE s.name_ne)
+            )
         )"""
         params["to_stop"] = to_stop
 

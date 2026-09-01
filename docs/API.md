@@ -156,7 +156,7 @@ no broader fare-browsing use case for a passenger-facing API.
 | Query param | Notes |
 |---|---|
 | `route_id` | Required. |
-| `from_stop`, `to_stop` | Required. Stop **codes** (not IDs) — each resolved to that stop's `name_en`, then matched (case-insensitively) against `FareMatrix.zone_from`/`zone_to`. |
+| `from_stop`, `to_stop` | Required. Stop **codes** (not IDs) — each resolved to that stop's `name_en` **and** `name_ne`, then matched (case-insensitively, either language) against `FareMatrix.zone_from`/`zone_to`. A blank name never matches a blank fare field. |
 
 **Fare precision = however the fare chart was entered.** `FareMatrix.zone_from`/
 `zone_to` hold the actual boarding/dropping stop names, exactly as typed into
