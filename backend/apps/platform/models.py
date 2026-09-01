@@ -1,4 +1,6 @@
 import uuid
+from decimal import Decimal
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.contrib.postgres.fields import ArrayField
 
@@ -227,9 +229,9 @@ class FareMatrix(models.Model):
     zone_from = models.CharField(max_length=50, blank=True)
     zone_to = models.CharField(max_length=50, blank=True)
     ticket_type = models.ForeignKey(TicketType, on_delete=models.PROTECT, related_name="fares")
-    base_fare = models.DecimalField(max_digits=8, decimal_places=2)
-    peak_fare = models.DecimalField(max_digits=8, decimal_places=2)
-    student_fare = models.DecimalField(max_digits=8, decimal_places=2)
+    base_fare = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
+    peak_fare = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
+    student_fare = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(

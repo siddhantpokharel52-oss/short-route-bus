@@ -1,4 +1,3 @@
-from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import generics, status, views
 from rest_framework.decorators import action
@@ -332,7 +331,10 @@ class FareMatrixViewSet(ModelViewSet):
         default_route_val = request.data.get("route")
         default_ticket_type_val = request.data.get("ticket_type")
 
-        resolved = []
+        # (serializer-or-None, existing-instance-or-None) per valid row, in order --
+        # every row is validated through FareMatrixSerializer (numeric range,
+        # digit overflow, zone_from != zone_to, ...) before anything is written.
+        to_save = []
         errors = []
         for i, row in enumerate(rows):
             if not isinstance(row, dict):
@@ -356,22 +358,23 @@ class FareMatrixViewSet(ModelViewSet):
                 continue
 
             base_fare = row.get("base_fare")
-            if base_fare is None:
-                errors.append({"row": i, "error": "base_fare is required."})
-                continue
-            try:
-                base_fare = Decimal(str(base_fare))
-                peak_fare = Decimal(str(row["peak_fare"])) if row.get("peak_fare") is not None else base_fare
-                student_fare = Decimal(str(row["student_fare"])) if row.get("student_fare") is not None else base_fare
-            except (InvalidOperation, ValueError):
-                errors.append({"row": i, "error": "base_fare/peak_fare/student_fare must be numeric."})
+            peak_fare = row["peak_fare"] if row.get("peak_fare") is not None else base_fare
+            student_fare = row["student_fare"] if row.get("student_fare") is not None else base_fare
+
+            existing = FareMatrix.objects.filter(
+                route=route, ticket_type=ticket_type, zone_from=zone_from, zone_to=zone_to,
+            ).first()
+            serializer = FareMatrixSerializer(instance=existing, data={
+                "route": str(route.id) if route else None,
+                "zone_from": zone_from, "zone_to": zone_to,
+                "ticket_type": str(ticket_type.id),
+                "base_fare": base_fare, "peak_fare": peak_fare, "student_fare": student_fare,
+            })
+            if not serializer.is_valid():
+                errors.append({"row": i, "error": serializer.errors})
                 continue
 
-            resolved.append({
-                "route": route, "zone_from": zone_from, "zone_to": zone_to,
-                "ticket_type": ticket_type, "base_fare": base_fare,
-                "peak_fare": peak_fare, "student_fare": student_fare,
-            })
+            to_save.append((serializer, existing is None))
 
         if errors:
             return api_response(
@@ -380,20 +383,12 @@ class FareMatrixViewSet(ModelViewSet):
             )
 
         created, updated = 0, 0
+        updated_by = request.user if request.user.is_authenticated else None
         with transaction.atomic():
-            for r in resolved:
-                obj, was_created = FareMatrix.objects.update_or_create(
-                    route=r["route"], ticket_type=r["ticket_type"],
-                    zone_from=r["zone_from"], zone_to=r["zone_to"],
-                    defaults={
-                        "base_fare": r["base_fare"],
-                        "peak_fare": r["peak_fare"],
-                        "student_fare": r["student_fare"],
-                        "updated_by": request.user if request.user.is_authenticated else None,
-                    },
-                )
-                created += was_created
-                updated += not was_created
+            for serializer, is_new in to_save:
+                serializer.save(updated_by=updated_by)
+                created += is_new
+                updated += not is_new
 
         return api_response(
             data={"created": created, "updated": updated, "total": created + updated},

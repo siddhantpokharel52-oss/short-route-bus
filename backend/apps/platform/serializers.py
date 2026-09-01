@@ -125,6 +125,16 @@ class FareMatrixSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at"]
 
+    def validate(self, data):
+        zone_from = data.get("zone_from", getattr(self.instance, "zone_from", ""))
+        zone_to = data.get("zone_to", getattr(self.instance, "zone_to", ""))
+        if zone_from and zone_to and zone_from == zone_to:
+            raise serializers.ValidationError(
+                "zone_from and zone_to must be different stops (a blank/blank pair for a flat, "
+                "zone-independent fare is still allowed)."
+            )
+        return data
+
 
 class SmartCardSerializer(serializers.ModelSerializer):
     class Meta:
