@@ -309,6 +309,33 @@ class FareMatrixViewSet(ModelViewSet):
             status_code=status.HTTP_403_FORBIDDEN,
         )
 
+    @action(detail=False, methods=["get"], url_path="my-routes")
+    def my_routes(self, request):
+        """Routes the calling tenant operator is actively assigned to, each
+        flagged with whether they can write fares for it (EXCLUSIVE + sole
+        active operator, see _can_write_route) -- lets the tenant-portal
+        fares page know which routes to offer Add/Bulk Import for without
+        duplicating that rule on the frontend. Not meant for platform roles
+        (they manage fares from the super-admin app instead)."""
+        user = request.user
+        if user.is_platform_role:
+            return api_response(data=[])
+        assignments = RouteAssignment.objects.filter(
+            tenant__schema_name=user.tenant_schema,
+            status=RouteAssignment.Status.ACTIVE,
+        ).select_related("route")
+        data = [
+            {
+                "id": str(a.route.id),
+                "route_code": a.route.route_code,
+                "name_en": a.route.name_en,
+                "route_type": a.route.route_type,
+                "can_write_fares": self._can_write_route(user, a.route),
+            }
+            for a in assignments
+        ]
+        return api_response(data=data)
+
     def create(self, request, *args, **kwargs):
         route, _ = self._resolve_route(request.data.get("route"))
         if not self._can_write_route(request.user, route):

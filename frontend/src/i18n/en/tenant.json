@@ -5,6 +5,7 @@
     "scheduler": "Scheduler",
     "routes": "Routes",
     "busStops": "Bus Stops",
+    "fares": "Fares",
     "fleetManagement": "Fleet Management",
     "drivers": "Drivers",
     "collectors": "Collectors",

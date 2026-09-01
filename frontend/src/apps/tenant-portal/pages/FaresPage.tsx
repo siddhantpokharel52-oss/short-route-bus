@@ -1,3 +1,10 @@
+/**
+ * FaresPage (tenant-portal) — view fares on every route this operator is
+ * assigned to, and manage (add / bulk import) fares only on routes where
+ * they're allowed to: an EXCLUSIVE route they're the sole active operator
+ * on. On a SHARED route (multiple operators on the same route) fares stay
+ * platform-managed, so this page shows them read-only.
+ */
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, useFieldArray } from 'react-hook-form'
@@ -11,10 +18,12 @@ import apiClient from '@services/api'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 
-interface RouteOption {
+interface MyRoute {
   id: string
   route_code: string
   name_en: string
+  route_type: 'EXCLUSIVE' | 'SHARED'
+  can_write_fares: boolean
 }
 
 interface TicketTypeOption {
@@ -71,7 +80,7 @@ function flattenErrors(errors: Record<string, string[] | string>): string {
 }
 
 export default function FaresPage() {
-  const { t } = useTranslation('platform')
+  const { t } = useTranslation('tenant')
   const qc = useQueryClient()
   const [routeFilter, setRouteFilter] = useState('')
   const [showAdd, setShowAdd] = useState(false)
@@ -79,13 +88,21 @@ export default function FaresPage() {
   const [totalCount, setTotalCount] = useState(0)
   const pagination = usePagination(totalCount)
 
-  const { data: routes } = useQuery({
-    queryKey: ['routes-for-fares'],
+  // Every route this operator is actively assigned to, each flagged with
+  // whether fares on it are editable (EXCLUSIVE + sole operator) or
+  // platform-managed (SHARED).
+  const { data: myRoutes } = useQuery({
+    queryKey: ['my-routes-for-fares'],
     queryFn: async () => {
-      const { data } = await apiClient.get('/platform/routes/', { params: { page_size: 100 } })
-      return (data.data ?? []) as RouteOption[]
+      const { data } = await apiClient.get('/platform/fare-matrix/my-routes/')
+      return (data.data ?? []) as MyRoute[]
     },
   })
+  const writableRoutes = useMemo(() => (myRoutes ?? []).filter((r) => r.can_write_fares), [myRoutes])
+  const routeById = useMemo(
+    () => Object.fromEntries((myRoutes ?? []).map((r) => [r.id, r])),
+    [myRoutes]
+  )
 
   const { data: ticketTypes } = useQuery({
     queryKey: ['ticket-types-for-fares'],
@@ -94,18 +111,13 @@ export default function FaresPage() {
       return (data.data ?? []) as TicketTypeOption[]
     },
   })
-
-  const routeById = useMemo(
-    () => Object.fromEntries((routes ?? []).map((r) => [r.id, r])),
-    [routes]
-  )
   const ticketTypeById = useMemo(
     () => Object.fromEntries((ticketTypes ?? []).map((tt) => [tt.id, tt])),
     [ticketTypes]
   )
 
   const { data: fares, isLoading } = useQuery({
-    queryKey: ['fare-matrix', pagination.page, routeFilter],
+    queryKey: ['fare-matrix-tenant', pagination.page, routeFilter],
     queryFn: async () => {
       const { data } = await apiClient.get('/platform/fare-matrix/', {
         params: { ...pagination.queryParams, ...(routeFilter && { route: routeFilter }) },
@@ -115,7 +127,7 @@ export default function FaresPage() {
     },
   })
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['fare-matrix'] })
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['fare-matrix-tenant'] })
 
   // ── Add a single fare row ──────────────────────────────────────────
   const addForm = useForm<AddFareValues>()
@@ -196,32 +208,59 @@ export default function FaresPage() {
     { key: 'base_fare', header: 'Base Fare', render: (r) => `Rs. ${r.base_fare}` },
     { key: 'peak_fare', header: 'Peak Fare', render: (r) => `Rs. ${r.peak_fare}` },
     { key: 'student_fare', header: 'Student Fare', render: (r) => `Rs. ${r.student_fare}` },
+    {
+      key: 'editable', header: 'Editable?',
+      render: (r) => {
+        const route = r.route ? routeById[r.route] : null
+        return route?.can_write_fares
+          ? <span className="text-xs font-medium text-green-600">Yours to edit</span>
+          : <span className="text-xs text-gray-400">Platform-managed (shared route)</span>
+      },
+    },
   ]
+
+  const noWritableRoutes = (myRoutes ?? []).length > 0 && writableRoutes.length === 0
 
   return (
     <div className="space-y-6">
       <div className="page-header">
         <div>
-          <h1 className="page-title">{t('routes.fareMatrix')}</h1>
-          <p className="page-subtitle">The official fare rate (भाडादर) for every route and ticket type</p>
+          <h1 className="page-title">{t('nav.fares')}</h1>
+          <p className="page-subtitle">The official fare rate (भाडादर) for every route you operate</p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" leftIcon={<Upload className="h-4 w-4" />} onClick={() => setShowBulk(true)}>
+          <Button
+            variant="outline" leftIcon={<Upload className="h-4 w-4" />}
+            onClick={() => setShowBulk(true)}
+            disabled={writableRoutes.length === 0}
+            title={writableRoutes.length === 0 ? 'You have no EXCLUSIVE route you are the sole operator on -- fares on your shared routes are platform-managed.' : undefined}
+          >
             Bulk Import
           </Button>
-          <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setShowAdd(true)}>
+          <Button
+            leftIcon={<Plus className="h-4 w-4" />}
+            onClick={() => setShowAdd(true)}
+            disabled={writableRoutes.length === 0}
+            title={writableRoutes.length === 0 ? 'You have no EXCLUSIVE route you are the sole operator on -- fares on your shared routes are platform-managed.' : undefined}
+          >
             Add Fare
           </Button>
         </div>
       </div>
+
+      {noWritableRoutes && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-900/20 dark:text-amber-300">
+          None of your assigned routes are exclusively yours, so fares are read-only here — every route you run is shared with another operator, and shared-route fares stay platform-managed for consistency.
+        </div>
+      )}
 
       <select
         className={`${selectClass} max-w-xs`}
         value={routeFilter}
         onChange={(e) => setRouteFilter(e.target.value)}
       >
-        <option value="">All routes</option>
-        {(routes ?? []).map((r) => (
+        <option value="">All my routes</option>
+        {(myRoutes ?? []).map((r) => (
           <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>
         ))}
       </select>
@@ -232,7 +271,7 @@ export default function FaresPage() {
           data={fares ?? []}
           keyExtractor={(r) => r.id}
           loading={isLoading}
-          emptyMessage="No fares set up yet."
+          emptyMessage="No fares set up on your routes yet."
         />
         <Pagination
           page={pagination.page}
@@ -253,7 +292,7 @@ export default function FaresPage() {
               </label>
               <select className={selectClass} {...addForm.register('route', { required: true })}>
                 <option value="">Select route</option>
-                {(routes ?? []).map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
+                {writableRoutes.map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
               </select>
             </div>
             <div>
@@ -286,8 +325,8 @@ export default function FaresPage() {
       <Modal open={showBulk} onClose={() => setShowBulk(false)} title="Bulk Import Fares" size="full">
         <form onSubmit={bulkForm.handleSubmit(onSubmitBulk)} className="space-y-4 p-6">
           <p className="text-sm text-gray-500">
-            Upload a whole stage-fare chart at once — e.g. an operator's handwritten भाडादर sheet
-            with one from-stop against many to-stops for a single route and ticket type.
+            Upload a whole stage-fare chart at once — e.g. your printed भाडादर sheet with one
+            from-stop against many to-stops — for a single route and ticket type you operate alone.
           </p>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -296,7 +335,7 @@ export default function FaresPage() {
               </label>
               <select className={selectClass} {...bulkForm.register('route', { required: true })}>
                 <option value="">Select route</option>
-                {(routes ?? []).map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
+                {writableRoutes.map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
               </select>
             </div>
             <div>

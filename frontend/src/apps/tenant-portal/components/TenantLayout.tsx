@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Bus, Users, Ticket,
   Wrench, UserCheck, BarChart3, Settings, Menu, X,
   Bell, LogOut, Route, MapPin, BookOpen,
-  Zap, Activity, ShieldCheck,
+  Zap, Activity, ShieldCheck, Wallet,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -47,6 +47,7 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
     { to: '/tenant/dispatch', icon: Zap, label: t('nav.scheduler') },
     { to: '/tenant/routes', icon: Route, label: t('nav.routes') },
     { to: '/tenant/stops', icon: MapPin, label: t('nav.busStops') },
+    { to: '/tenant/fares', icon: Wallet, label: t('nav.fares') },
     { to: '/tenant/fleet', icon: Bus, label: t('nav.fleetManagement') },
     { to: '/tenant/drivers', icon: UserCheck, label: t('nav.drivers') },
     { to: '/tenant/conductors', icon: Users, label: t('nav.collectors') },
