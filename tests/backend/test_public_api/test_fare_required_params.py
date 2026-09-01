@@ -3,10 +3,11 @@ Tests for GET /public-api/v1/fares/ requiring route_id, from_stop, and
 to_stop together (closes gap C4 — was previously accepting any subset,
 including none of the three).
 
-Mocks tenant_db.fetch_fares — no live Postgres needed. The zone-based fare
-matching itself (from_stop/to_stop resolved to a Stop.zone, matched against
-FareMatrix.zone_from/zone_to) is unchanged and already covered elsewhere;
-this file only tests the new required-params gate.
+Mocks tenant_db.fetch_fares — no live Postgres needed. The stop-name-based fare
+matching itself (from_stop/to_stop resolved to that stop's name_en, matched
+against FareMatrix.zone_from/zone_to) lives in tenant_db.fetch_fares and is
+verified against a live Postgres separately, not here; this file only tests
+the required-params gate.
 """
 from unittest.mock import AsyncMock, patch
 

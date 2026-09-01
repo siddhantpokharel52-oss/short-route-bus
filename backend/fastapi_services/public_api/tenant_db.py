@@ -519,8 +519,16 @@ async def fetch_fares(
 ) -> list[dict]:
     """apps.platform.FareMatrix, optionally narrowed by route and/or a from/to stop_code pair.
 
-    from_stop/to_stop are matched the same way apps.platform.PublicFareInquiryView does it:
-    resolved to the stop's zone, then matched against FareMatrix.zone_from/zone_to.
+    from_stop/to_stop are resolved to that stop's name_en, then matched against
+    FareMatrix.zone_from/zone_to -- i.e. FareMatrix rows are entered with the actual
+    boarding/dropping stop names (exactly how the admin/tenant fare UI collects them:
+    "Ghachaur" -> "Bagar", not an abstract zone label), matched case-insensitively.
+
+    Previously this matched via Stop.zone instead, but that field is never populated
+    in practice -- every stop's zone is blank, so a real stage-fare chart entered by
+    stop name was never actually findable by this lookup. Matching on the stop's own
+    name instead means fares are discoverable using exactly the data already being
+    entered, with no separate zone-tagging step required first.
     """
     query = """
         SELECT f.id, f.route_id, f.zone_from, f.zone_to, f.base_fare, f.peak_fare,
@@ -535,13 +543,13 @@ async def fetch_fares(
         query += " AND f.route_id = :route_id"
         params["route_id"] = route_id
     if from_stop:
-        query += """ AND f.zone_from = (
-            SELECT zone FROM public.platform_stop WHERE stop_code = :from_stop LIMIT 1
+        query += """ AND f.zone_from ILIKE (
+            SELECT name_en FROM public.platform_stop WHERE stop_code = :from_stop LIMIT 1
         )"""
         params["from_stop"] = from_stop
     if to_stop:
-        query += """ AND f.zone_to = (
-            SELECT zone FROM public.platform_stop WHERE stop_code = :to_stop LIMIT 1
+        query += """ AND f.zone_to ILIKE (
+            SELECT name_en FROM public.platform_stop WHERE stop_code = :to_stop LIMIT 1
         )"""
         params["to_stop"] = to_stop
 

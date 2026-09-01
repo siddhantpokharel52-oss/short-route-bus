@@ -156,14 +156,16 @@ no broader fare-browsing use case for a passenger-facing API.
 | Query param | Notes |
 |---|---|
 | `route_id` | Required. |
-| `from_stop`, `to_stop` | Required. Stop **codes** (not IDs) — resolved to `Stop.zone`, matched against `FareMatrix.zone_from`/`zone_to`, same logic `apps.platform.PublicFareInquiryView` already uses. |
+| `from_stop`, `to_stop` | Required. Stop **codes** (not IDs) — each resolved to that stop's `name_en`, then matched (case-insensitively) against `FareMatrix.zone_from`/`zone_to`. |
 
-**Fare precision = zone precision.** Two different stops sharing a zone return
-the same fare — this is the correct model for a genuine stage-fare system (a
-small number of price bands), not a bug. It's already extensible to per-stop
-precision with **zero code changes**: give a stop its own unique `zone` value
-via the existing `FareMatrixViewSet`/`Stop` admin endpoints. No new table or
-endpoint needed for that.
+**Fare precision = however the fare chart was entered.** `FareMatrix.zone_from`/
+`zone_to` hold the actual boarding/dropping stop names, exactly as typed into
+the admin/tenant fare UI (e.g. "Ghachaur" → "Bagar") — so a fare is only
+findable for the specific stop pairs it was entered for. This replaced an
+earlier design that matched via a `Stop.zone` field instead; that field is
+never populated in practice, so it made every real stage-fare chart
+unfindable through this endpoint. `Stop.zone` is no longer used by this
+lookup at all.
 
 #### `GET /routes/{route_id}/timetable/`
 Scheduled (**not live**) departure/arrival slots. `apps.scheduling.Timetable`
