@@ -128,6 +128,22 @@ class IsDriver(BasePermission):
                     request.user.role == User.Role.DRIVER)
 
 
+class CanViewFares(BasePermission):
+    """Platform staff (see every route's fares) and tenant operators (read-only,
+    scoped to their own assigned routes in FareMatrixViewSet.get_queryset) --
+    fares are centrally set/approved, not something an operator edits, but an
+    operator still needs to see the official rate for their own route."""
+    _tenant_roles = {
+        User.Role.COMPANY_ADMIN,
+        User.Role.OPERATIONS_MANAGER,
+        User.Role.DISPATCHER,
+    }
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and
+                    (request.user.is_platform_role or request.user.role in self._tenant_roles))
+
+
 class IsConductor(BasePermission):
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated and

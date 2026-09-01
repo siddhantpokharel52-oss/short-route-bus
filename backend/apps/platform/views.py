@@ -17,7 +17,9 @@ from .serializers import (
     FareMatrixSerializer, SmartCardSerializer, CardTransactionSerializer,
     CardRechargeSerializer, FarePolicySerializer,
 )
-from backend.apps.users.permissions import IsSuperAdmin, IsPlatformRole, IsTransportAuthority, CanManageRoutes
+from backend.apps.users.permissions import (
+    IsSuperAdmin, IsPlatformRole, IsTransportAuthority, CanManageRoutes, CanViewFares,
+)
 
 
 def api_response(data=None, message="Success", success=True, errors=None, status_code=200):
@@ -267,8 +269,23 @@ class TicketTypeViewSet(ModelViewSet):
 class FareMatrixViewSet(ModelViewSet):
     queryset = FareMatrix.objects.all()
     serializer_class = FareMatrixSerializer
-    permission_classes = [IsPlatformRole]
     filterset_fields = ["route", "ticket_type"]
+
+    def get_permissions(self):
+        if self.action in ["list", "retrieve"]:
+            return [CanViewFares()]
+        return [IsPlatformRole()]
+
+    def get_queryset(self):
+        qs = FareMatrix.objects.all()
+        user = self.request.user
+        if self.action in ["list", "retrieve"] and not user.is_platform_role:
+            route_ids = RouteAssignment.objects.filter(
+                tenant__schema_name=user.tenant_schema,
+                status=RouteAssignment.Status.ACTIVE,
+            ).values_list("route_id", flat=True)
+            return qs.filter(route_id__in=route_ids)
+        return qs
 
     def _resolve_route(self, value):
         if not value:
