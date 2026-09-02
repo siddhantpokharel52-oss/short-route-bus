@@ -41,17 +41,18 @@ interface FareRow {
   base_fare: string
   peak_fare: string
   student_fare: string
+  senior_citizen_fare: string
   created_at: string
 }
 
 interface AddFareValues {
   route: string
-  ticket_type: string
   zone_from: string
   zone_to: string
   base_fare: string
   peak_fare: string
   student_fare: string
+  senior_citizen_fare: string
 }
 
 interface BulkFareRowInput {
@@ -60,15 +61,15 @@ interface BulkFareRowInput {
   base_fare: string
   peak_fare: string
   student_fare: string
+  senior_citizen_fare: string
 }
 
 interface BulkFormValues {
   route: string
-  ticket_type: string
   fares: BulkFareRowInput[]
 }
 
-const emptyBulkRow: BulkFareRowInput = { zone_from: '', zone_to: '', base_fare: '', peak_fare: '', student_fare: '' }
+const emptyBulkRow: BulkFareRowInput = { zone_from: '', zone_to: '', base_fare: '', peak_fare: '', student_fare: '', senior_citizen_fare: '' }
 
 const selectClass =
   'w-full rounded-lg border px-3 py-2 text-sm bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100 ' +
@@ -147,10 +148,11 @@ export default function FaresPage() {
     () => Object.fromEntries((routes ?? []).map((r) => [r.id, r])),
     [routes]
   )
-  const ticketTypeById = useMemo(
-    () => Object.fromEntries((ticketTypes ?? []).map((tt) => [tt.id, tt])),
-    [ticketTypes]
-  )
+  // Ticket type is no longer an admin-facing concept on this page -- every
+  // fare added here is saved against whichever ticket type comes first
+  // (there is exactly one, "Adult", in practice; ticket types stay a real
+  // model for POS/ticketing, just not something a fare-chart admin picks).
+  const defaultTicketTypeId = ticketTypes?.[0]?.id
 
   const { data: fares, isLoading } = useQuery({
     queryKey: ['fare-matrix', pagination.page, routeFilter],
@@ -172,7 +174,7 @@ export default function FaresPage() {
   const { data: addRouteStops } = useRouteStops(addRouteId)
 
   const createMutation = useMutation({
-    mutationFn: (payload: Partial<AddFareValues>) =>
+    mutationFn: (payload: Partial<AddFareValues> & { ticket_type: string }) =>
       apiClient.post('/platform/fare-matrix/', payload).then((r) => r.data),
     onSuccess: () => {
       toast.success('Fare added.')
@@ -187,10 +189,13 @@ export default function FaresPage() {
   })
 
   const onSubmitAdd = (values: AddFareValues) => {
+    if (!defaultTicketTypeId) { toast.error('No ticket type configured.'); return }
     createMutation.mutate({
       ...values,
+      ticket_type: defaultTicketTypeId,
       peak_fare: values.peak_fare || values.base_fare,
       student_fare: values.student_fare || values.base_fare,
+      senior_citizen_fare: values.senior_citizen_fare || values.base_fare,
     })
   }
 
@@ -203,14 +208,15 @@ export default function FaresPage() {
   const openEdit = (row: FareRow) => {
     setEditTarget(row)
     editForm.reset({
-      route: row.route ?? '', ticket_type: row.ticket_type,
+      route: row.route ?? '',
       zone_from: row.zone_from, zone_to: row.zone_to,
-      base_fare: row.base_fare, peak_fare: row.peak_fare, student_fare: row.student_fare,
+      base_fare: row.base_fare, peak_fare: row.peak_fare,
+      student_fare: row.student_fare, senior_citizen_fare: row.senior_citizen_fare,
     })
   }
 
   const updateMutation = useMutation({
-    mutationFn: (payload: AddFareValues) =>
+    mutationFn: (payload: AddFareValues & { ticket_type: string }) =>
       apiClient.patch(`/platform/fare-matrix/${editTarget?.id}/`, payload).then((r) => r.data),
     onSuccess: () => {
       toast.success('Fare updated.')
@@ -224,10 +230,14 @@ export default function FaresPage() {
   })
 
   const onSubmitEdit = (values: AddFareValues) => {
+    const ticketType = editTarget?.ticket_type ?? defaultTicketTypeId
+    if (!ticketType) { toast.error('No ticket type configured.'); return }
     updateMutation.mutate({
       ...values,
+      ticket_type: ticketType,
       peak_fare: values.peak_fare || values.base_fare,
       student_fare: values.student_fare || values.base_fare,
+      senior_citizen_fare: values.senior_citizen_fare || values.base_fare,
     })
   }
 
@@ -245,7 +255,7 @@ export default function FaresPage() {
 
   // ── Bulk import a whole fare chart ─────────────────────────────────
   const bulkForm = useForm<BulkFormValues>({
-    defaultValues: { route: '', ticket_type: '', fares: [emptyBulkRow] },
+    defaultValues: { route: '', fares: [emptyBulkRow] },
   })
   const { fields, append, remove, replace } = useFieldArray({ control: bulkForm.control, name: 'fares' })
   const bulkRouteId = bulkForm.watch('route')
@@ -259,7 +269,10 @@ export default function FaresPage() {
     if (bulkRouteStops && bulkRouteStops.length >= 2) {
       const legs: BulkFareRowInput[] = []
       for (let i = 0; i < bulkRouteStops.length - 1; i++) {
-        legs.push({ zone_from: bulkRouteStops[i].name_en, zone_to: bulkRouteStops[i + 1].name_en, base_fare: '', peak_fare: '', student_fare: '' })
+        legs.push({
+          zone_from: bulkRouteStops[i].name_en, zone_to: bulkRouteStops[i + 1].name_en,
+          base_fare: '', peak_fare: '', student_fare: '', senior_citizen_fare: '',
+        })
       }
       replace(legs)
     }
@@ -272,7 +285,7 @@ export default function FaresPage() {
     onSuccess: (data) => {
       toast.success(data.message || 'Fares imported.')
       setShowBulk(false)
-      bulkForm.reset({ route: '', ticket_type: '', fares: [emptyBulkRow] })
+      bulkForm.reset({ route: '', fares: [emptyBulkRow] })
       invalidate()
     },
     onError: (err: any) => {
@@ -289,15 +302,17 @@ export default function FaresPage() {
   })
 
   const onSubmitBulk = (values: BulkFormValues) => {
+    if (!defaultTicketTypeId) { toast.error('No ticket type configured.'); return }
     bulkMutation.mutate({
       route: values.route,
-      ticket_type: values.ticket_type,
+      ticket_type: defaultTicketTypeId,
       fares: values.fares.map((f) => ({
         zone_from: f.zone_from,
         zone_to: f.zone_to,
         base_fare: f.base_fare,
         ...(f.peak_fare ? { peak_fare: f.peak_fare } : {}),
         ...(f.student_fare ? { student_fare: f.student_fare } : {}),
+        ...(f.senior_citizen_fare ? { senior_citizen_fare: f.senior_citizen_fare } : {}),
       })),
     })
   }
@@ -309,10 +324,10 @@ export default function FaresPage() {
     },
     { key: 'zone_from', header: 'From', render: (r) => r.zone_from || <span className="text-gray-400">—</span> },
     { key: 'zone_to', header: 'To', render: (r) => r.zone_to || <span className="text-gray-400">—</span> },
-    { key: 'ticket_type', header: 'Ticket Type', render: (r) => ticketTypeById[r.ticket_type]?.code ?? r.ticket_type },
     { key: 'base_fare', header: 'Base Fare', render: (r) => `Rs. ${r.base_fare}` },
     { key: 'peak_fare', header: 'Peak Fare', render: (r) => `Rs. ${r.peak_fare}` },
     { key: 'student_fare', header: 'Student Fare', render: (r) => `Rs. ${r.student_fare}` },
+    { key: 'senior_citizen_fare', header: 'Senior Citizen Fare', render: (r) => `Rs. ${r.senior_citizen_fare}` },
     {
       key: 'id', header: 'Actions',
       render: (r) => (
@@ -379,25 +394,14 @@ export default function FaresPage() {
       {/* Add single fare */}
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Fare" size="lg">
         <form onSubmit={addForm.handleSubmit(onSubmitAdd)} className="space-y-4 p-6">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Route <span className="text-red-500">*</span>
-              </label>
-              <select className={selectClass} {...addForm.register('route', { required: true })}>
-                <option value="">Select route</option>
-                {(routes ?? []).map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Ticket Type <span className="text-red-500">*</span>
-              </label>
-              <select className={selectClass} {...addForm.register('ticket_type', { required: true })}>
-                <option value="">Select ticket type</option>
-                {(ticketTypes ?? []).map((tt) => <option key={tt.id} value={tt.id}>{tt.code} — {tt.name_en}</option>)}
-              </select>
-            </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Route <span className="text-red-500">*</span>
+            </label>
+            <select className={selectClass} {...addForm.register('route', { required: true })}>
+              <option value="">Select route</option>
+              {(routes ?? []).map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
+            </select>
           </div>
           {addRouteId && (!addRouteStops || addRouteStops.length === 0) && (
             <p className="text-xs text-amber-600">This route has no stops yet — add stops to the route first to pick them here, or leave From/To blank for a flat fare.</p>
@@ -412,10 +416,13 @@ export default function FaresPage() {
               <StopSelect stops={toOptionsAfter(addRouteStops ?? [], addFromName)} allowFlat {...addForm.register('zone_to')} />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <Input label="Base Fare (NPR)" type="number" step="0.01" min="0" required {...addForm.register('base_fare', { required: true })} />
             <Input label="Peak Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Base Fare" {...addForm.register('peak_fare')} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
             <Input label="Student Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Base Fare" {...addForm.register('student_fare')} />
+            <Input label="Senior Citizen Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Base Fare" {...addForm.register('senior_citizen_fare')} />
           </div>
           <div className="flex justify-end gap-3 border-t pt-4">
             <Button variant="secondary" type="button" onClick={() => setShowAdd(false)}>Cancel</Button>
@@ -433,49 +440,40 @@ export default function FaresPage() {
             that skips stops. A fare applies both directions automatically, so there's no need
             to also enter the reverse leg.
           </p>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Route <span className="text-red-500">*</span>
-              </label>
-              <select className={selectClass} {...bulkForm.register('route', { required: true })}>
-                <option value="">Select route</option>
-                {(routes ?? []).map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Ticket Type <span className="text-red-500">*</span>
-              </label>
-              <select className={selectClass} {...bulkForm.register('ticket_type', { required: true })}>
-                <option value="">Select ticket type</option>
-                {(ticketTypes ?? []).map((tt) => <option key={tt.id} value={tt.id}>{tt.code} — {tt.name_en}</option>)}
-              </select>
-            </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Route <span className="text-red-500">*</span>
+            </label>
+            <select className={selectClass} {...bulkForm.register('route', { required: true })}>
+              <option value="">Select route</option>
+              {(routes ?? []).map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
+            </select>
           </div>
 
           {bulkRouteId && (!bulkRouteStops || bulkRouteStops.length < 2) && (
             <p className="text-xs text-amber-600">This route needs at least 2 stops before legs can be suggested here.</p>
           )}
 
-          <div className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] gap-2 px-1 text-xs font-medium text-gray-500">
+          <div className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_auto] gap-2 px-1 text-xs font-medium text-gray-500">
             <span>From stop</span>
             <span>To stop</span>
             <span>Base fare</span>
             <span>Peak fare (optional)</span>
             <span>Student fare (optional)</span>
+            <span>Senior citizen fare (optional)</span>
             <span />
           </div>
           <div className="max-h-96 space-y-2 overflow-y-auto rounded-lg border border-gray-200 p-3 dark:border-gray-700">
             {fields.map((field, index) => {
               const rowFromName = bulkForm.watch(`fares.${index}.zone_from`)
               return (
-                <div key={field.id} className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] items-center gap-2">
+                <div key={field.id} className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_auto] items-center gap-2">
                   <StopSelect stops={bulkRouteStops ?? []} defaultValue={field.zone_from} {...bulkForm.register(`fares.${index}.zone_from` as const, { required: true })} />
                   <StopSelect stops={toOptionsAfter(bulkRouteStops ?? [], rowFromName)} defaultValue={field.zone_to} {...bulkForm.register(`fares.${index}.zone_to` as const, { required: true })} />
                   <Input type="number" step="0.01" min="0" {...bulkForm.register(`fares.${index}.base_fare` as const, { required: true })} />
                   <Input type="number" step="0.01" min="0" {...bulkForm.register(`fares.${index}.peak_fare` as const)} />
                   <Input type="number" step="0.01" min="0" {...bulkForm.register(`fares.${index}.student_fare` as const)} />
+                  <Input type="number" step="0.01" min="0" {...bulkForm.register(`fares.${index}.senior_citizen_fare` as const)} />
                   <Button
                     variant="ghost" size="sm" type="button"
                     onClick={() => remove(index)}
@@ -512,10 +510,10 @@ export default function FaresPage() {
             <div className="flex justify-between"><span className="text-gray-500">Route</span><span className="font-medium">{viewTarget.route ? (routeById[viewTarget.route]?.route_code ?? viewTarget.route) : 'Flat / all routes'}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">From</span><span className="font-medium">{viewTarget.zone_from || '—'}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">To</span><span className="font-medium">{viewTarget.zone_to || '—'}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Ticket Type</span><span className="font-medium">{ticketTypeById[viewTarget.ticket_type]?.code ?? viewTarget.ticket_type}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Base Fare</span><span className="font-medium">Rs. {viewTarget.base_fare}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Peak Fare</span><span className="font-medium">Rs. {viewTarget.peak_fare}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Student Fare</span><span className="font-medium">Rs. {viewTarget.student_fare}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Senior Citizen Fare</span><span className="font-medium">Rs. {viewTarget.senior_citizen_fare}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Created</span><span className="font-medium">{new Date(viewTarget.created_at).toLocaleString()}</span></div>
             <div className="flex justify-end border-t pt-4">
               <Button variant="secondary" onClick={() => setViewTarget(null)}>Close</Button>
@@ -527,25 +525,14 @@ export default function FaresPage() {
       {/* Edit a fare */}
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Fare" size="lg">
         <form onSubmit={editForm.handleSubmit(onSubmitEdit)} className="space-y-4 p-6">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Route <span className="text-red-500">*</span>
-              </label>
-              <select className={selectClass} {...editForm.register('route', { required: true })}>
-                <option value="">Select route</option>
-                {(routes ?? []).map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Ticket Type <span className="text-red-500">*</span>
-              </label>
-              <select className={selectClass} {...editForm.register('ticket_type', { required: true })}>
-                <option value="">Select ticket type</option>
-                {(ticketTypes ?? []).map((tt) => <option key={tt.id} value={tt.id}>{tt.code} — {tt.name_en}</option>)}
-              </select>
-            </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Route <span className="text-red-500">*</span>
+            </label>
+            <select className={selectClass} {...editForm.register('route', { required: true })}>
+              <option value="">Select route</option>
+              {(routes ?? []).map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
+            </select>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -557,10 +544,13 @@ export default function FaresPage() {
               <StopSelect stops={toOptionsAfter(editRouteStops ?? [], editFromName)} allowFlat {...editForm.register('zone_to')} />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <Input label="Base Fare (NPR)" type="number" step="0.01" min="0" required {...editForm.register('base_fare', { required: true })} />
             <Input label="Peak Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Base Fare" {...editForm.register('peak_fare')} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
             <Input label="Student Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Base Fare" {...editForm.register('student_fare')} />
+            <Input label="Senior Citizen Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Base Fare" {...editForm.register('senior_citizen_fare')} />
           </div>
           <div className="flex justify-end gap-3 border-t pt-4">
             <Button variant="secondary" type="button" onClick={() => setEditTarget(null)}>Cancel</Button>

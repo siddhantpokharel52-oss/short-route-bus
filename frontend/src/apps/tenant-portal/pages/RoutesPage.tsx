@@ -182,6 +182,17 @@ export default function RoutesPage() {
         geojson_path: geojson,
         route_type: 'EXCLUSIVE',
         status: 'DRAFT',
+        // When both Start and End were picked via search, the backend creates
+        // real Stops for them and locks them as this route's fixed first/last
+        // stop -- every stop added afterwards inserts between them, so a fare
+        // chart built from this route's stops runs all the way from the named
+        // start to the named end, not just between the manually-added stops.
+        ...(routeStart && routeEnd
+          ? {
+              route_start: { name_en: routeStart.name, latitude: routeStart.lat, longitude: routeStart.lon },
+              route_end: { name_en: routeEnd.name, latitude: routeEnd.lat, longitude: routeEnd.lon },
+            }
+          : {}),
       })
     },
     onSuccess: () => {

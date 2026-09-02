@@ -97,6 +97,13 @@ class Route(models.Model):
     name_ne = models.CharField(max_length=255)
     start_stop = models.ForeignKey(Stop, null=True, blank=True, on_delete=models.SET_NULL, related_name="routes_as_start")
     end_stop = models.ForeignKey(Stop, null=True, blank=True, on_delete=models.SET_NULL, related_name="routes_as_end")
+    # True when start_stop/end_stop were set from an explicit Route Start /
+    # Route End pick (e.g. a Baato place search) rather than derived from
+    # whichever stop happens to be first/last in route_stops. Locked
+    # endpoints never move once set: RouteViewSet.add_stop inserts new stops
+    # between them instead of appending after end_stop, and remove_stop
+    # refuses to delete either one directly.
+    endpoints_locked = models.BooleanField(default=False)
     distance_km = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     route_type = models.CharField(max_length=20, choices=RouteType.choices, default=RouteType.EXCLUSIVE)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
@@ -232,6 +239,7 @@ class FareMatrix(models.Model):
     base_fare = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
     peak_fare = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
     student_fare = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
+    senior_citizen_fare = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(

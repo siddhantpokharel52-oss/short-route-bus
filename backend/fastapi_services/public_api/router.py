@@ -470,6 +470,7 @@ def _serialize_fare(f: dict) -> dict:
         "base_fare": f.get("base_fare"),
         "peak_fare": f.get("peak_fare"),
         "student_fare": f.get("student_fare"),
+        "senior_citizen_fare": f.get("senior_citizen_fare"),
         "ticket_type_id": f.get("ticket_type_id"),
         "ticket_type_code": f.get("ticket_type_code"),
         "ticket_type_name": f.get("ticket_type_name"),

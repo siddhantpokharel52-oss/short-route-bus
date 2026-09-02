@@ -520,7 +520,7 @@ async def _fetch_fares_exact(
     per pair rather than twice (forward and back)."""
     query = """
         SELECT f.id, f.route_id, f.zone_from, f.zone_to, f.base_fare, f.peak_fare,
-               f.student_fare, f.ticket_type_id, tt.code AS ticket_type_code,
+               f.student_fare, f.senior_citizen_fare, f.ticket_type_id, tt.code AS ticket_type_code,
                tt.name_en AS ticket_type_name
         FROM public.platform_farematrix f
         JOIN public.platform_tickettype tt ON tt.id = f.ticket_type_id

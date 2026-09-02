@@ -109,6 +109,40 @@ class RouteViewSet(ModelViewSet):
                     start_date=timezone.now().date(), approved_by=user,
                 )
 
+        # Optional route_start / route_end (e.g. a Baato place search pick on
+        # the Add Route form): { name_en, name_ne?, latitude, longitude }.
+        # Previously these only centered the map and composed the route's
+        # display name -- no Stop was ever created for them, which meant a
+        # fare chart built from this route's stops could never include a
+        # leg from/to the route's actual named endpoints, only between the
+        # manually-added stops in between. Creating real Stops for them (and
+        # locking them as the route's fixed first/last stop) fixes that, and
+        # makes them selectable everywhere else a stop can be (POS, etc.).
+        route_start = self.request.data.get("route_start")
+        route_end = self.request.data.get("route_end")
+        if route_start and route_end:
+            import secrets as _secrets
+
+            def _make_endpoint_stop(place):
+                return Stop.objects.create(
+                    stop_code=f"KV{_secrets.token_hex(3).upper()}",
+                    name_en=place.get("name_en") or place.get("name", ""),
+                    name_ne=place.get("name_ne", ""),
+                    latitude=place.get("latitude") if place.get("latitude") is not None else place.get("lat"),
+                    longitude=place.get("longitude") if place.get("longitude") is not None else place.get("lon"),
+                    status="ACTIVE",
+                    created_by=user,
+                )
+
+            start_stop = _make_endpoint_stop(route_start)
+            end_stop = _make_endpoint_stop(route_end)
+            RouteStop.objects.create(route=route, stop=start_stop, sequence_no=1, estimated_time_from_start=0)
+            RouteStop.objects.create(route=route, stop=end_stop, sequence_no=2, estimated_time_from_start=0)
+            route.start_stop = start_stop
+            route.end_stop = end_stop
+            route.endpoints_locked = True
+            route.save(update_fields=["start_stop", "end_stop", "endpoints_locked", "updated_at"])
+
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
         route = self.get_object()
@@ -183,24 +217,43 @@ class RouteViewSet(ModelViewSet):
         stop_ser.is_valid(raise_exception=True)
         stop = stop_ser.save(created_by=request.user)
 
-        # --- Determine sequence number ---
-        from django.db.models import Max
-        max_seq = RouteStop.objects.filter(route=route).aggregate(m=Max("sequence_no"))["m"] or 0
-        sequence_no = request.data.get("sequence_no", max_seq + 1)
+        from django.db.models import F, Max
 
-        # --- Link to route ---
-        route_stop = RouteStop.objects.create(
-            route=route,
-            stop=stop,
-            sequence_no=sequence_no,
-            estimated_time_from_start=request.data.get("estimated_time_from_start", 0),
-        )
+        if route.endpoints_locked and route.end_stop_id:
+            # Start/end are fixed anchors (see perform_create) -- every new
+            # stop is an intermediate leg, so it goes right before the
+            # current end, pushing end (and anything already between them)
+            # one position later instead of appending after it.
+            end_route_stop = RouteStop.objects.filter(route=route, stop_id=route.end_stop_id).first()
+            requested_seq = request.data.get("sequence_no")
+            sequence_no = requested_seq or (end_route_stop.sequence_no if end_route_stop else 1)
+            if not requested_seq:
+                RouteStop.objects.filter(route=route, sequence_no__gte=sequence_no).update(
+                    sequence_no=F("sequence_no") + 1
+                )
+            route_stop = RouteStop.objects.create(
+                route=route,
+                stop=stop,
+                sequence_no=sequence_no,
+                estimated_time_from_start=request.data.get("estimated_time_from_start", 0),
+            )
+            # start_stop/end_stop stay pinned to the original picks -- do not touch them.
+        else:
+            max_seq = RouteStop.objects.filter(route=route).aggregate(m=Max("sequence_no"))["m"] or 0
+            sequence_no = request.data.get("sequence_no", max_seq + 1)
 
-        # Update start/end stop on route
-        if sequence_no == 1 or route.start_stop is None:
-            route.start_stop = stop
-        route.end_stop = stop
-        route.save(update_fields=["start_stop", "end_stop", "updated_at"])
+            route_stop = RouteStop.objects.create(
+                route=route,
+                stop=stop,
+                sequence_no=sequence_no,
+                estimated_time_from_start=request.data.get("estimated_time_from_start", 0),
+            )
+
+            # Update start/end stop on route
+            if sequence_no == 1 or route.start_stop is None:
+                route.start_stop = stop
+            route.end_stop = stop
+            route.save(update_fields=["start_stop", "end_stop", "updated_at"])
 
         return api_response(
             data={
@@ -232,18 +285,28 @@ class RouteViewSet(ModelViewSet):
             )
 
         route_stop = get_object_or_404(RouteStop, id=route_stop_id, route=route)
+
+        if route.endpoints_locked and route_stop.stop_id in (route.start_stop_id, route.end_stop_id):
+            return api_response(
+                success=False,
+                message="Cannot remove the route's start or end point.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
         stop_name = route_stop.stop.name_en
         route_stop.delete()
 
-        # Recompute start_stop / end_stop on the route after removal
-        remaining = RouteStop.objects.filter(route=route).order_by("sequence_no")
-        if remaining.exists():
-            route.start_stop = remaining.first().stop
-            route.end_stop = remaining.last().stop
-        else:
-            route.start_stop = None
-            route.end_stop = None
-        route.save(update_fields=["start_stop", "end_stop", "updated_at"])
+        # Recompute start_stop / end_stop on the route after removal -- only
+        # when they aren't fixed anchors (see perform_create/add_stop).
+        if not route.endpoints_locked:
+            remaining = RouteStop.objects.filter(route=route).order_by("sequence_no")
+            if remaining.exists():
+                route.start_stop = remaining.first().stop
+                route.end_stop = remaining.last().stop
+            else:
+                route.start_stop = None
+                route.end_stop = None
+            route.save(update_fields=["start_stop", "end_stop", "updated_at"])
 
         return api_response(
             message=f"Stop '{stop_name}' removed from route {route.route_code}.",
@@ -403,7 +466,7 @@ class FareMatrixViewSet(ModelViewSet):
         FareMatrix row per stop pair.
 
         Body: {"route": "<id or route_code>", "ticket_type": "<id or code>",
-        "fares": [{"zone_from", "zone_to", "base_fare", "peak_fare"?, "student_fare"?}, ...]}
+        "fares": [{"zone_from", "zone_to", "base_fare", "peak_fare"?, "student_fare"?, "senior_citizen_fare"?}, ...]}
         route/ticket_type may also be set per-row, overriding the top-level default.
         Upserts on (route, ticket_type, zone_from, zone_to); re-uploading a
         revised chart updates existing rows instead of duplicating them.
@@ -451,6 +514,7 @@ class FareMatrixViewSet(ModelViewSet):
             base_fare = row.get("base_fare")
             peak_fare = row["peak_fare"] if row.get("peak_fare") is not None else base_fare
             student_fare = row["student_fare"] if row.get("student_fare") is not None else base_fare
+            senior_citizen_fare = row["senior_citizen_fare"] if row.get("senior_citizen_fare") is not None else base_fare
 
             existing = FareMatrix.objects.filter(
                 route=route, ticket_type=ticket_type, zone_from=zone_from, zone_to=zone_to,
@@ -459,7 +523,8 @@ class FareMatrixViewSet(ModelViewSet):
                 "route": str(route.id) if route else None,
                 "zone_from": zone_from, "zone_to": zone_to,
                 "ticket_type": str(ticket_type.id),
-                "base_fare": base_fare, "peak_fare": peak_fare, "student_fare": student_fare,
+                "base_fare": base_fare, "peak_fare": peak_fare,
+                "student_fare": student_fare, "senior_citizen_fare": senior_citizen_fare,
             })
             if not serializer.is_valid():
                 errors.append({"row": i, "error": serializer.errors})
