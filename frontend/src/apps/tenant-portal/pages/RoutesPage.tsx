@@ -7,9 +7,11 @@ import { Plus, Search, MapPin, Ruler, Trash2, Undo2, Map as MapIcon, CheckCircle
 import Map, { Marker, Popup, Source, Layer, useMap } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { BAATO_STYLE_URL } from '@/config/baato'
+import { getDirections, BaatoPlace } from '@services/baatoService'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
 import { NepaliInput } from '@components/shared/NepaliInput'
+import { PlaceSearchInput } from '@components/shared/PlaceSearchInput'
 import { Table, Column, Pagination } from '@components/shared/Table'
 import { Badge } from '@components/shared/Badge'
 import { Modal } from '@components/shared/Modal'
@@ -51,6 +53,17 @@ function MapResizeHandler() {
   return null
 }
 
+// Flies the map to a freshly-picked Route Start/End place.
+function MapFlyTo({ target }: { target: [number, number] | null }) {
+  const { current: map } = useMap()
+  useEffect(() => {
+    if (map && target) {
+      map.flyTo({ center: [target[1], target[0]], zoom: 14, duration: 1200 })
+    }
+  }, [map, target])
+  return null
+}
+
 // ── Route interface ──────────────────────────────────────────────────────────
 interface Route {
   id: string
@@ -82,6 +95,23 @@ export default function RoutesPage() {
   const [waypoints, setWaypoints] = useState<[number, number][]>([])
   const [openWaypointIdx, setOpenWaypointIdx] = useState<number | null>(null)
 
+  // Route Start / Route End (Baato search) -- drive the map fly-to and the
+  // auto-suggested Directions path; manual waypoint editing still layers on
+  // top of whatever this produces.
+  const [routeStart, setRouteStart] = useState<BaatoPlace | null>(null)
+  const [routeEnd, setRouteEnd] = useState<BaatoPlace | null>(null)
+  const [nameEdited, setNameEdited] = useState(false)
+  const [flyTarget, setFlyTarget] = useState<[number, number] | null>(null)
+  const [directionsLoading, setDirectionsLoading] = useState(false)
+
+  const resetRouteDraft = () => {
+    setWaypoints([])
+    setRouteStart(null)
+    setRouteEnd(null)
+    setNameEdited(false)
+    setFlyTarget(null)
+  }
+
   const [viewTarget, setViewTarget] = useState<Route | null>(null)
   const [editTarget, setEditTarget] = useState<Route | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Route | null>(null)
@@ -100,7 +130,37 @@ export default function RoutesPage() {
     },
   })
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<RouteForm>()
+  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<RouteForm>()
+  const nameEnField = register('name_en', { required: t('routes.required') })
+
+  // Auto-compose name_en as "{start} — {end}" once both are set, but never
+  // clobber a name the operator has already typed themselves.
+  useEffect(() => {
+    if (!nameEdited && routeStart && routeEnd) {
+      setValue('name_en', `${routeStart.name} — ${routeEnd.name}`)
+    }
+  }, [routeStart, routeEnd, nameEdited, setValue])
+
+  // Once both Start and End are set, fetch a suggested road path and
+  // pre-fill it as the waypoints -- the operator can still add/undo/clear
+  // points on top of it, since a bus's real path often isn't the fastest
+  // driving route Directions would compute.
+  useEffect(() => {
+    if (!routeStart || !routeEnd) return
+    let cancelled = false
+    setDirectionsLoading(true)
+    getDirections([routeStart.lat, routeStart.lon], [routeEnd.lat, routeEnd.lon])
+      .then((result) => {
+        if (cancelled) return
+        if (result) {
+          setWaypoints(result.points)
+        } else {
+          toast.error('Could not find a road route between those two points — draw the path manually on the map.')
+        }
+      })
+      .finally(() => { if (!cancelled) setDirectionsLoading(false) })
+    return () => { cancelled = true }
+  }, [routeStart, routeEnd])
 
   const createMutation = useMutation({
     mutationFn: (d: RouteForm) => {
@@ -127,7 +187,7 @@ export default function RoutesPage() {
     onSuccess: () => {
       toast.success(t('routes.toasts.created'))
       setShowCreate(false)
-      setWaypoints([])
+      resetRouteDraft()
       reset()
       qc.invalidateQueries({ queryKey: ['routes'] })
     },
@@ -488,7 +548,7 @@ export default function RoutesPage() {
       {/* ── Add Route Modal — map draw ──────────────────────────────────────── */}
       <Modal
         open={showCreate}
-        onClose={() => { setShowCreate(false); setWaypoints([]); reset() }}
+        onClose={() => { setShowCreate(false); resetRouteDraft(); reset() }}
         title={t('routes.addRoute')}
         size="xl"
       >
@@ -499,6 +559,22 @@ export default function RoutesPage() {
             onSubmit={handleSubmit((d) => createMutation.mutate(d))}
             className="shrink-0 border-b border-gray-100 bg-gray-50 px-6 py-4"
           >
+            <div className="mb-3 grid grid-cols-2 gap-4">
+              <PlaceSearchInput
+                label="Route Start"
+                placeholder="Search a starting place..."
+                biasLat={KATHMANDU[0]}
+                biasLon={KATHMANDU[1]}
+                onSelect={(place) => { setRouteStart(place); setFlyTarget([place.lat, place.lon]) }}
+              />
+              <PlaceSearchInput
+                label="Route End"
+                placeholder="Search an ending place..."
+                biasLat={KATHMANDU[0]}
+                biasLon={KATHMANDU[1]}
+                onSelect={(place) => { setRouteEnd(place); setFlyTarget([place.lat, place.lon]) }}
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               <Input
                 label={`${t('routes.editCodeLabel')} *`}
@@ -511,7 +587,8 @@ export default function RoutesPage() {
                   label={`${t('routes.editNameEnLabel')} *`}
                   placeholder="e.g. Ratnapark — Kalanki"
                   error={errors.name_en?.message}
-                  {...register('name_en', { required: t('routes.required') })}
+                  {...nameEnField}
+                  onChange={(e) => { nameEnField.onChange(e); setNameEdited(true) }}
                 />
               </div>
               <NepaliInput
@@ -537,6 +614,7 @@ export default function RoutesPage() {
                 }}
               >
                 <MapResizeHandler />
+                <MapFlyTo target={flyTarget} />
 
                 {/* Route polyline */}
                 {polylineGeoJSON && (
@@ -589,7 +667,7 @@ export default function RoutesPage() {
               {/* Map instruction overlay */}
               <div className="absolute top-3 left-1/2 z-10 -translate-x-1/2 rounded-xl bg-white/90 px-4 py-2 shadow text-sm font-medium text-gray-700 backdrop-blur-sm whitespace-nowrap pointer-events-none">
                 <MapIcon className="inline h-4 w-4 mr-1.5 text-primary-500" />
-                {t('routes.mapInstruction')}
+                {directionsLoading ? 'Finding a suggested route…' : t('routes.mapInstruction')}
               </div>
             </div>
 
@@ -690,7 +768,7 @@ export default function RoutesPage() {
                   variant="secondary"
                   type="button"
                   className="w-full"
-                  onClick={() => { setShowCreate(false); setWaypoints([]); reset() }}
+                  onClick={() => { setShowCreate(false); resetRouteDraft(); reset() }}
                 >
                   {t('common.cancel')}
                 </Button>
