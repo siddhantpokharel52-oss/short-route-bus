@@ -60,7 +60,6 @@ export default function TenantsPage() {
   const [suspendReason, setSuspendReason] = useState('')
   const [editTarget, setEditTarget] = useState<Tenant | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Tenant | null>(null)
-  const [deleteConfirmText, setDeleteConfirmText] = useState('')
 
   const [totalCount, setTotalCount] = useState(0)
   const [newTenantCreds, setNewTenantCreds] = useState<TenantCreateResult | null>(null)
@@ -120,7 +119,6 @@ export default function TenantsPage() {
     onSuccess: () => {
       toast.success(t('platform:tenants.toasts.deleted'))
       setDeleteTarget(null)
-      setDeleteConfirmText('')
       qc.invalidateQueries({ queryKey: ['tenants'] })
     },
     onError: (err: Error) => toast.error(err.message),
@@ -251,7 +249,7 @@ export default function TenantsPage() {
             size="sm"
             variant="ghost"
             leftIcon={<Trash2 className="h-3.5 w-3.5 text-red-600" />}
-            onClick={() => { setDeleteTarget(row); setDeleteConfirmText('') }}
+            onClick={() => setDeleteTarget(row)}
           >
             {t('common:common.delete')}
           </Button>
@@ -548,16 +546,6 @@ export default function TenantsPage() {
           <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-300">
             {t('platform:tenants.deleteModal.warning', { name: deleteTarget?.name })}
           </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              {t('platform:tenants.deleteModal.confirmLabel')}
-            </label>
-            <Input
-              value={deleteConfirmText}
-              onChange={(e) => setDeleteConfirmText(e.target.value)}
-              placeholder={t('platform:tenants.deleteModal.confirmPlaceholder', { name: deleteTarget?.name })}
-            />
-          </div>
           <div className="flex justify-end gap-3">
             <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
               {t('common:common.cancel')}
@@ -566,7 +554,6 @@ export default function TenantsPage() {
               variant="danger"
               loading={deleteMutation.isPending}
               onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
-              disabled={deleteConfirmText.trim() !== deleteTarget?.name}
             >
               {t('common:common.delete')}
             </Button>

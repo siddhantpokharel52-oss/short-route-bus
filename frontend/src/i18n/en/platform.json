@@ -112,9 +112,7 @@
     },
     "deleteModal": {
       "title": "Delete Tenant",
-      "warning": "This permanently deletes {{name}}'s account. Their fleet, staff, and ticketing data are not erased along with it — they become orphaned and unreachable through the app. This cannot be undone from here.",
-      "confirmLabel": "Type the company name to confirm",
-      "confirmPlaceholder": "Type \"{{name}}\" to confirm"
+      "warning": "Are you sure you want to delete {{name}}? Their fleet, staff, and ticketing data are not erased along with it — they become orphaned and unreachable through the app. This cannot be undone."
     },
     "toasts": {
       "activated": "Tenant activated!",
