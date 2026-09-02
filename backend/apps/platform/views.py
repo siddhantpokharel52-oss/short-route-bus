@@ -93,7 +93,21 @@ class RouteViewSet(ModelViewSet):
         return [CanManageRoutes()]
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        route = serializer.save(created_by=self.request.user)
+        # A tenant operator creating their own route previously left it with
+        # no RouteAssignment at all -- correctly created, but invisible to
+        # any "which routes does this tenant run" query, including their own
+        # Fares page's route picker. Self-assign it to their tenant, same
+        # trust level as them being able to self-approve the route itself.
+        user = self.request.user
+        if not user.is_platform_role and user.tenant_schema:
+            from backend.apps.tenants.models import Tenant
+            tenant = Tenant.objects.filter(schema_name=user.tenant_schema).first()
+            if tenant:
+                RouteAssignment.objects.create(
+                    route=route, tenant=tenant, status=RouteAssignment.Status.ACTIVE,
+                    start_date=timezone.now().date(), approved_by=user,
+                )
 
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
