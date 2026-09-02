@@ -84,6 +84,8 @@ const PATTERNS: Pattern[] = [
   { roman: 's',   devanagari: 'स',   isConsonant: true,  matra: null },
   { roman: 'h',   devanagari: 'ह',   isConsonant: true,  matra: null },
   { roman: 'f',   devanagari: 'फ',   isConsonant: true,  matra: null },
+  { roman: 'z',   devanagari: 'ज',   isConsonant: true,  matra: null },
+  { roman: 'x',   devanagari: 'क्स', isConsonant: true,  matra: null },
   // ── Uppercase shortcuts for long vowels ───────────────────────────────────
   { roman: 'A',   devanagari: 'आ',   isConsonant: false, matra: 'ा' },
   { roman: 'I',   devanagari: 'ई',   isConsonant: false, matra: 'ी' },
@@ -199,6 +201,34 @@ export function romanToNepali(roman: string): string {
   }
 
   return result
+}
+
+/**
+ * Best-effort Nepali suggestion for a casually-typed English proper noun
+ * (a route or stop name) -- not a deliberate Unicode-keyboard keystroke
+ * stream, which is what romanToNepali above is designed for. Two
+ * adjustments on top of it:
+ *
+ *   - Lowercased first: romanToNepali is case-sensitive (uppercase carries
+ *     retroflex-consonant/long-vowel meaning for someone deliberately
+ *     typing romanized Nepali), which a title-cased place name like
+ *     "Lamachaur" never intends -- feeding it verbatim produces garbage
+ *     ("Lअमचौर" instead of "लमचौर").
+ *   - "ow" is normalized to "o" first: in English spellings of Nepali
+ *     place names ("Chowk", "Sanepa Chowk"), "ow" is almost always the
+ *     single "o" sound, not "o" followed by a separate "w" consonant --
+ *     romanToNepali's own keystroke scheme doesn't make this substitution
+ *     (someone deliberately typing "ow" there could legitimately mean two
+ *     distinct sounds), so it's applied only here, not to PATTERNS.
+ *     Known remaining gap: a "-shwor"/"-eshwor" suffix (e.g. "Baneshwor",
+ *     "Koteshwor") still comes out as "्वोर" rather than the more
+ *     idiomatic "्वर" -- that's a suffix-specific spelling convention, not
+ *     the "ow" diphthong case this handles, and is left as-is since this
+ *     is a starting suggestion the operator can always correct, not an
+ *     authoritative value.
+ */
+export function suggestNepaliName(englishName: string): string {
+  return romanToNepali(englishName.toLowerCase().replace(/ow/g, 'o'))
 }
 
 /** Quick reference for the on-screen cheat sheet */

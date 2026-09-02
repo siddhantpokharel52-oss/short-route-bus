@@ -17,7 +17,7 @@ import apiClient from '@services/api'
 import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
-import { romanToNepali } from '@utils/nepaliKeyboard'
+import { suggestNepaliName } from '@utils/nepaliKeyboard'
 
 const KATHMANDU: [number, number] = [27.7172, 85.3240]
 
@@ -884,7 +884,7 @@ export default function StopsPage() {
                       {...stopNameEnField}
                       onChange={(e) => {
                         stopNameEnField.onChange(e)
-                        if (!stopNameNeEdited) setValue('name_ne', romanToNepali(e.target.value.toLowerCase()))
+                        if (!stopNameNeEdited) setValue('name_ne', suggestNepaliName(e.target.value))
                       }}
                     />
                     <NepaliInput

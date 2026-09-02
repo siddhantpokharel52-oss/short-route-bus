@@ -20,7 +20,7 @@ import apiClient from '@services/api'
 import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
 import { cn } from '@utils/cn'
-import { romanToNepali } from '@utils/nepaliKeyboard'
+import { suggestNepaliName } from '@utils/nepaliKeyboard'
 import { useTranslation } from 'react-i18next'
 
 const KATHMANDU: [number, number] = [27.7172, 85.3240]
@@ -148,7 +148,7 @@ export default function RoutesPage() {
     if (!nameEdited && routeStart && routeEnd) {
       const composedEn = `${routeStart.name} — ${routeEnd.name}`
       setValue('name_en', composedEn)
-      if (!nameNeEdited) setValue('name_ne', romanToNepali(composedEn.toLowerCase()))
+      if (!nameNeEdited) setValue('name_ne', suggestNepaliName(composedEn))
     }
   }, [routeStart, routeEnd, nameEdited, nameNeEdited, setValue])
 
@@ -626,7 +626,7 @@ export default function RoutesPage() {
                   onChange={(e) => {
                     nameEnField.onChange(e)
                     setNameEdited(true)
-                    if (!nameNeEdited) setValue('name_ne', romanToNepali(e.target.value.toLowerCase()))
+                    if (!nameNeEdited) setValue('name_ne', suggestNepaliName(e.target.value))
                   }}
                 />
               </div>
