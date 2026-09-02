@@ -436,12 +436,6 @@ export default function FaresPage() {
       {/* Generate a whole fare chart from a formula */}
       <Modal open={showGenerate} onClose={() => setShowGenerate(false)} title="Generate Fares" size="md">
         <form onSubmit={generateForm.handleSubmit(onSubmitGenerate)} className="space-y-4 p-6">
-          <p className="text-sm text-gray-500">
-            Prices every stop pair on the route at once: <span className="font-mono">fare = round to nearest Rs 5 of
-            (base fare + step × (stops apart − 1))</span> — base fare is the adjacent-stop price itself. A pair that
-            already has a fare — entered by hand, imported, or generated before and then edited — is always left
-            untouched, so this is safe to re-run after adding a stop.
-          </p>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
               Route <span className="text-red-500">*</span>
