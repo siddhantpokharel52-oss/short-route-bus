@@ -567,25 +567,38 @@ export default function RoutesPage() {
           {/* Top form strip */}
           <form
             id="route-form"
-            onSubmit={handleSubmit((d) => createMutation.mutate(d))}
+            onSubmit={handleSubmit((d) => {
+              if (!routeStart || !routeEnd) {
+                toast.error('Pick a Route Start and Route End before saving.')
+                return
+              }
+              createMutation.mutate(d)
+            })}
             className="shrink-0 border-b border-gray-100 bg-gray-50 px-6 py-4"
           >
             <div className="mb-3 grid grid-cols-2 gap-4">
               <PlaceSearchInput
-                label="Route Start"
+                label="Route Start *"
                 placeholder="Search a starting place..."
                 biasLat={KATHMANDU[0]}
                 biasLon={KATHMANDU[1]}
                 onSelect={(place) => { setRouteStart(place); setFlyTarget([place.lat, place.lon]) }}
               />
               <PlaceSearchInput
-                label="Route End"
+                label="Route End *"
                 placeholder="Search an ending place..."
                 biasLat={KATHMANDU[0]}
                 biasLon={KATHMANDU[1]}
                 onSelect={(place) => { setRouteEnd(place); setFlyTarget([place.lat, place.lon]) }}
               />
             </div>
+            {!routeStart || !routeEnd ? (
+              <p className="mb-3 -mt-1 text-xs text-amber-600">
+                Route Start and Route End are required — each becomes a real, bookable stop at the
+                two ends of this route, so every fare leg can run the full route rather than
+                stopping short of its actual start/end point.
+              </p>
+            ) : null}
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               <Input
                 label={`${t('routes.editCodeLabel')} *`}
@@ -770,7 +783,7 @@ export default function RoutesPage() {
                   form="route-form"
                   className="w-full"
                   loading={createMutation.isPending}
-                  disabled={waypoints.length < 2}
+                  disabled={waypoints.length < 2 || !routeStart || !routeEnd}
                   leftIcon={<Plus className="h-4 w-4" />}
                 >
                   {t('routes.saveRoute')}
