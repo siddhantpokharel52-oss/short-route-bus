@@ -8,7 +8,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, useFieldArray } from 'react-hook-form'
-import { Plus, Upload, Trash2 } from 'lucide-react'
+import { Plus, Upload, Trash2, Eye, Pencil } from 'lucide-react'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
 import { Table, Column, Pagination } from '@components/shared/Table'
@@ -41,6 +41,7 @@ interface FareRow {
   base_fare: string
   peak_fare: string
   student_fare: string
+  created_at: string
 }
 
 interface AddFareValues {
@@ -85,6 +86,9 @@ export default function FaresPage() {
   const [routeFilter, setRouteFilter] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [showBulk, setShowBulk] = useState(false)
+  const [viewTarget, setViewTarget] = useState<FareRow | null>(null)
+  const [editTarget, setEditTarget] = useState<FareRow | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<FareRow | null>(null)
   const [totalCount, setTotalCount] = useState(0)
   const pagination = usePagination(totalCount)
 
@@ -155,6 +159,53 @@ export default function FaresPage() {
     })
   }
 
+  // ── Edit / Delete an existing fare row (only ever offered when the
+  // route's can_write_fares is true; the backend enforces this too) ──
+  const editForm = useForm<AddFareValues>()
+
+  const openEdit = (row: FareRow) => {
+    setEditTarget(row)
+    editForm.reset({
+      route: row.route ?? '', ticket_type: row.ticket_type,
+      zone_from: row.zone_from, zone_to: row.zone_to,
+      base_fare: row.base_fare, peak_fare: row.peak_fare, student_fare: row.student_fare,
+    })
+  }
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: AddFareValues) =>
+      apiClient.patch(`/platform/fare-matrix/${editTarget?.id}/`, payload).then((r) => r.data),
+    onSuccess: () => {
+      toast.success('Fare updated.')
+      setEditTarget(null)
+      invalidate()
+    },
+    onError: (err: any) => {
+      const errors = err?.response?.data?.errors
+      toast.error(errors && typeof errors === 'object' ? flattenErrors(errors) : (err?.response?.data?.message || 'Failed to update fare.'))
+    },
+  })
+
+  const onSubmitEdit = (values: AddFareValues) => {
+    updateMutation.mutate({
+      ...values,
+      peak_fare: values.peak_fare || values.base_fare,
+      student_fare: values.student_fare || values.base_fare,
+    })
+  }
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/platform/fare-matrix/${id}/`),
+    onSuccess: () => {
+      toast.success('Fare deleted.')
+      setDeleteTarget(null)
+      invalidate()
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to delete fare.')
+    },
+  })
+
   // ── Bulk import a whole fare chart ─────────────────────────────────
   const bulkForm = useForm<BulkFormValues>({
     defaultValues: { route: '', ticket_type: '', fares: [emptyBulkRow] },
@@ -215,6 +266,29 @@ export default function FaresPage() {
         return route?.can_write_fares
           ? <span className="text-xs font-medium text-green-600">Yours to edit</span>
           : <span className="text-xs text-gray-400">Platform-managed (shared route)</span>
+      },
+    },
+    {
+      key: 'id', header: 'Actions',
+      render: (r) => {
+        const canWrite = !!(r.route && routeById[r.route]?.can_write_fares)
+        return (
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" onClick={() => setViewTarget(r)} title="View">
+              <Eye className="h-4 w-4 text-gray-500" />
+            </Button>
+            {canWrite && (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => openEdit(r)} title="Edit">
+                  <Pencil className="h-4 w-4 text-gray-500" />
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(r)} title="Delete">
+                  <Trash2 className="h-4 w-4 text-red-500" />
+                </Button>
+              </>
+            )}
+          </div>
+        )
       },
     },
   ]
@@ -391,6 +465,85 @@ export default function FaresPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* View a fare (read-only) */}
+      <Modal open={!!viewTarget} onClose={() => setViewTarget(null)} title="Fare Details" size="sm">
+        {viewTarget && (
+          <div className="space-y-3 p-6 text-sm">
+            <div className="flex justify-between"><span className="text-gray-500">Route</span><span className="font-medium">{viewTarget.route ? (routeById[viewTarget.route]?.route_code ?? viewTarget.route) : 'Flat / all routes'}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">From</span><span className="font-medium">{viewTarget.zone_from || '—'}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">To</span><span className="font-medium">{viewTarget.zone_to || '—'}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Ticket Type</span><span className="font-medium">{ticketTypeById[viewTarget.ticket_type]?.code ?? viewTarget.ticket_type}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Base Fare</span><span className="font-medium">Rs. {viewTarget.base_fare}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Peak Fare</span><span className="font-medium">Rs. {viewTarget.peak_fare}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Student Fare</span><span className="font-medium">Rs. {viewTarget.student_fare}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Created</span><span className="font-medium">{new Date(viewTarget.created_at).toLocaleString()}</span></div>
+            <div className="flex justify-end border-t pt-4">
+              <Button variant="secondary" onClick={() => setViewTarget(null)}>Close</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Edit a fare (only ever opened for a writable route) */}
+      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Fare" size="lg">
+        <form onSubmit={editForm.handleSubmit(onSubmitEdit)} className="space-y-4 p-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Route <span className="text-red-500">*</span>
+              </label>
+              <select className={selectClass} {...editForm.register('route', { required: true })}>
+                <option value="">Select route</option>
+                {writableRoutes.map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Ticket Type <span className="text-red-500">*</span>
+              </label>
+              <select className={selectClass} {...editForm.register('ticket_type', { required: true })}>
+                <option value="">Select ticket type</option>
+                {(ticketTypes ?? []).map((tt) => <option key={tt.id} value={tt.id}>{tt.code} — {tt.name_en}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Zone From (stop name)" placeholder="Leave blank for a flat fare" {...editForm.register('zone_from')} />
+            <Input label="Zone To (stop name)" placeholder="Leave blank for a flat fare" {...editForm.register('zone_to')} />
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <Input label="Base Fare (NPR)" type="number" step="0.01" min="0" required {...editForm.register('base_fare', { required: true })} />
+            <Input label="Peak Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Base Fare" {...editForm.register('peak_fare')} />
+            <Input label="Student Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Base Fare" {...editForm.register('student_fare')} />
+          </div>
+          <div className="flex justify-end gap-3 border-t pt-4">
+            <Button variant="secondary" type="button" onClick={() => setEditTarget(null)}>Cancel</Button>
+            <Button type="submit" loading={updateMutation.isPending}>Save</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Delete a fare (only ever opened for a writable route) */}
+      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Fare" size="sm">
+        <div className="space-y-4 p-6">
+          <p className="text-sm text-gray-600">
+            Delete the fare for {deleteTarget?.route ? (routeById[deleteTarget.route]?.route_code ?? deleteTarget.route) : 'this route'}
+            {deleteTarget?.zone_from && deleteTarget?.zone_to ? ` (${deleteTarget.zone_from} → ${deleteTarget.zone_to})` : ''}?
+            This can't be undone, though the same fare can always be re-added.
+          </p>
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button
+              variant="danger"
+              loading={deleteMutation.isPending}
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   )
