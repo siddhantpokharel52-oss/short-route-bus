@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, useFieldArray } from 'react-hook-form'
-import { Plus, Upload, Trash2, Eye, Pencil } from 'lucide-react'
+import { Plus, Upload, Trash2, Eye, Pencil, Calculator } from 'lucide-react'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
 import { Table, Column, Pagination } from '@components/shared/Table'
@@ -129,6 +129,7 @@ export default function FaresPage() {
   const [routeFilter, setRouteFilter] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [showBulk, setShowBulk] = useState(false)
+  const [showGenerate, setShowGenerate] = useState(false)
   const [viewTarget, setViewTarget] = useState<FareRow | null>(null)
   const [editTarget, setEditTarget] = useState<FareRow | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<FareRow | null>(null)
@@ -324,6 +325,37 @@ export default function FaresPage() {
     })
   }
 
+  // ── Generate a whole fare chart from a stage-based formula ──────────
+  // fare = round_to_5(base_fare + step * stage_gap), stage_gap being how
+  // many stops apart two stops are. Prices every stop pair on the route at
+  // once instead of entering each one by hand -- matches how some real
+  // operators publish a stage-fare chart. Never overwrites a fare that
+  // already exists for a pair (manually entered, imported, or generated
+  // and then hand-edited), so it's always safe to re-run after adding a
+  // stop to the route.
+  const generateForm = useForm<{ route: string; base_fare: string; step: string }>()
+  const generateRouteId = generateForm.watch('route')
+  const { data: generateRouteStops } = useRouteStops(generateRouteId)
+  const pairCount = generateRouteStops ? (generateRouteStops.length * (generateRouteStops.length - 1)) / 2 : 0
+
+  const generateMutation = useMutation({
+    mutationFn: (payload: { route: string; base_fare: string; step: string }) =>
+      apiClient.post('/platform/fare-matrix/generate-from-formula/', payload).then((r) => r.data),
+    onSuccess: (data) => {
+      toast.success(data.message || 'Fares generated.')
+      setShowGenerate(false)
+      generateForm.reset()
+      invalidate()
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to generate fares.')
+    },
+  })
+
+  const onSubmitGenerate = (values: { route: string; base_fare: string; step: string }) => {
+    generateMutation.mutate(values)
+  }
+
   const columns: Column<FareRow>[] = [
     {
       key: 'route', header: 'Route',
@@ -361,6 +393,9 @@ export default function FaresPage() {
           <p className="page-subtitle">The official fare rate (भाडादर) for every route and ticket type</p>
         </div>
         <div className="flex gap-3">
+          <Button variant="outline" leftIcon={<Calculator className="h-4 w-4" />} onClick={() => setShowGenerate(true)}>
+            Generate Fares
+          </Button>
           <Button variant="outline" leftIcon={<Upload className="h-4 w-4" />} onClick={() => setShowBulk(true)}>
             Bulk Import
           </Button>
@@ -397,6 +432,50 @@ export default function FaresPage() {
           onPageChange={pagination.setPage}
         />
       </div>
+
+      {/* Generate a whole fare chart from a formula */}
+      <Modal open={showGenerate} onClose={() => setShowGenerate(false)} title="Generate Fares" size="md">
+        <form onSubmit={generateForm.handleSubmit(onSubmitGenerate)} className="space-y-4 p-6">
+          <p className="text-sm text-gray-500">
+            Prices every stop pair on the route at once: <span className="font-mono">fare = round to nearest Rs 5 of
+            (base fare + step × stops apart)</span>. A pair that already has a fare — entered by hand, imported, or
+            generated before and then edited — is always left untouched, so this is safe to re-run after adding a stop.
+          </p>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Route <span className="text-red-500">*</span>
+            </label>
+            <select className={selectClass} {...generateForm.register('route', { required: true })}>
+              <option value="">Select route</option>
+              {(routes ?? []).map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
+            </select>
+          </div>
+          {generateRouteId && (!generateRouteStops || generateRouteStops.length < 2) && (
+            <p className="text-xs text-amber-600">This route needs at least 2 stops before fares can be generated.</p>
+          )}
+          {generateRouteId && generateRouteStops && generateRouteStops.length >= 2 && (
+            <p className="text-xs text-gray-500">
+              {generateRouteStops.length} stops → up to {pairCount} fare(s) will be generated (fewer if some pairs already have a fare).
+            </p>
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Base Fare (NPR)" hint="Fare for stops 1 apart"
+              type="number" step="0.01" min="0" required
+              {...generateForm.register('base_fare', { required: true })}
+            />
+            <Input
+              label="Step (NPR per stop)" hint="Added per extra stop apart"
+              type="number" step="0.01" min="0" required
+              {...generateForm.register('step', { required: true })}
+            />
+          </div>
+          <div className="flex justify-end gap-3 border-t pt-4">
+            <Button variant="secondary" type="button" onClick={() => setShowGenerate(false)}>Cancel</Button>
+            <Button type="submit" loading={generateMutation.isPending}>Generate Fares</Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Add single fare */}
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Fare" size="lg">

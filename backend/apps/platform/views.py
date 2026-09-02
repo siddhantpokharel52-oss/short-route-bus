@@ -1,3 +1,4 @@
+from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import generics, status, views
 from rest_framework.decorators import action
@@ -6,6 +7,7 @@ from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import AllowAny
 from django.utils import timezone
 from django.db import transaction
+from django.db.models import Q
 from .models import (
     Stop, StopAnalytics, Route, RouteStop, RouteAssignment, RouteDiversion,
     TicketType, FareMatrix, SmartCard, CardTransaction, CardRecharge, FarePolicy,
@@ -29,6 +31,14 @@ def api_response(data=None, message="Success", success=True, errors=None, status
         "errors": errors,
         "meta": {"timestamp": timezone.now().isoformat()},
     }, status=status_code)
+
+
+def _round_to_nearest_5(value: Decimal) -> Decimal:
+    """42 -> 40, 43 -> 45 -- standard round-half-up on the nearest multiple
+    of 5, matching how real stage-fare charts are denominated (see
+    FareMatrixViewSet.generate_from_formula)."""
+    from decimal import ROUND_HALF_UP
+    return (value / 5).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * 5
 
 
 class StopViewSet(ModelViewSet):
@@ -549,6 +559,88 @@ class FareMatrixViewSet(ModelViewSet):
         return api_response(
             data={"created": created, "updated": updated, "total": created + updated},
             message=f"Imported {created + updated} fare row(s) ({created} created, {updated} updated).",
+            status_code=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["post"], url_path="generate-from-formula")
+    def generate_from_formula(self, request):
+        """Auto-fills a fare for every stop pair on a route from a simple
+        stage-based formula instead of entering each one by hand:
+
+            fare = round_to_5(base_fare + step * stage_gap)
+
+        stage_gap is how many stops apart two stops are -- their rank in
+        the route's stop order (1st, 2nd, 3rd, ...), not the raw stored
+        RouteStop.sequence_no, so a historical gap in sequence numbers
+        (e.g. stop "8" missing from an otherwise 1-9 sequence) never
+        distorts the count. This mirrors how some real operators actually
+        publish fares (a stage-fare chart keyed by "N stops apart", not by
+        which exact stops) rather than a smooth per-km calculation.
+
+        Body: {"route": "<id or route_code>", "base_fare": number, "step": number}
+        ticket_type is not requested here -- resolved the same way every
+        other write on this page does (the platform's one ticket type).
+
+        Never overwrites an existing fare: any stop pair (in either
+        direction) that already has a FareMatrix row -- whether entered
+        manually, imported, or generated and then hand-edited -- is
+        skipped. Re-running this after adding a stop to the route only
+        fills in the newly-possible pairs; it can never silently undo an
+        edit."""
+        route, route_err = self._resolve_route(request.data.get("route"))
+        if route_err:
+            return api_response(success=False, message=route_err, status_code=status.HTTP_400_BAD_REQUEST)
+        if not self._can_write_route(request.user, route):
+            return self._forbidden_route_response()
+
+        default_ticket_type_id = TicketType.objects.values_list("id", flat=True).first()
+        ticket_type, tt_err = self._resolve_ticket_type(request.data.get("ticket_type") or default_ticket_type_id)
+        if tt_err:
+            return api_response(success=False, message=tt_err, status_code=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            base_fare = Decimal(str(request.data.get("base_fare")))
+            step = Decimal(str(request.data.get("step")))
+        except (TypeError, InvalidOperation):
+            return api_response(
+                success=False, message="base_fare and step must be numbers.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        stops = list(RouteStop.objects.filter(route=route).select_related("stop").order_by("sequence_no"))
+        if len(stops) < 2:
+            return api_response(
+                success=False, message="This route needs at least 2 stops to generate fares.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        created, skipped = 0, 0
+        updated_by = request.user if request.user.is_authenticated else None
+        with transaction.atomic():
+            for i in range(len(stops)):
+                for j in range(i + 1, len(stops)):
+                    from_stop, to_stop = stops[i].stop, stops[j].stop
+                    stage_gap = j - i
+                    already_priced = FareMatrix.objects.filter(route=route, ticket_type=ticket_type).filter(
+                        Q(zone_from=from_stop.name_en, zone_to=to_stop.name_en) |
+                        Q(zone_from=to_stop.name_en, zone_to=from_stop.name_en)
+                    ).exists()
+                    if already_priced:
+                        skipped += 1
+                        continue
+                    fare_value = _round_to_nearest_5(base_fare + step * stage_gap)
+                    FareMatrix.objects.create(
+                        route=route, ticket_type=ticket_type,
+                        zone_from=from_stop.name_en, zone_to=to_stop.name_en,
+                        base_fare=fare_value, peak_fare=fare_value,
+                        student_fare=fare_value, senior_citizen_fare=fare_value,
+                        updated_by=updated_by,
+                    )
+                    created += 1
+
+        return api_response(
+            data={"created": created, "skipped": skipped, "total_pairs": created + skipped},
+            message=f"Generated {created} fare(s); {skipped} pair(s) already had a fare and were left untouched.",
             status_code=status.HTTP_200_OK,
         )
 
