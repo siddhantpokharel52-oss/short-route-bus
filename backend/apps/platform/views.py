@@ -567,9 +567,11 @@ class FareMatrixViewSet(ModelViewSet):
         """Auto-fills a fare for every stop pair on a route from a simple
         stage-based formula instead of entering each one by hand:
 
-            fare = round_to_5(base_fare + step * stage_gap)
+            fare = round_to_5(base_fare + step * (stage_gap - 1))
 
-        stage_gap is how many stops apart two stops are -- their rank in
+        base_fare is the adjacent-stop (gap=1) fare itself -- step only
+        applies to stops beyond the first one apart. stage_gap is how many
+        stops apart two stops are -- their rank in
         the route's stop order (1st, 2nd, 3rd, ...), not the raw stored
         RouteStop.sequence_no, so a historical gap in sequence numbers
         (e.g. stop "8" missing from an otherwise 1-9 sequence) never
@@ -628,7 +630,9 @@ class FareMatrixViewSet(ModelViewSet):
                     if already_priced:
                         skipped += 1
                         continue
-                    fare_value = _round_to_nearest_5(base_fare + step * stage_gap)
+                    # base_fare is the adjacent-stop (gap=1) fare itself, so
+                    # step only applies to stops beyond the first one apart.
+                    fare_value = _round_to_nearest_5(base_fare + step * (stage_gap - 1))
                     FareMatrix.objects.create(
                         route=route, ticket_type=ticket_type,
                         zone_from=from_stop.name_en, zone_to=to_stop.name_en,
