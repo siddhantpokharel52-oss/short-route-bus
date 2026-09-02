@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { forwardRef, useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { Plus, Upload, Trash2, Eye, Pencil } from 'lucide-react'
@@ -105,16 +105,23 @@ function toOptionsAfter(stops: RouteStopOption[], fromName: string): RouteStopOp
   return fromSeq == null ? stops : stops.filter((s) => s.sequence_no > fromSeq)
 }
 
-function StopSelect({
-  stops, allowFlat, ...props
-}: { stops: RouteStopOption[]; allowFlat?: boolean } & React.SelectHTMLAttributes<HTMLSelectElement>) {
+// React was warning "Function components cannot be given refs" here --
+// react-hook-form's register() always hands a select a ref (to imperatively
+// seed/read its value for setValue()/reset()/replace()), and a plain
+// function component silently drops it instead of erroring, so this was
+// easy to miss. forwardRef is required for any form control wrapped like
+// this one that register() gets spread onto.
+const StopSelect = forwardRef<
+  HTMLSelectElement,
+  { stops: RouteStopOption[]; allowFlat?: boolean } & React.SelectHTMLAttributes<HTMLSelectElement>
+>(function StopSelect({ stops, allowFlat, ...props }, ref) {
   return (
-    <select className={selectClass} {...props}>
+    <select ref={ref} className={selectClass} {...props}>
       <option value="">{allowFlat ? 'Leave blank for a flat fare' : 'Select stop'}</option>
       {stops.map((s) => <option key={s.stop_id} value={s.name_en}>{s.name_en}</option>)}
     </select>
   )
-}
+})
 
 export default function FaresPage() {
   const { t } = useTranslation('platform')
