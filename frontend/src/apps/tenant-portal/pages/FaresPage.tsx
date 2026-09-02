@@ -1,21 +1,18 @@
 /**
- * FaresPage (tenant-portal) — view fares on every route this operator is
- * assigned to, and manage (add / bulk import) fares only on routes where
- * they're allowed to: an EXCLUSIVE route they're the sole active operator
- * on. On a SHARED route (multiple operators on the same route) fares stay
- * platform-managed, so this page shows them read-only.
+ * FaresPage (tenant-portal) — read-only view of fares on every route this
+ * operator is assigned to. Fares are managed by platform admins only, no
+ * exceptions (an earlier EXCLUSIVE-route write exception was removed by
+ * explicit decision) — this page has no add/edit/delete, by design, not by
+ * omission.
  */
 import { useMemo, useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm, useFieldArray } from 'react-hook-form'
-import { Plus, Upload, Trash2, Eye, Pencil } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Eye } from 'lucide-react'
 import { Button } from '@components/shared/Button'
-import { Input } from '@components/shared/Input'
 import { Table, Column, Pagination } from '@components/shared/Table'
 import { Modal } from '@components/shared/Modal'
 import { usePagination } from '@hooks/usePagination'
 import apiClient from '@services/api'
-import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 
 interface MyRoute {
@@ -23,7 +20,6 @@ interface MyRoute {
   route_code: string
   name_en: string
   route_type: 'EXCLUSIVE' | 'SHARED'
-  can_write_fares: boolean
 }
 
 interface TicketTypeOption {
@@ -44,57 +40,20 @@ interface FareRow {
   created_at: string
 }
 
-interface AddFareValues {
-  route: string
-  ticket_type: string
-  zone_from: string
-  zone_to: string
-  base_fare: string
-  peak_fare: string
-  student_fare: string
-}
-
-interface BulkFareRowInput {
-  zone_from: string
-  zone_to: string
-  base_fare: string
-  peak_fare: string
-  student_fare: string
-}
-
-interface BulkFormValues {
-  route: string
-  ticket_type: string
-  fares: BulkFareRowInput[]
-}
-
-const emptyBulkRow: BulkFareRowInput = { zone_from: '', zone_to: '', base_fare: '', peak_fare: '', student_fare: '' }
-
 const selectClass =
   'w-full rounded-lg border px-3 py-2 text-sm bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100 ' +
   'border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent'
 
-function flattenErrors(errors: Record<string, string[] | string>): string {
-  return Object.entries(errors)
-    .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}`)
-    .join(' | ')
-}
-
 export default function FaresPage() {
   const { t } = useTranslation('tenant')
-  const qc = useQueryClient()
   const [routeFilter, setRouteFilter] = useState('')
-  const [showAdd, setShowAdd] = useState(false)
-  const [showBulk, setShowBulk] = useState(false)
   const [viewTarget, setViewTarget] = useState<FareRow | null>(null)
-  const [editTarget, setEditTarget] = useState<FareRow | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<FareRow | null>(null)
   const [totalCount, setTotalCount] = useState(0)
   const pagination = usePagination(totalCount)
 
-  // Every route this operator is actively assigned to, each flagged with
-  // whether fares on it are editable (EXCLUSIVE + sole operator) or
-  // platform-managed (SHARED).
+  // Every route this operator is actively assigned to -- populates the
+  // route filter only. Fare writes are platform-admin-only regardless of
+  // route, so there's no per-route "can I edit this" concept here anymore.
   const { data: myRoutes } = useQuery({
     queryKey: ['my-routes-for-fares'],
     queryFn: async () => {
@@ -102,7 +61,6 @@ export default function FaresPage() {
       return (data.data ?? []) as MyRoute[]
     },
   })
-  const writableRoutes = useMemo(() => (myRoutes ?? []).filter((r) => r.can_write_fares), [myRoutes])
   const routeById = useMemo(
     () => Object.fromEntries((myRoutes ?? []).map((r) => [r.id, r])),
     [myRoutes]
@@ -131,123 +89,6 @@ export default function FaresPage() {
     },
   })
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['fare-matrix-tenant'] })
-
-  // ── Add a single fare row ──────────────────────────────────────────
-  const addForm = useForm<AddFareValues>()
-
-  const createMutation = useMutation({
-    mutationFn: (payload: Partial<AddFareValues>) =>
-      apiClient.post('/platform/fare-matrix/', payload).then((r) => r.data),
-    onSuccess: () => {
-      toast.success('Fare added.')
-      setShowAdd(false)
-      addForm.reset()
-      invalidate()
-    },
-    onError: (err: any) => {
-      const errors = err?.response?.data?.errors
-      toast.error(errors && typeof errors === 'object' ? flattenErrors(errors) : (err?.response?.data?.message || 'Failed to add fare.'))
-    },
-  })
-
-  const onSubmitAdd = (values: AddFareValues) => {
-    createMutation.mutate({
-      ...values,
-      peak_fare: values.peak_fare || values.base_fare,
-      student_fare: values.student_fare || values.base_fare,
-    })
-  }
-
-  // ── Edit / Delete an existing fare row (only ever offered when the
-  // route's can_write_fares is true; the backend enforces this too) ──
-  const editForm = useForm<AddFareValues>()
-
-  const openEdit = (row: FareRow) => {
-    setEditTarget(row)
-    editForm.reset({
-      route: row.route ?? '', ticket_type: row.ticket_type,
-      zone_from: row.zone_from, zone_to: row.zone_to,
-      base_fare: row.base_fare, peak_fare: row.peak_fare, student_fare: row.student_fare,
-    })
-  }
-
-  const updateMutation = useMutation({
-    mutationFn: (payload: AddFareValues) =>
-      apiClient.patch(`/platform/fare-matrix/${editTarget?.id}/`, payload).then((r) => r.data),
-    onSuccess: () => {
-      toast.success('Fare updated.')
-      setEditTarget(null)
-      invalidate()
-    },
-    onError: (err: any) => {
-      const errors = err?.response?.data?.errors
-      toast.error(errors && typeof errors === 'object' ? flattenErrors(errors) : (err?.response?.data?.message || 'Failed to update fare.'))
-    },
-  })
-
-  const onSubmitEdit = (values: AddFareValues) => {
-    updateMutation.mutate({
-      ...values,
-      peak_fare: values.peak_fare || values.base_fare,
-      student_fare: values.student_fare || values.base_fare,
-    })
-  }
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiClient.delete(`/platform/fare-matrix/${id}/`),
-    onSuccess: () => {
-      toast.success('Fare deleted.')
-      setDeleteTarget(null)
-      invalidate()
-    },
-    onError: (err: any) => {
-      toast.error(err?.response?.data?.message || 'Failed to delete fare.')
-    },
-  })
-
-  // ── Bulk import a whole fare chart ─────────────────────────────────
-  const bulkForm = useForm<BulkFormValues>({
-    defaultValues: { route: '', ticket_type: '', fares: [emptyBulkRow] },
-  })
-  const { fields, append, remove } = useFieldArray({ control: bulkForm.control, name: 'fares' })
-
-  const bulkMutation = useMutation({
-    mutationFn: (payload: unknown) =>
-      apiClient.post('/platform/fare-matrix/bulk-import/', payload).then((r) => r.data),
-    onSuccess: (data) => {
-      toast.success(data.message || 'Fares imported.')
-      setShowBulk(false)
-      bulkForm.reset({ route: '', ticket_type: '', fares: [emptyBulkRow] })
-      invalidate()
-    },
-    onError: (err: any) => {
-      const rowErrors = err?.response?.data?.errors
-      if (Array.isArray(rowErrors)) {
-        rowErrors.forEach((e: { row: number; error: unknown }) => {
-          const detail = typeof e.error === 'string' ? e.error : flattenErrors(e.error as Record<string, string[]>)
-          toast.error(`Row ${e.row + 1}: ${detail}`)
-        })
-      } else {
-        toast.error(err?.response?.data?.message || 'Bulk import failed.')
-      }
-    },
-  })
-
-  const onSubmitBulk = (values: BulkFormValues) => {
-    bulkMutation.mutate({
-      route: values.route,
-      ticket_type: values.ticket_type,
-      fares: values.fares.map((f) => ({
-        zone_from: f.zone_from,
-        zone_to: f.zone_to,
-        base_fare: f.base_fare,
-        ...(f.peak_fare ? { peak_fare: f.peak_fare } : {}),
-        ...(f.student_fare ? { student_fare: f.student_fare } : {}),
-      })),
-    })
-  }
-
   const columns: Column<FareRow>[] = [
     {
       key: 'route', header: 'Route',
@@ -260,73 +101,23 @@ export default function FaresPage() {
     { key: 'peak_fare', header: 'Peak Fare', render: (r) => `Rs. ${r.peak_fare}` },
     { key: 'student_fare', header: 'Student Fare', render: (r) => `Rs. ${r.student_fare}` },
     {
-      key: 'editable', header: 'Editable?',
-      render: (r) => {
-        const route = r.route ? routeById[r.route] : null
-        return route?.can_write_fares
-          ? <span className="text-xs font-medium text-green-600">Yours to edit</span>
-          : <span className="text-xs text-gray-400">Platform-managed (shared route)</span>
-      },
-    },
-    {
-      key: 'id', header: 'Actions',
-      render: (r) => {
-        const canWrite = !!(r.route && routeById[r.route]?.can_write_fares)
-        return (
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" onClick={() => setViewTarget(r)} title="View">
-              <Eye className="h-4 w-4 text-gray-500" />
-            </Button>
-            {canWrite && (
-              <>
-                <Button variant="ghost" size="sm" onClick={() => openEdit(r)} title="Edit">
-                  <Pencil className="h-4 w-4 text-gray-500" />
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(r)} title="Delete">
-                  <Trash2 className="h-4 w-4 text-red-500" />
-                </Button>
-              </>
-            )}
-          </div>
-        )
-      },
+      key: 'id', header: '',
+      render: (r) => (
+        <Button variant="ghost" size="sm" onClick={() => setViewTarget(r)} title="View">
+          <Eye className="h-4 w-4 text-gray-500" />
+        </Button>
+      ),
     },
   ]
-
-  const noWritableRoutes = (myRoutes ?? []).length > 0 && writableRoutes.length === 0
 
   return (
     <div className="space-y-6">
       <div className="page-header">
         <div>
           <h1 className="page-title">{t('nav.fares')}</h1>
-          <p className="page-subtitle">The official fare rate (भाडादर) for every route you operate</p>
-        </div>
-        <div className="flex gap-3">
-          <Button
-            variant="outline" leftIcon={<Upload className="h-4 w-4" />}
-            onClick={() => setShowBulk(true)}
-            disabled={writableRoutes.length === 0}
-            title={writableRoutes.length === 0 ? 'You have no EXCLUSIVE route you are the sole operator on -- fares on your shared routes are platform-managed.' : undefined}
-          >
-            Bulk Import
-          </Button>
-          <Button
-            leftIcon={<Plus className="h-4 w-4" />}
-            onClick={() => setShowAdd(true)}
-            disabled={writableRoutes.length === 0}
-            title={writableRoutes.length === 0 ? 'You have no EXCLUSIVE route you are the sole operator on -- fares on your shared routes are platform-managed.' : undefined}
-          >
-            Add Fare
-          </Button>
+          <p className="page-subtitle">The official fare rate (भाडादर) for every route you operate — set by platform admins, view only</p>
         </div>
       </div>
-
-      {noWritableRoutes && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-900/20 dark:text-amber-300">
-          None of your assigned routes are exclusively yours, so fares are read-only here — every route you run is shared with another operator, and shared-route fares stay platform-managed for consistency.
-        </div>
-      )}
 
       <select
         className={`${selectClass} max-w-xs`}
@@ -356,117 +147,6 @@ export default function FaresPage() {
         />
       </div>
 
-      {/* Add single fare */}
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Fare" size="lg">
-        <form onSubmit={addForm.handleSubmit(onSubmitAdd)} className="space-y-4 p-6">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Route <span className="text-red-500">*</span>
-              </label>
-              <select className={selectClass} {...addForm.register('route', { required: true })}>
-                <option value="">Select route</option>
-                {writableRoutes.map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Ticket Type <span className="text-red-500">*</span>
-              </label>
-              <select className={selectClass} {...addForm.register('ticket_type', { required: true })}>
-                <option value="">Select ticket type</option>
-                {(ticketTypes ?? []).map((tt) => <option key={tt.id} value={tt.id}>{tt.code} — {tt.name_en}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Input label="Zone From (stop name)" placeholder="Leave blank for a flat fare" {...addForm.register('zone_from')} />
-            <Input label="Zone To (stop name)" placeholder="Leave blank for a flat fare" {...addForm.register('zone_to')} />
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <Input label="Base Fare (NPR)" type="number" step="0.01" min="0" required {...addForm.register('base_fare', { required: true })} />
-            <Input label="Peak Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Base Fare" {...addForm.register('peak_fare')} />
-            <Input label="Student Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Base Fare" {...addForm.register('student_fare')} />
-          </div>
-          <div className="flex justify-end gap-3 border-t pt-4">
-            <Button variant="secondary" type="button" onClick={() => setShowAdd(false)}>Cancel</Button>
-            <Button type="submit" loading={createMutation.isPending}>Add Fare</Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Bulk import a whole fare chart */}
-      <Modal open={showBulk} onClose={() => setShowBulk(false)} title="Bulk Import Fares" size="full">
-        <form onSubmit={bulkForm.handleSubmit(onSubmitBulk)} className="space-y-4 p-6">
-          <p className="text-sm text-gray-500">
-            Upload a whole stage-fare chart at once — e.g. your printed भाडादर sheet with one
-            from-stop against many to-stops — for a single route and ticket type you operate alone.
-          </p>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Route <span className="text-red-500">*</span>
-              </label>
-              <select className={selectClass} {...bulkForm.register('route', { required: true })}>
-                <option value="">Select route</option>
-                {writableRoutes.map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Ticket Type <span className="text-red-500">*</span>
-              </label>
-              <select className={selectClass} {...bulkForm.register('ticket_type', { required: true })}>
-                <option value="">Select ticket type</option>
-                {(ticketTypes ?? []).map((tt) => <option key={tt.id} value={tt.id}>{tt.code} — {tt.name_en}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] gap-2 px-1 text-xs font-medium text-gray-500">
-            <span>From stop</span>
-            <span>To stop</span>
-            <span>Base fare</span>
-            <span>Peak fare (optional)</span>
-            <span>Student fare (optional)</span>
-            <span />
-          </div>
-          <div className="max-h-96 space-y-2 overflow-y-auto rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-            {fields.map((field, index) => (
-              <div key={field.id} className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] items-center gap-2">
-                <Input {...bulkForm.register(`fares.${index}.zone_from` as const, { required: true })} />
-                <Input {...bulkForm.register(`fares.${index}.zone_to` as const, { required: true })} />
-                <Input type="number" step="0.01" min="0" {...bulkForm.register(`fares.${index}.base_fare` as const, { required: true })} />
-                <Input type="number" step="0.01" min="0" {...bulkForm.register(`fares.${index}.peak_fare` as const)} />
-                <Input type="number" step="0.01" min="0" {...bulkForm.register(`fares.${index}.student_fare` as const)} />
-                <Button
-                  variant="ghost" size="sm" type="button"
-                  onClick={() => remove(index)}
-                  disabled={fields.length === 1}
-                >
-                  <Trash2 className="h-4 w-4 text-red-500" />
-                </Button>
-              </div>
-            ))}
-          </div>
-
-          <Button
-            variant="secondary" size="sm" type="button"
-            leftIcon={<Plus className="h-4 w-4" />}
-            onClick={() => append(emptyBulkRow)}
-          >
-            Add Row
-          </Button>
-
-          <div className="flex justify-end gap-3 border-t pt-4">
-            <Button variant="secondary" type="button" onClick={() => setShowBulk(false)}>Cancel</Button>
-            <Button type="submit" loading={bulkMutation.isPending}>
-              Import {fields.length} Fare{fields.length !== 1 ? 's' : ''}
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
       {/* View a fare (read-only) */}
       <Modal open={!!viewTarget} onClose={() => setViewTarget(null)} title="Fare Details" size="sm">
         {viewTarget && (
@@ -484,66 +164,6 @@ export default function FaresPage() {
             </div>
           </div>
         )}
-      </Modal>
-
-      {/* Edit a fare (only ever opened for a writable route) */}
-      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Fare" size="lg">
-        <form onSubmit={editForm.handleSubmit(onSubmitEdit)} className="space-y-4 p-6">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Route <span className="text-red-500">*</span>
-              </label>
-              <select className={selectClass} {...editForm.register('route', { required: true })}>
-                <option value="">Select route</option>
-                {writableRoutes.map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Ticket Type <span className="text-red-500">*</span>
-              </label>
-              <select className={selectClass} {...editForm.register('ticket_type', { required: true })}>
-                <option value="">Select ticket type</option>
-                {(ticketTypes ?? []).map((tt) => <option key={tt.id} value={tt.id}>{tt.code} — {tt.name_en}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Input label="Zone From (stop name)" placeholder="Leave blank for a flat fare" {...editForm.register('zone_from')} />
-            <Input label="Zone To (stop name)" placeholder="Leave blank for a flat fare" {...editForm.register('zone_to')} />
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <Input label="Base Fare (NPR)" type="number" step="0.01" min="0" required {...editForm.register('base_fare', { required: true })} />
-            <Input label="Peak Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Base Fare" {...editForm.register('peak_fare')} />
-            <Input label="Student Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Base Fare" {...editForm.register('student_fare')} />
-          </div>
-          <div className="flex justify-end gap-3 border-t pt-4">
-            <Button variant="secondary" type="button" onClick={() => setEditTarget(null)}>Cancel</Button>
-            <Button type="submit" loading={updateMutation.isPending}>Save</Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Delete a fare (only ever opened for a writable route) */}
-      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Fare" size="sm">
-        <div className="space-y-4 p-6">
-          <p className="text-sm text-gray-600">
-            Delete the fare for {deleteTarget?.route ? (routeById[deleteTarget.route]?.route_code ?? deleteTarget.route) : 'this route'}
-            {deleteTarget?.zone_from && deleteTarget?.zone_to ? ` (${deleteTarget.zone_from} → ${deleteTarget.zone_to})` : ''}?
-            This can't be undone, though the same fare can always be re-added.
-          </p>
-          <div className="flex justify-end gap-3">
-            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button
-              variant="danger"
-              loading={deleteMutation.isPending}
-              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
-            >
-              Delete
-            </Button>
-          </div>
-        </div>
       </Modal>
     </div>
   )
