@@ -24,7 +24,7 @@ class RouteAssignmentAdmin(admin.ModelAdmin):
 
 @admin.register(TicketType)
 class TicketTypeAdmin(admin.ModelAdmin):
-    list_display = ["code", "name_en", "validity_hours", "is_active"]
+    list_display = ["code", "name_en", "is_active"]
 
 
 @admin.register(FareMatrix)

@@ -126,7 +126,7 @@ class RouteDiversionSerializer(serializers.ModelSerializer):
 class TicketTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = TicketType
-        fields = ["id", "code", "name_en", "name_ne", "description", "validity_hours", "is_transferable", "is_active"]
+        fields = ["id", "code", "name_en", "name_ne", "description", "is_transferable", "is_active"]
 
 
 class FareMatrixSerializer(serializers.ModelSerializer):

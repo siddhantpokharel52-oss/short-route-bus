@@ -221,7 +221,6 @@ class TicketType(models.Model):
     name_en = models.CharField(max_length=100)
     name_ne = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    validity_hours = models.PositiveSmallIntegerField(default=4)
     is_transferable = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -361,6 +361,20 @@ class TicketTypeViewSet(ModelViewSet):
             return [AllowAny()]
         return [IsPlatformRole()]
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        fare_count = FareMatrix.objects.filter(ticket_type=instance).count()
+        if fare_count:
+            return api_response(
+                success=False,
+                message=(
+                    f"Cannot delete '{instance.code}' -- {fare_count} fare(s) still reference it. "
+                    "Delete or reassign those fares first."
+                ),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        return super().destroy(request, *args, **kwargs)
+
 
 class FareMatrixViewSet(ModelViewSet):
     queryset = FareMatrix.objects.all()
