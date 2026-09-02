@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { Plus, Upload, Trash2, Eye, Pencil } from 'lucide-react'
@@ -21,6 +21,15 @@ interface TicketTypeOption {
   id: string
   code: string
   name_en: string
+}
+
+interface RouteStopOption {
+  route_stop_id: string
+  stop_id: string
+  name_en: string
+  name_ne: string
+  stop_code: string
+  sequence_no: number
 }
 
 interface FareRow {
@@ -69,6 +78,41 @@ function flattenErrors(errors: Record<string, string[] | string>): string {
   return Object.entries(errors)
     .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}`)
     .join(' | ')
+}
+
+// A route's own ordered stops -- used to turn Zone From/To into real
+// dropdowns instead of free text, and to auto-suggest one row per
+// consecutive leg in Bulk Import. Same endpoint the POS ticketing modal
+// already uses for the same From/To-picker purpose.
+function useRouteStops(routeId: string | undefined) {
+  return useQuery({
+    queryKey: ['route-stops-for-fares', routeId],
+    queryFn: async () => {
+      const { data } = await apiClient.get(`/platform/routes/${routeId}/stops/`)
+      return (data.data ?? []) as RouteStopOption[]
+    },
+    enabled: !!routeId,
+  })
+}
+
+// A fare is direction-agnostic (the backend now falls back to the reverse
+// pair automatically), so "To" only ever needs to offer stops *after*
+// "From" in sequence -- entering a backward leg would just be redundant.
+function toOptionsAfter(stops: RouteStopOption[], fromName: string): RouteStopOption[] {
+  if (!fromName) return stops
+  const fromSeq = stops.find((s) => s.name_en === fromName)?.sequence_no
+  return fromSeq == null ? stops : stops.filter((s) => s.sequence_no > fromSeq)
+}
+
+function StopSelect({
+  stops, allowFlat, ...props
+}: { stops: RouteStopOption[]; allowFlat?: boolean } & React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <select className={selectClass} {...props}>
+      <option value="">{allowFlat ? 'Leave blank for a flat fare' : 'Select stop'}</option>
+      {stops.map((s) => <option key={s.stop_id} value={s.name_en}>{s.name_en}</option>)}
+    </select>
+  )
 }
 
 export default function FaresPage() {
@@ -123,6 +167,9 @@ export default function FaresPage() {
 
   // ── Add a single fare row ──────────────────────────────────────────
   const addForm = useForm<AddFareValues>()
+  const addRouteId = addForm.watch('route')
+  const addFromName = addForm.watch('zone_from')
+  const { data: addRouteStops } = useRouteStops(addRouteId)
 
   const createMutation = useMutation({
     mutationFn: (payload: Partial<AddFareValues>) =>
@@ -149,6 +196,9 @@ export default function FaresPage() {
 
   // ── Edit / Delete an existing fare row ──────────────────────────────
   const editForm = useForm<AddFareValues>()
+  const editRouteId = editForm.watch('route')
+  const editFromName = editForm.watch('zone_from')
+  const { data: editRouteStops } = useRouteStops(editRouteId)
 
   const openEdit = (row: FareRow) => {
     setEditTarget(row)
@@ -197,7 +247,24 @@ export default function FaresPage() {
   const bulkForm = useForm<BulkFormValues>({
     defaultValues: { route: '', ticket_type: '', fares: [emptyBulkRow] },
   })
-  const { fields, append, remove } = useFieldArray({ control: bulkForm.control, name: 'fares' })
+  const { fields, append, remove, replace } = useFieldArray({ control: bulkForm.control, name: 'fares' })
+  const bulkRouteId = bulkForm.watch('route')
+  const { data: bulkRouteStops } = useRouteStops(bulkRouteId)
+
+  // Once a route with a real stop sequence is picked, suggest one row per
+  // consecutive leg (A→B, B→C, ...) as a starting point -- still fully
+  // editable/removable, and more rows can be added on top for a through-fare
+  // that skips stops.
+  useEffect(() => {
+    if (bulkRouteStops && bulkRouteStops.length >= 2) {
+      const legs: BulkFareRowInput[] = []
+      for (let i = 0; i < bulkRouteStops.length - 1; i++) {
+        legs.push({ zone_from: bulkRouteStops[i].name_en, zone_to: bulkRouteStops[i + 1].name_en, base_fare: '', peak_fare: '', student_fare: '' })
+      }
+      replace(legs)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bulkRouteStops])
 
   const bulkMutation = useMutation({
     mutationFn: (payload: unknown) =>
@@ -332,9 +399,18 @@ export default function FaresPage() {
               </select>
             </div>
           </div>
+          {addRouteId && (!addRouteStops || addRouteStops.length === 0) && (
+            <p className="text-xs text-amber-600">This route has no stops yet — add stops to the route first to pick them here, or leave From/To blank for a flat fare.</p>
+          )}
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Zone From (stop name)" placeholder="Leave blank for a flat fare" {...addForm.register('zone_from')} />
-            <Input label="Zone To (stop name)" placeholder="Leave blank for a flat fare" {...addForm.register('zone_to')} />
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Zone From (stop)</label>
+              <StopSelect stops={addRouteStops ?? []} allowFlat {...addForm.register('zone_from')} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Zone To (stop)</label>
+              <StopSelect stops={toOptionsAfter(addRouteStops ?? [], addFromName)} allowFlat {...addForm.register('zone_to')} />
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-4">
             <Input label="Base Fare (NPR)" type="number" step="0.01" min="0" required {...addForm.register('base_fare', { required: true })} />
@@ -352,8 +428,10 @@ export default function FaresPage() {
       <Modal open={showBulk} onClose={() => setShowBulk(false)} title="Bulk Import Fares" size="full">
         <form onSubmit={bulkForm.handleSubmit(onSubmitBulk)} className="space-y-4 p-6">
           <p className="text-sm text-gray-500">
-            Upload a whole stage-fare chart at once — e.g. an operator's handwritten भाडादर sheet
-            with one from-stop against many to-stops for a single route and ticket type.
+            Pick a route and its stops load below automatically, one row per consecutive leg
+            (A→B, B→C, ...) — just fill in the fare for each. Add more rows for a through-fare
+            that skips stops. A fare applies both directions automatically, so there's no need
+            to also enter the reverse leg.
           </p>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -376,6 +454,10 @@ export default function FaresPage() {
             </div>
           </div>
 
+          {bulkRouteId && (!bulkRouteStops || bulkRouteStops.length < 2) && (
+            <p className="text-xs text-amber-600">This route needs at least 2 stops before legs can be suggested here.</p>
+          )}
+
           <div className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] gap-2 px-1 text-xs font-medium text-gray-500">
             <span>From stop</span>
             <span>To stop</span>
@@ -385,22 +467,25 @@ export default function FaresPage() {
             <span />
           </div>
           <div className="max-h-96 space-y-2 overflow-y-auto rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-            {fields.map((field, index) => (
-              <div key={field.id} className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] items-center gap-2">
-                <Input {...bulkForm.register(`fares.${index}.zone_from` as const, { required: true })} />
-                <Input {...bulkForm.register(`fares.${index}.zone_to` as const, { required: true })} />
-                <Input type="number" step="0.01" min="0" {...bulkForm.register(`fares.${index}.base_fare` as const, { required: true })} />
-                <Input type="number" step="0.01" min="0" {...bulkForm.register(`fares.${index}.peak_fare` as const)} />
-                <Input type="number" step="0.01" min="0" {...bulkForm.register(`fares.${index}.student_fare` as const)} />
-                <Button
-                  variant="ghost" size="sm" type="button"
-                  onClick={() => remove(index)}
-                  disabled={fields.length === 1}
-                >
-                  <Trash2 className="h-4 w-4 text-red-500" />
-                </Button>
-              </div>
-            ))}
+            {fields.map((field, index) => {
+              const rowFromName = bulkForm.watch(`fares.${index}.zone_from`)
+              return (
+                <div key={field.id} className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] items-center gap-2">
+                  <StopSelect stops={bulkRouteStops ?? []} defaultValue={field.zone_from} {...bulkForm.register(`fares.${index}.zone_from` as const, { required: true })} />
+                  <StopSelect stops={toOptionsAfter(bulkRouteStops ?? [], rowFromName)} defaultValue={field.zone_to} {...bulkForm.register(`fares.${index}.zone_to` as const, { required: true })} />
+                  <Input type="number" step="0.01" min="0" {...bulkForm.register(`fares.${index}.base_fare` as const, { required: true })} />
+                  <Input type="number" step="0.01" min="0" {...bulkForm.register(`fares.${index}.peak_fare` as const)} />
+                  <Input type="number" step="0.01" min="0" {...bulkForm.register(`fares.${index}.student_fare` as const)} />
+                  <Button
+                    variant="ghost" size="sm" type="button"
+                    onClick={() => remove(index)}
+                    disabled={fields.length === 1}
+                  >
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </Button>
+                </div>
+              )
+            })}
           </div>
 
           <Button
@@ -463,8 +548,14 @@ export default function FaresPage() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Zone From (stop name)" placeholder="Leave blank for a flat fare" {...editForm.register('zone_from')} />
-            <Input label="Zone To (stop name)" placeholder="Leave blank for a flat fare" {...editForm.register('zone_to')} />
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Zone From (stop)</label>
+              <StopSelect stops={editRouteStops ?? []} allowFlat {...editForm.register('zone_from')} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Zone To (stop)</label>
+              <StopSelect stops={toOptionsAfter(editRouteStops ?? [], editFromName)} allowFlat {...editForm.register('zone_to')} />
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-4">
             <Input label="Base Fare (NPR)" type="number" step="0.01" min="0" required {...editForm.register('base_fare', { required: true })} />

@@ -512,26 +512,12 @@ async def resolve_ticket_type_id(code: str) -> Optional[str]:
 # excludes FareMatrix.updated_by — if a migration adds a new admin-only
 # column to either model, it should NOT be added to this SELECT without
 # checking whether it's appropriate for passenger-facing consumption.
-async def fetch_fares(
-    route_id: Optional[str] = None,
-    from_stop: Optional[str] = None,
-    to_stop: Optional[str] = None,
+async def _fetch_fares_exact(
+    route_id: Optional[str], from_stop: Optional[str], to_stop: Optional[str]
 ) -> list[dict]:
-    """apps.platform.FareMatrix, optionally narrowed by route and/or a from/to stop_code pair.
-
-    from_stop/to_stop are resolved to that stop's name_en AND name_ne, then matched
-    (case-insensitively) against FareMatrix.zone_from/zone_to -- i.e. FareMatrix rows
-    are entered with the actual boarding/dropping stop names (exactly how the
-    admin/tenant fare UI collects them: "Ghachaur" -> "Bagar", not an abstract zone
-    label), in whichever language the operator typed it in (the fare UI's text fields
-    support the app's global Nepali/Unicode keyboard toggle same as any other field).
-
-    Previously this matched via Stop.zone instead, but that field is never populated
-    in practice -- every stop's zone is blank, so a real stage-fare chart entered by
-    stop name was never actually findable by this lookup. Matching on the stop's own
-    name(s) instead means fares are discoverable using exactly the data already being
-    entered, with no separate zone-tagging step required first.
-    """
+    """One directional match: from_stop must be FareMatrix.zone_from, to_stop
+    must be zone_to. See fetch_fares for why a fare is only ever entered once
+    per pair rather than twice (forward and back)."""
     query = """
         SELECT f.id, f.route_id, f.zone_from, f.zone_to, f.base_fare, f.peak_fare,
                f.student_fare, f.ticket_type_id, tt.code AS ticket_type_code,
@@ -571,7 +557,40 @@ async def fetch_fares(
     engine = get_engine()
     async with engine.connect() as conn:
         result = await conn.execute(text(query), params)
-        rows = [_row_to_dict(r) for r in result.fetchall()]
+        return [_row_to_dict(r) for r in result.fetchall()]
+
+
+async def fetch_fares(
+    route_id: Optional[str] = None,
+    from_stop: Optional[str] = None,
+    to_stop: Optional[str] = None,
+) -> list[dict]:
+    """apps.platform.FareMatrix, optionally narrowed by route and/or a from/to stop_code pair.
+
+    from_stop/to_stop are resolved to that stop's name_en AND name_ne, then matched
+    (case-insensitively) against FareMatrix.zone_from/zone_to -- i.e. FareMatrix rows
+    are entered with the actual boarding/dropping stop names (exactly how the
+    admin/tenant fare UI collects them: "Ghachaur" -> "Bagar", not an abstract zone
+    label), in whichever language the operator typed it in (the fare UI's text fields
+    support the app's global Nepali/Unicode keyboard toggle same as any other field).
+
+    Previously this matched via Stop.zone instead, but that field is never populated
+    in practice -- every stop's zone is blank, so a real stage-fare chart entered by
+    stop name was never actually findable by this lookup. Matching on the stop's own
+    name(s) instead means fares are discoverable using exactly the data already being
+    entered, with no separate zone-tagging step required first.
+
+    A bus fare doesn't depend on travel direction -- A-to-B costs the same as
+    B-to-A -- so a fare is only ever entered once per stop pair, not twice.
+    When both from_stop and to_stop are given and the exact direction has no
+    match, this falls back to the reverse direction and returns that fare
+    instead. An exact match always wins first, so a genuinely asymmetric fare
+    (entered on purpose as two distinct rows) is never shadowed by the
+    fallback.
+    """
+    rows = await _fetch_fares_exact(route_id, from_stop, to_stop)
+    if not rows and from_stop and to_stop:
+        rows = await _fetch_fares_exact(route_id, to_stop, from_stop)
 
     # Distance/time between the two stops is the same for every fare row
     # returned above (it doesn't vary by ticket_type) -- computed once here,
@@ -579,7 +598,8 @@ async def fetch_fares(
     # duplicating it, and only when there's a specific route_id to measure
     # along (a bare from_stop/to_stop zone match with no route_id has no
     # single "the" distance -- multiple routes could connect that zone pair
-    # differently).
+    # differently). Uses the original from_stop/to_stop order regardless of
+    # which direction actually matched -- abs() makes it direction-agnostic.
     if rows and route_id and from_stop and to_stop:
         stops = await fetch_route_stops(route_id)
         by_code = {s["stop_code"]: s for s in stops}
