@@ -2,7 +2,7 @@ import { ReactNode } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
-  LayoutDashboard, Building2, CreditCard, Receipt, Wallet, Ticket,
+  LayoutDashboard, Building2, CreditCard, Receipt, Wallet, Ticket, Route as RouteIcon,
   Users, Settings, Menu, X, Bell, LogOut, Bus, Moon, Sun,
 } from 'lucide-react'
 import { useAuthStore } from '@store/authStore'
@@ -19,6 +19,7 @@ const navItems = [
   { to: '/super-admin/tenants', icon: Building2, labelKey: 'platform:nav.tenantsOnboarding' },
   { to: '/super-admin/billing', icon: Receipt, labelKey: 'platform:nav.billing' },
   { to: '/super-admin/smart-cards', icon: CreditCard, labelKey: 'platform:nav.smartCards' },
+  { to: '/super-admin/routes', icon: RouteIcon, labelKey: 'platform:routes.title' },
   { to: '/super-admin/fares', icon: Wallet, labelKey: 'platform:routes.fareMatrix' },
   { to: '/super-admin/ticket-types', icon: Ticket, labelKey: 'platform:nav.ticketTypes' },
   { to: '/super-admin/users', icon: Users, labelKey: 'platform:nav.users' },

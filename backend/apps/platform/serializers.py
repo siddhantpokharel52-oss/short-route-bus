@@ -55,6 +55,18 @@ class RouteStopSerializer(serializers.ModelSerializer):
         fields = ["id", "stop", "stop_detail", "sequence_no", "estimated_time_from_start"]
 
 
+class RouteOperatorSerializer(serializers.ModelSerializer):
+    """One tenant's assignment to a route -- a SHARED route legitimately has
+    more than one of these; an EXCLUSIVE route should only ever have one."""
+    tenant_id = serializers.UUIDField(source="tenant.id", read_only=True)
+    tenant_name = serializers.CharField(source="tenant.name", read_only=True)
+    schema_name = serializers.CharField(source="tenant.schema_name", read_only=True)
+
+    class Meta:
+        model = RouteAssignment
+        fields = ["tenant_id", "tenant_name", "schema_name", "status", "share_percentage"]
+
+
 class RouteSerializer(serializers.ModelSerializer):
     route_stops = RouteStopSerializer(many=True, read_only=True)
     start_stop = serializers.PrimaryKeyRelatedField(
@@ -65,13 +77,14 @@ class RouteSerializer(serializers.ModelSerializer):
     )
     name_ne = serializers.CharField(required=False, allow_blank=True, default="")
     distance_km = serializers.DecimalField(max_digits=8, decimal_places=2, required=False, default=0)
+    operators = RouteOperatorSerializer(source="assignments", many=True, read_only=True)
 
     class Meta:
         model = Route
         fields = [
             "id", "route_code", "name_en", "name_ne", "start_stop", "end_stop",
             "distance_km", "route_type", "status", "geojson_path",
-            "approved_by", "approved_at", "route_stops", "created_at", "updated_at",
+            "approved_by", "approved_at", "route_stops", "operators", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "approved_by", "approved_at", "created_at", "updated_at"]
 

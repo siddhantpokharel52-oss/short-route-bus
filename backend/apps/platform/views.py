@@ -75,6 +75,16 @@ class RouteViewSet(ModelViewSet):
     search_fields = ["route_code", "name_en", "name_ne"]
     ordering_fields = ["route_code", "name_en", "created_at"]
 
+    def get_queryset(self):
+        qs = Route.objects.filter(is_deleted=False)
+        tenant_id = self.request.query_params.get("tenant")
+        if tenant_id:
+            qs = qs.filter(
+                assignments__tenant_id=tenant_id,
+                assignments__status=RouteAssignment.Status.ACTIVE,
+            ).distinct()
+        return qs.prefetch_related("assignments__tenant", "route_stops__stop")
+
     def get_permissions(self):
         # "stops" is a read-only lookup action — allow unauthenticated access
         # (same policy as list/retrieve: route stop data is public)
