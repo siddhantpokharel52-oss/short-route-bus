@@ -81,6 +81,10 @@ const tenantService = {
     return data.data
   },
 
+  remove: async (id: string): Promise<void> => {
+    await apiClient.delete(`/platform/tenants/${id}/`)
+  },
+
   activate: async (id: string): Promise<Tenant> => {
     const { data } = await apiClient.post<ApiResponse<Tenant>>(
       `/platform/tenants/${id}/activate/`

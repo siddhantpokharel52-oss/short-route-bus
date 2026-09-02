@@ -107,10 +107,21 @@
       "confirm": "Suspend {{name}}? This will halt their operations.",
       "reasonPlaceholder": "Reason for suspension..."
     },
+    "editModal": {
+      "title": "Edit Tenant"
+    },
+    "deleteModal": {
+      "title": "Delete Tenant",
+      "warning": "This permanently deletes {{name}}'s account. Their fleet, staff, and ticketing data are not erased along with it — they become orphaned and unreachable through the app. This cannot be undone from here.",
+      "confirmLabel": "Type the company name to confirm",
+      "confirmPlaceholder": "Type \"{{name}}\" to confirm"
+    },
     "toasts": {
       "activated": "Tenant activated!",
       "suspended": "Tenant suspended",
       "created": "Tenant created!",
+      "updated": "Tenant updated!",
+      "deleted": "Tenant deleted.",
       "copied": "Copied!"
     }
   },

@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Plus, Search, Check, Ban, ExternalLink, Copy, KeyRound } from 'lucide-react'
+import { Plus, Search, Check, Ban, ExternalLink, Copy, KeyRound, Pencil, Trash2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
@@ -28,6 +28,16 @@ function buildLoginUrl(domain: string): string {
   return `https://${domain}/login`
 }
 
+interface EditTenantForm {
+  name: string
+  plan_type: 'BASIC' | 'STANDARD' | 'ENTERPRISE'
+  contact_name: string
+  contact_email: string
+  contact_phone: string
+  address: string
+  pan_vat_number: string
+}
+
 interface CreateTenantForm {
   name: string
   subdomain: string
@@ -48,6 +58,9 @@ export default function TenantsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [suspendTarget, setSuspendTarget] = useState<Tenant | null>(null)
   const [suspendReason, setSuspendReason] = useState('')
+  const [editTarget, setEditTarget] = useState<Tenant | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Tenant | null>(null)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
 
   const [totalCount, setTotalCount] = useState(0)
   const [newTenantCreds, setNewTenantCreds] = useState<TenantCreateResult | null>(null)
@@ -89,6 +102,42 @@ export default function TenantsPage() {
   const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<CreateTenantForm>({
     defaultValues: { plan_type: 'BASIC' },
   })
+
+  const editForm = useForm<EditTenantForm>()
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: EditTenantForm) => tenantService.update(editTarget!.id, payload),
+    onSuccess: () => {
+      toast.success(t('platform:tenants.toasts.updated'))
+      setEditTarget(null)
+      qc.invalidateQueries({ queryKey: ['tenants'] })
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => tenantService.remove(id),
+    onSuccess: () => {
+      toast.success(t('platform:tenants.toasts.deleted'))
+      setDeleteTarget(null)
+      setDeleteConfirmText('')
+      qc.invalidateQueries({ queryKey: ['tenants'] })
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  const openEdit = (tenant: Tenant) => {
+    setEditTarget(tenant)
+    editForm.reset({
+      name: tenant.name,
+      plan_type: tenant.plan_type,
+      contact_name: tenant.contact_name,
+      contact_email: tenant.contact_email,
+      contact_phone: tenant.contact_phone,
+      address: tenant.address,
+      pan_vat_number: tenant.pan_vat_number,
+    })
+  }
 
   const subdomainValue = watch('subdomain') ?? ''
   const baseDomain = import.meta.env.VITE_BASE_DOMAIN || 'localhost'
@@ -190,6 +239,22 @@ export default function TenantsPage() {
               {t('platform:tenants.suspend')}
             </Button>
           )}
+          <Button
+            size="sm"
+            variant="ghost"
+            leftIcon={<Pencil className="h-3.5 w-3.5 text-gray-500" />}
+            onClick={() => openEdit(row)}
+          >
+            {t('common:common.edit')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            leftIcon={<Trash2 className="h-3.5 w-3.5 text-red-600" />}
+            onClick={() => { setDeleteTarget(row); setDeleteConfirmText('') }}
+          >
+            {t('common:common.delete')}
+          </Button>
         </div>
       ),
     },
@@ -425,6 +490,85 @@ export default function TenantsPage() {
               disabled={!suspendReason.trim()}
             >
               {t('platform:tenants.suspend')}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit modal */}
+      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={t('platform:tenants.editModal.title')} size="md">
+        <form onSubmit={editForm.handleSubmit((d) => updateMutation.mutate(d))} className="space-y-4 p-6">
+          <Input label={t('platform:tenants.createModal.companyName')} required
+            {...editForm.register('name', { required: true })} />
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Plan Type</label>
+            <select
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+              {...editForm.register('plan_type', { required: true })}
+            >
+              <option value="BASIC">Basic</option>
+              <option value="STANDARD">Standard</option>
+              <option value="ENTERPRISE">Enterprise</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input label="Contact Person" {...editForm.register('contact_name')} />
+            <Input
+              label={t('platform:tenants.createModal.contactNumber')}
+              type="tel"
+              {...editForm.register('contact_phone')}
+            />
+            <Input
+              label={t('platform:tenants.createModal.emailAddress')}
+              type="email"
+              required
+              {...editForm.register('contact_email', { required: true })}
+            />
+            <Input
+              label={t('platform:tenants.createModal.panVat')}
+              {...editForm.register('pan_vat_number')}
+            />
+            <div className="sm:col-span-2">
+              <Input
+                label={t('platform:tenants.createModal.companyAddress')}
+                {...editForm.register('address')}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 border-t pt-4">
+            <Button variant="secondary" type="button" onClick={() => setEditTarget(null)}>{t('common:common.cancel')}</Button>
+            <Button type="submit" loading={updateMutation.isPending}>{t('common:common.edit')}</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Delete modal */}
+      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title={t('platform:tenants.deleteModal.title')} size="sm">
+        <div className="space-y-4 p-6">
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-300">
+            {t('platform:tenants.deleteModal.warning', { name: deleteTarget?.name })}
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">
+              {t('platform:tenants.deleteModal.confirmLabel')}
+            </label>
+            <Input
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder={t('platform:tenants.deleteModal.confirmPlaceholder', { name: deleteTarget?.name })}
+            />
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
+              {t('common:common.cancel')}
+            </Button>
+            <Button
+              variant="danger"
+              loading={deleteMutation.isPending}
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+              disabled={deleteConfirmText.trim() !== deleteTarget?.name}
+            >
+              {t('common:common.delete')}
             </Button>
           </div>
         </div>
