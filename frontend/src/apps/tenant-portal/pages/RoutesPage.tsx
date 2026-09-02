@@ -20,6 +20,7 @@ import apiClient from '@services/api'
 import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
 import { cn } from '@utils/cn'
+import { romanToNepali } from '@utils/nepaliKeyboard'
 import { useTranslation } from 'react-i18next'
 
 const KATHMANDU: [number, number] = [27.7172, 85.3240]
@@ -101,6 +102,7 @@ export default function RoutesPage() {
   const [routeStart, setRouteStart] = useState<BaatoPlace | null>(null)
   const [routeEnd, setRouteEnd] = useState<BaatoPlace | null>(null)
   const [nameEdited, setNameEdited] = useState(false)
+  const [nameNeEdited, setNameNeEdited] = useState(false)
   const [flyTarget, setFlyTarget] = useState<[number, number] | null>(null)
   const [directionsLoading, setDirectionsLoading] = useState(false)
 
@@ -109,6 +111,7 @@ export default function RoutesPage() {
     setRouteStart(null)
     setRouteEnd(null)
     setNameEdited(false)
+    setNameNeEdited(false)
     setFlyTarget(null)
   }
 
@@ -132,14 +135,22 @@ export default function RoutesPage() {
 
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<RouteForm>()
   const nameEnField = register('name_en', { required: t('routes.required') })
+  const nameNeField = register('name_ne')
 
   // Auto-compose name_en as "{start} — {end}" once both are set, but never
-  // clobber a name the operator has already typed themselves.
+  // clobber a name the operator has already typed themselves. name_ne gets
+  // a best-effort phonetic transliteration of the same composed name as a
+  // starting suggestion -- there's no API that returns a place's actual
+  // Nepali name (Baato's search is English-only, confirmed by testing
+  // lang=ne, which changes nothing), so this is a guess the operator can
+  // freely correct, never an authoritative value.
   useEffect(() => {
     if (!nameEdited && routeStart && routeEnd) {
-      setValue('name_en', `${routeStart.name} — ${routeEnd.name}`)
+      const composedEn = `${routeStart.name} — ${routeEnd.name}`
+      setValue('name_en', composedEn)
+      if (!nameNeEdited) setValue('name_ne', romanToNepali(composedEn.toLowerCase()))
     }
-  }, [routeStart, routeEnd, nameEdited, setValue])
+  }, [routeStart, routeEnd, nameEdited, nameNeEdited, setValue])
 
   // Once both Start and End are set, fetch a suggested road path and
   // pre-fill it as the waypoints -- the operator can still add/undo/clear
@@ -612,13 +623,18 @@ export default function RoutesPage() {
                   placeholder="e.g. Ratnapark — Kalanki"
                   error={errors.name_en?.message}
                   {...nameEnField}
-                  onChange={(e) => { nameEnField.onChange(e); setNameEdited(true) }}
+                  onChange={(e) => {
+                    nameEnField.onChange(e)
+                    setNameEdited(true)
+                    if (!nameNeEdited) setValue('name_ne', romanToNepali(e.target.value.toLowerCase()))
+                  }}
                 />
               </div>
               <NepaliInput
                 label={t('routes.editNameNeLabel')}
                 placeholder="e.g. रत्नपार्क — कलंकी"
-                {...register('name_ne')}
+                {...nameNeField}
+                onChange={(e) => { nameNeField.onChange(e); setNameNeEdited(true) }}
               />
             </div>
           </form>

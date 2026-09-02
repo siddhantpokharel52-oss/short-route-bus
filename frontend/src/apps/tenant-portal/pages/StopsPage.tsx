@@ -17,6 +17,7 @@ import apiClient from '@services/api'
 import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
+import { romanToNepali } from '@utils/nepaliKeyboard'
 
 const KATHMANDU: [number, number] = [27.7172, 85.3240]
 
@@ -132,6 +133,7 @@ export default function StopsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [selectedRouteId, setSelectedRouteId] = useState('')
   const [pendingStop, setPendingStop] = useState<PendingStop | null>(null)
+  const [stopNameNeEdited, setStopNameNeEdited] = useState(false)
   const [savedStops, setSavedStops] = useState<SavedStop[]>([])
   const [openPopup, setOpenPopup] = useState<PopupInfo>(null)
 
@@ -206,12 +208,15 @@ export default function StopsPage() {
       }
     : { longitude: KATHMANDU[1], latitude: KATHMANDU[0] }
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<StopForm>()
+  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<StopForm>()
+  const stopNameEnField = register('name_en', { required: 'Stop name is required' })
+  const stopNameNeField = register('name_ne')
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
     if (!pendingStop) {
       setPendingStop({ lat, lng, name_en: '', name_ne: '', is_terminal: false })
       setOpenPopup(null)
+      setStopNameNeEdited(false)
     }
   }, [pendingStop])
 
@@ -240,6 +245,7 @@ export default function StopsPage() {
       }])
       setPendingStop(null)
       setOpenPopup(null)
+      setStopNameNeEdited(false)
       reset()
       qc.invalidateQueries({ queryKey: ['stops'] })
       qc.invalidateQueries({ queryKey: ['routes'] })
@@ -856,7 +862,7 @@ export default function StopsPage() {
                     <p className="text-sm font-semibold text-gray-800">{t('stops.newStop')}</p>
                     <button
                       type="button"
-                      onClick={() => { setPendingStop(null); reset() }}
+                      onClick={() => { setPendingStop(null); setStopNameNeEdited(false); reset() }}
                       className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"
                     >
                       <X className="h-4 w-4" />
@@ -875,12 +881,17 @@ export default function StopsPage() {
                       label={`${t('stops.stopNameEnLabel')} *`}
                       placeholder="e.g. Kalanki Chowk"
                       error={errors.name_en?.message}
-                      {...register('name_en', { required: 'Stop name is required' })}
+                      {...stopNameEnField}
+                      onChange={(e) => {
+                        stopNameEnField.onChange(e)
+                        if (!stopNameNeEdited) setValue('name_ne', romanToNepali(e.target.value.toLowerCase()))
+                      }}
                     />
                     <NepaliInput
                       label={t('stops.stopNameNeLabel')}
                       placeholder="e.g. कलंकी चोक"
-                      {...register('name_ne')}
+                      {...stopNameNeField}
+                      onChange={(e) => { stopNameNeField.onChange(e); setStopNameNeEdited(true) }}
                     />
                     <div className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2.5">
                       <input
@@ -908,7 +919,7 @@ export default function StopsPage() {
                         type="button"
                         variant="secondary"
                         className="w-full"
-                        onClick={() => { setPendingStop(null); reset() }}
+                        onClick={() => { setPendingStop(null); setStopNameNeEdited(false); reset() }}
                       >
                         {t('common.cancel')}
                       </Button>
