@@ -30,7 +30,11 @@ export function Modal({
   title,
   children,
   size = 'md',
-  closeOnBackdrop = true,
+  // Every modal in the app used to close itself the instant you clicked
+  // even a pixel outside it -- easy to do by accident mid-form and it threw
+  // away whatever you'd typed with no warning. Closing now only ever
+  // happens via the X button or an explicit Cancel action.
+  closeOnBackdrop = false,
 }: ModalProps) {
   return (
     <Transition appear show={open} as={Fragment}>
