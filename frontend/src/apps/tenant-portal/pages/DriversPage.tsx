@@ -664,15 +664,15 @@ export default function DriversPage() {
         open={showCreate}
         onClose={() => { setShowCreate(false); reset(); setAllowances([]); setPhotoFile(null); setLicensePhotoFile(null) }}
         title={t('staff.drivers.addDriver')}
-        size="lg"
+        size="full"
       >
         <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-6 p-6">
 
           {/* Personal Information */}
           <Section icon={User} title={t('staff.drivers.sections.personal')} />
           <PhotoUploadField label="Photo" hint="Optional — can be added later via Edit" onFileChange={setPhotoFile} />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="sm:col-span-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="sm:col-span-2 lg:col-span-1">
               <Input
                 label={t('staff.drivers.fields.fullNameEn')}
                 required
@@ -719,15 +719,6 @@ export default function DriversPage() {
               error={errors.citizenship_no?.message}
               {...register('citizenship_no', { required: t('staff.drivers.validation.citizenshipRequired') })}
             />
-            <div className="sm:col-span-2">
-              <Input
-                label={t('staff.drivers.fields.address')}
-                placeholder="e.g. Kalanki, Kathmandu"
-                required
-                error={errors.address?.message}
-                {...register('address', { required: t('staff.drivers.validation.addressRequired') })}
-              />
-            </div>
             <Input
               label={t('staff.drivers.fields.phone')}
               placeholder="98XXXXXXXX"
@@ -741,7 +732,15 @@ export default function DriversPage() {
                 onChange: (e) => { e.target.value = sanitizePhoneDigits(e.target.value) },
               })}
             />
-            <div />
+            <div className="sm:col-span-2 lg:col-span-3">
+              <Input
+                label={t('staff.drivers.fields.address')}
+                placeholder="e.g. Kalanki, Kathmandu"
+                required
+                error={errors.address?.message}
+                {...register('address', { required: t('staff.drivers.validation.addressRequired') })}
+              />
+            </div>
             <Input
               label={t('staff.drivers.fields.emergencyContact')}
               placeholder="e.g. Sita Shrestha"
@@ -763,7 +762,7 @@ export default function DriversPage() {
           {/* Driver License Information */}
           <Section icon={FileText} title={t('staff.drivers.sections.licenseInfo')} />
           <PhotoUploadField label="License Photo" hint="Optional — can be added later via Edit" onFileChange={setLicensePhotoFile} />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Input
               label={t('staff.drivers.licenseNumber')}
               required
@@ -807,7 +806,7 @@ export default function DriversPage() {
                 />
               )}
             />
-            <div className="sm:col-span-2">
+            <div className="sm:col-span-2 lg:col-span-2">
               <Input
                 label={t('staff.drivers.fields.issuingAuthority')}
                 placeholder="e.g. Department of Transport Management, Bagmati Province"
@@ -823,7 +822,7 @@ export default function DriversPage() {
               <strong>{t('staff.drivers.fields.employeeId')}</strong> — {t('staff.drivers.employeeIdAuto')}
             </p>
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Controller
               name="date_of_joining"
               control={control}
@@ -872,7 +871,7 @@ export default function DriversPage() {
 
           {/* Medical Information */}
           <Section icon={Heart} title={t('staff.drivers.sections.medical')} />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <SelectField label={t('staff.drivers.fields.bloodGroup')} {...register('blood_group')}>
               <option value="">{t('staff.drivers.unknown')}</option>
               {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map((bg) => (
@@ -886,7 +885,7 @@ export default function DriversPage() {
                 <NepaliDateInput label={t('staff.drivers.fields.lastCheckup')} value={field.value} onChange={field.onChange} />
               )}
             />
-            <div className="sm:col-span-2">
+            <div className="sm:col-span-2 lg:col-span-3">
               <label className="mb-1 block text-sm font-medium text-gray-700">
                 {t('staff.drivers.fields.medicalConditions')}
               </label>
@@ -901,17 +900,15 @@ export default function DriversPage() {
 
           {/* Salary & Wages */}
           <Section icon={Wallet} title={t('staff.drivers.sections.salaryWages')} />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <Input
-                label={t('staff.drivers.fields.basicSalary')}
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="e.g. 25000"
-                {...register('basic_salary')}
-              />
-            </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Input
+              label={t('staff.drivers.fields.basicSalary')}
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="e.g. 25000"
+              {...register('basic_salary')}
+            />
           </div>
 
           {/* Allowances */}

@@ -651,7 +651,7 @@ export default function ConductorsPage() {
         open={showCreate}
         onClose={() => { setShowCreate(false); reset(); setAllowances([]); setPhotoFile(null); setCitizenshipPhotoFile(null) }}
         title={t('staff.conductors.addConductor')}
-        size="lg"
+        size="full"
       >
         <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-6 p-6">
 
@@ -659,8 +659,8 @@ export default function ConductorsPage() {
           <Section icon={User} title={t('staff.conductors.personalInfo')} />
           <PhotoUploadField label="Photo" hint="Optional — can be added later via Edit" onFileChange={setPhotoFile} />
           <PhotoUploadField label="Citizenship Photo" hint="Optional — can be added later via Edit" onFileChange={setCitizenshipPhotoFile} />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="sm:col-span-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="sm:col-span-2 lg:col-span-1">
               <Input
                 label={t('staff.conductors.fullNameEn')}
                 required
@@ -708,15 +708,6 @@ export default function ConductorsPage() {
               error={errors.citizenship_no?.message}
               {...register('citizenship_no', { required: t('staff.conductors.validation.citizenshipRequired') })}
             />
-            <div className="sm:col-span-2">
-              <Input
-                label={t('staff.conductors.address')}
-                required
-                placeholder="e.g. Kalanki, Kathmandu"
-                error={errors.address?.message}
-                {...register('address', { required: t('staff.conductors.validation.addressRequired') })}
-              />
-            </div>
             <Input
               label={t('staff.conductors.phoneNumber')}
               required
@@ -730,7 +721,15 @@ export default function ConductorsPage() {
                 onChange: (e) => { e.target.value = sanitizePhoneDigits(e.target.value) },
               })}
             />
-            <div />
+            <div className="sm:col-span-2 lg:col-span-3">
+              <Input
+                label={t('staff.conductors.address')}
+                required
+                placeholder="e.g. Kalanki, Kathmandu"
+                error={errors.address?.message}
+                {...register('address', { required: t('staff.conductors.validation.addressRequired') })}
+              />
+            </div>
             <Input
               label={t('staff.conductors.emergencyContact')}
               placeholder="e.g. Sita Adhikari"
@@ -756,7 +755,7 @@ export default function ConductorsPage() {
               {t('staff.conductors.employeeIdAutoGen')}
             </p>
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Controller
               name="date_of_joining"
               control={control}
@@ -801,7 +800,7 @@ export default function ConductorsPage() {
 
           {/* Medical Information */}
           <Section icon={Heart} title={t('staff.conductors.medicalInfo')} />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <SelectField label={t('staff.conductors.bloodGroup')} {...register('blood_group')}>
               <option value="">{t('staff.conductors.unknownBloodGroup')}</option>
               {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map((bg) => (
@@ -812,17 +811,15 @@ export default function ConductorsPage() {
 
           {/* Salary & Wages */}
           <Section icon={Wallet} title={t('staff.conductors.salaryWages')} />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <Input
-                label={t('staff.conductors.basicSalary')}
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="e.g. 20000"
-                {...register('basic_salary')}
-              />
-            </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Input
+              label={t('staff.conductors.basicSalary')}
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="e.g. 20000"
+              {...register('basic_salary')}
+            />
           </div>
 
           {/* Allowances */}
