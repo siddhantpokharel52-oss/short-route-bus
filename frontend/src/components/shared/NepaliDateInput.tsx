@@ -41,6 +41,10 @@ export function NepaliDateInput({ label, error, required, value = '', onChange, 
 
   const selectedAD = value ? new Date(`${value}T00:00:00`) : null
   const { min: minBSYear, max: maxBSYear } = getBSYearRange()
+  // Wide enough to cover a birth date decades ago through a license expiry
+  // years from now, without needing a lookup table like the BS range has.
+  const adMinYear = new Date().getFullYear() - 100
+  const adMaxYear = new Date().getFullYear() + 10
 
   const initialBS = selectedAD ? safeAdToBS(selectedAD) : null
   const [viewYearBS, setViewYearBS] = useState(initialBS?.year ?? adToBS(new Date()).year)
@@ -138,10 +142,6 @@ export function NepaliDateInput({ label, error, required, value = '', onChange, 
     }
   }
 
-  const monthLabel = isBS
-    ? `${BS_MONTHS_NE[viewMonthBS - 1]} ${toNepaliDigits(viewYearBS)}`
-    : new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(new Date(viewYearAD, viewMonthAD, 1))
-
   const daysInMonth = isBS ? daysInBSMonth(viewYearBS, viewMonthBS) : new Date(viewYearAD, viewMonthAD + 1, 0).getDate()
 
   const firstDayOfWeek = isBS
@@ -188,19 +188,54 @@ export function NepaliDateInput({ label, error, required, value = '', onChange, 
 
         {open && (
           <div className="absolute z-20 mt-1 w-72 rounded-xl border border-gray-200 bg-white p-3 shadow-lg dark:border-gray-700 dark:bg-gray-800">
-            <div className="mb-2 flex items-center justify-between">
+            {/* Month/Year dropdowns -- a birth date or license date is often
+                decades away from today, and clicking a single-month arrow
+                that many times is exactly what made it hard to tell which
+                date was actually selected vs. just being browsed past. */}
+            <div className="mb-2 flex items-center justify-between gap-1">
               <button
                 type="button"
                 onClick={goPrevMonth}
-                className="rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                className="shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{monthLabel}</span>
+              <div className="flex min-w-0 flex-1 items-center justify-center gap-1">
+                <select
+                  aria-label="Month"
+                  value={isBS ? viewMonthBS : viewMonthAD}
+                  onChange={(e) => (isBS ? setViewMonthBS(Number(e.target.value)) : setViewMonthAD(Number(e.target.value)))}
+                  className="min-w-0 rounded-md border border-gray-200 bg-white py-0.5 pl-1.5 pr-1 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                >
+                  {isBS
+                    ? BS_MONTHS_NE.map((name, i) => (
+                        <option key={name} value={i + 1}>{name}</option>
+                      ))
+                    : Array.from({ length: 12 }, (_, i) => (
+                        <option key={i} value={i}>
+                          {new Intl.DateTimeFormat('en-US', { month: 'long' }).format(new Date(2023, i, 1))}
+                        </option>
+                      ))}
+                </select>
+                <select
+                  aria-label="Year"
+                  value={isBS ? viewYearBS : viewYearAD}
+                  onChange={(e) => (isBS ? setViewYearBS(Number(e.target.value)) : setViewYearAD(Number(e.target.value)))}
+                  className="min-w-0 rounded-md border border-gray-200 bg-white py-0.5 pl-1.5 pr-1 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                >
+                  {isBS
+                    ? Array.from({ length: maxBSYear - minBSYear + 1 }, (_, i) => minBSYear + i).map((y) => (
+                        <option key={y} value={y}>{toNepaliDigits(y)}</option>
+                      ))
+                    : Array.from({ length: adMaxYear - adMinYear + 1 }, (_, i) => adMinYear + i).map((y) => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                </select>
+              </div>
               <button
                 type="button"
                 onClick={goNextMonth}
-                className="rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                className="shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>

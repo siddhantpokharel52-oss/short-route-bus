@@ -14,6 +14,7 @@ import { usePagination } from '@hooks/usePagination'
 import apiClient from '@services/api'
 import toast from 'react-hot-toast'
 import { useForm, Controller } from 'react-hook-form'
+import { sanitizePhoneDigits, isValidPhone, PHONE_VALIDATION_MESSAGE } from '@utils/phone'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Driver {
@@ -511,8 +512,10 @@ export default function DriversPage() {
                 <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.fields.phone')}</label>
                 <input
                   type="text"
+                  maxLength={10}
+                  inputMode="numeric"
                   value={editPhone}
-                  onChange={(e) => setEditPhone(e.target.value)}
+                  onChange={(e) => setEditPhone(sanitizePhoneDigits(e.target.value))}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 />
               </div>
@@ -680,10 +683,16 @@ export default function DriversPage() {
             </div>
             <Input
               label={t('staff.drivers.fields.phone')}
-              placeholder="+977-98XXXXXXXX"
+              placeholder="98XXXXXXXX"
+              maxLength={10}
+              inputMode="numeric"
               required
               error={errors.phone?.message}
-              {...register('phone', { required: t('staff.drivers.validation.phoneRequired') })}
+              {...register('phone', {
+                required: t('staff.drivers.validation.phoneRequired'),
+                validate: (v) => isValidPhone(v) || PHONE_VALIDATION_MESSAGE,
+                onChange: (e) => { e.target.value = sanitizePhoneDigits(e.target.value) },
+              })}
             />
             <div />
             <Input
@@ -693,8 +702,14 @@ export default function DriversPage() {
             />
             <Input
               label={t('staff.drivers.fields.emergencyPhone')}
-              placeholder="+977-98XXXXXXXX"
-              {...register('emergency_contact_number')}
+              placeholder="98XXXXXXXX"
+              maxLength={10}
+              inputMode="numeric"
+              error={errors.emergency_contact_number?.message}
+              {...register('emergency_contact_number', {
+                validate: (v) => !v || isValidPhone(v) || PHONE_VALIDATION_MESSAGE,
+                onChange: (e) => { e.target.value = sanitizePhoneDigits(e.target.value) },
+              })}
             />
           </div>
 
