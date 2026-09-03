@@ -8,6 +8,7 @@ import { NepaliInput } from '@components/shared/NepaliInput'
 import { Table, Column, Pagination } from '@components/shared/Table'
 import { Badge, statusVariant } from '@components/shared/Badge'
 import { Modal } from '@components/shared/Modal'
+import { PhotoUploadField } from '@components/shared/PhotoUploadField'
 import { NepaliDateInput } from '@components/shared/NepaliDateInput'
 import { DateDisplay } from '@components/shared/DateDisplay'
 import { usePagination } from '@hooks/usePagination'
@@ -29,6 +30,8 @@ interface Collector {
   citizenship_no: string
   emergency_contact_name: string
   emergency_contact_number: string
+  photo: string | null
+  citizenship_photo: string | null
   shift: string
   blood_group: string
   employment_type: string
@@ -118,6 +121,13 @@ export default function ConductorsPage() {
   const [allowances, setAllowances] = useState<{ title: string; amount: string }[]>([])
   const pagination = usePagination(totalCount)
 
+  // Optional photo uploads -- same "tracked separately from react-hook-form,
+  // multipart only if actually set" pattern as Drivers/company logo.
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [citizenshipPhotoFile, setCitizenshipPhotoFile] = useState<File | null>(null)
+  const [editPhotoFile, setEditPhotoFile] = useState<File | null>(null)
+  const [editCitizenshipPhotoFile, setEditCitizenshipPhotoFile] = useState<File | null>(null)
+
   // ── CRUD targets ─────────────────────────────────────────────────────────────
   const [viewTarget, setViewTarget] = useState<Collector | null>(null)
   const [editTarget, setEditTarget] = useState<Collector | null>(null)
@@ -141,6 +151,8 @@ export default function ConductorsPage() {
     setEditEmploymentType(editTarget.employment_type ?? '')
     setEditVehicleId(editTarget.assigned_vehicle_id ?? '')
     setEditRouteId(editTarget.assigned_route_id ?? '')
+    setEditPhotoFile(null)
+    setEditCitizenshipPhotoFile(null)
   }, [editTarget])
 
   // ── Queries ───────────────────────────────────────────────────────────────────
@@ -179,21 +191,37 @@ export default function ConductorsPage() {
 
   // ── Create ────────────────────────────────────────────────────────────────────
   const createMutation = useMutation({
-    mutationFn: (payload: CollectorForm) =>
-      apiClient.post('/operator/conductors/', {
-        ...payload,
-        assigned_vehicle_id: payload.assigned_vehicle_id || null,
-        assigned_route_id: payload.assigned_route_id || null,
-        basic_salary: payload.basic_salary || null,
-        allowances: allowances
-          .filter((a) => a.title.trim())
-          .map((a) => ({ title: a.title.trim(), amount: parseFloat(a.amount) || 0 })),
-      }),
+    mutationFn: (payload: CollectorForm) => {
+      const cleanAllowances = allowances
+        .filter((a) => a.title.trim())
+        .map((a) => ({ title: a.title.trim(), amount: parseFloat(a.amount) || 0 }))
+
+      if (!photoFile && !citizenshipPhotoFile) {
+        return apiClient.post('/operator/conductors/', {
+          ...payload,
+          assigned_vehicle_id: payload.assigned_vehicle_id || null,
+          assigned_route_id: payload.assigned_route_id || null,
+          basic_salary: payload.basic_salary || null,
+          allowances: cleanAllowances,
+        })
+      }
+      const fd = new FormData()
+      Object.entries(payload).forEach(([key, value]) => fd.append(key, value ?? ''))
+      fd.set('assigned_vehicle_id', payload.assigned_vehicle_id || '')
+      fd.set('assigned_route_id', payload.assigned_route_id || '')
+      fd.set('basic_salary', payload.basic_salary || '')
+      fd.set('allowances', JSON.stringify(cleanAllowances))
+      if (photoFile) fd.append('photo', photoFile)
+      if (citizenshipPhotoFile) fd.append('citizenship_photo', citizenshipPhotoFile)
+      return apiClient.post('/operator/conductors/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    },
     onSuccess: () => {
       toast.success(t('staff.conductors.toast.addSuccess'))
       setShowCreate(false)
       reset()
       setAllowances([])
+      setPhotoFile(null)
+      setCitizenshipPhotoFile(null)
       qc.invalidateQueries({ queryKey: ['conductors'] })
     },
     onError: (err: unknown) => {
@@ -212,11 +240,25 @@ export default function ConductorsPage() {
 
   // ── Update ────────────────────────────────────────────────────────────────────
   const updateMutation = useMutation({
-    mutationFn: (payload: Partial<Collector>) =>
-      apiClient.patch(`/operator/conductors/${editTarget!.id}/`, payload),
+    mutationFn: (payload: Partial<Collector>) => {
+      if (!editPhotoFile && !editCitizenshipPhotoFile) {
+        return apiClient.patch(`/operator/conductors/${editTarget!.id}/`, payload)
+      }
+      const fd = new FormData()
+      Object.entries(payload).forEach(([key, value]) => {
+        if (value !== undefined) fd.append(key, value === null ? '' : String(value))
+      })
+      if (editPhotoFile) fd.append('photo', editPhotoFile)
+      if (editCitizenshipPhotoFile) fd.append('citizenship_photo', editCitizenshipPhotoFile)
+      return apiClient.patch(`/operator/conductors/${editTarget!.id}/`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+    },
     onSuccess: () => {
       toast.success(t('staff.conductors.toast.updateSuccess'))
       setEditTarget(null)
+      setEditPhotoFile(null)
+      setEditCitizenshipPhotoFile(null)
       qc.invalidateQueries({ queryKey: ['conductors'] })
     },
     onError: (err: unknown) => {
@@ -455,6 +497,9 @@ export default function ConductorsPage() {
               <strong>{editTarget.full_name_en}</strong> · {editTarget.employee_id}
             </p>
 
+            <PhotoUploadField label="Photo" existingUrl={editTarget.photo} onFileChange={setEditPhotoFile} />
+            <PhotoUploadField label="Citizenship Photo" existingUrl={editTarget.citizenship_photo} onFileChange={setEditCitizenshipPhotoFile} />
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.conductors.status')}</label>
@@ -604,7 +649,7 @@ export default function ConductorsPage() {
       {/* ── Add Collector Modal ───────────────────────────────────────────── */}
       <Modal
         open={showCreate}
-        onClose={() => { setShowCreate(false); reset() }}
+        onClose={() => { setShowCreate(false); reset(); setAllowances([]); setPhotoFile(null); setCitizenshipPhotoFile(null) }}
         title={t('staff.conductors.addConductor')}
         size="lg"
       >
@@ -612,6 +657,8 @@ export default function ConductorsPage() {
 
           {/* Personal Information */}
           <Section icon={User} title={t('staff.conductors.personalInfo')} />
+          <PhotoUploadField label="Photo" hint="Optional — can be added later via Edit" onFileChange={setPhotoFile} />
+          <PhotoUploadField label="Citizenship Photo" hint="Optional — can be added later via Edit" onFileChange={setCitizenshipPhotoFile} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <Input
@@ -834,7 +881,7 @@ export default function ConductorsPage() {
 
           {/* Actions */}
           <div className="flex justify-end gap-3 border-t pt-4">
-            <Button variant="secondary" type="button" onClick={() => { setShowCreate(false); reset(); setAllowances([]) }}>
+            <Button variant="secondary" type="button" onClick={() => { setShowCreate(false); reset(); setAllowances([]); setPhotoFile(null); setCitizenshipPhotoFile(null) }}>
               {t('common:common.cancel')}
             </Button>
             <Button type="submit" loading={createMutation.isPending} leftIcon={<Plus className="h-4 w-4" />}>

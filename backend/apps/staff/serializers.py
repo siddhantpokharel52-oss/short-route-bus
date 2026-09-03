@@ -46,7 +46,7 @@ class DriverSerializer(serializers.ModelSerializer):
             "phone", "address", "emergency_contact_name", "emergency_contact_number", "photo",
             # license
             "license_no", "license_category", "license_issue_date",
-            "license_expiry", "license_issuing_authority",
+            "license_expiry", "license_issuing_authority", "license_photo",
             # employment
             "employment_type", "date_of_joining", "experience_years",
             "previous_employer", "shift", "route_id", "bus_id",
@@ -91,7 +91,7 @@ class ConductorSerializer(serializers.ModelSerializer):
             "full_name_en", "full_name_ne", "gender", "dob",
             "citizenship_no", "phone", "address",
             "emergency_contact_name", "emergency_contact_number",
-            "blood_group", "photo",
+            "blood_group", "photo", "citizenship_photo",
             "employment_type", "date_of_joining", "shift",
             "assigned_vehicle_id", "assigned_route_id",
             "basic_salary", "allowances",

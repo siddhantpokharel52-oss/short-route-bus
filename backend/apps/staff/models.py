@@ -56,6 +56,7 @@ class Driver(models.Model):
     license_issue_date = models.DateField(null=True, blank=True)
     license_expiry = models.DateField()
     license_issuing_authority = models.CharField(max_length=255, blank=True)
+    license_photo = models.ImageField(upload_to="driver_license_photos/", null=True, blank=True)
 
     # ── Employment Information ───────────────────────────────────
     employment_type = models.CharField(max_length=15, choices=EmploymentType.choices, default=EmploymentType.PERMANENT)
@@ -222,6 +223,7 @@ class Conductor(models.Model):
     emergency_contact_number = models.CharField(max_length=20, blank=True)
     blood_group = models.CharField(max_length=5, blank=True)
     photo = models.ImageField(upload_to="conductor_photos/", null=True, blank=True)
+    citizenship_photo = models.ImageField(upload_to="conductor_citizenship_photos/", null=True, blank=True)
 
     # Employment
     employment_type = models.CharField(max_length=15, choices=EmploymentType.choices, default=EmploymentType.PERMANENT)

@@ -8,6 +8,7 @@ import { NepaliInput } from '@components/shared/NepaliInput'
 import { Table, Column, Pagination } from '@components/shared/Table'
 import { Badge, statusVariant } from '@components/shared/Badge'
 import { Modal } from '@components/shared/Modal'
+import { PhotoUploadField } from '@components/shared/PhotoUploadField'
 import { DateDisplay } from '@components/shared/DateDisplay'
 import { NepaliDateInput } from '@components/shared/NepaliDateInput'
 import { usePagination } from '@hooks/usePagination'
@@ -29,11 +30,13 @@ interface Driver {
   citizenship_no: string
   emergency_contact_name: string
   emergency_contact_number: string
+  photo: string | null
   license_no: string
   license_category: string
   license_issue_date: string
   license_expiry: string
   license_issuing_authority: string
+  license_photo: string | null
   experience_years: number
   employment_type: string
   date_of_joining: string
@@ -127,6 +130,15 @@ export default function DriversPage() {
   const [allowances, setAllowances] = useState<{ title: string; amount: string }[]>([])
   const pagination = usePagination(totalCount)
 
+  // Optional photo uploads -- tracked separately from the react-hook-form
+  // fields since they're Files, not text values (same pattern as the
+  // company logo upload in TenantSettingsPage). Multipart only kicks in on
+  // submit if one of these is actually set.
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [licensePhotoFile, setLicensePhotoFile] = useState<File | null>(null)
+  const [editPhotoFile, setEditPhotoFile] = useState<File | null>(null)
+  const [editLicensePhotoFile, setEditLicensePhotoFile] = useState<File | null>(null)
+
   const [viewTarget, setViewTarget] = useState<Driver | null>(null)
   const [editTarget, setEditTarget] = useState<Driver | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Driver | null>(null)
@@ -152,6 +164,8 @@ export default function DriversPage() {
     setEditExperience(String(editTarget.experience_years ?? ''))
     setEditBloodGroup(editTarget.blood_group ?? '')
     setEditEmploymentType(editTarget.employment_type ?? '')
+    setEditPhotoFile(null)
+    setEditLicensePhotoFile(null)
   }, [editTarget])
 
   const { data, isLoading } = useQuery({
@@ -185,19 +199,34 @@ export default function DriversPage() {
 
   // ── Create ────────────────────────────────────────────────────────────────────
   const createMutation = useMutation({
-    mutationFn: (payload: DriverForm) =>
-      apiClient.post('/operator/drivers/', {
-        ...payload,
-        basic_salary: payload.basic_salary || null,
-        allowances: allowances
-          .filter((a) => a.title.trim())
-          .map((a) => ({ title: a.title.trim(), amount: parseFloat(a.amount) || 0 })),
-      }),
+    mutationFn: (payload: DriverForm) => {
+      const cleanAllowances = allowances
+        .filter((a) => a.title.trim())
+        .map((a) => ({ title: a.title.trim(), amount: parseFloat(a.amount) || 0 }))
+
+      if (!photoFile && !licensePhotoFile) {
+        return apiClient.post('/operator/drivers/', {
+          ...payload,
+          basic_salary: payload.basic_salary || null,
+          allowances: cleanAllowances,
+        })
+      }
+      // Multipart only when a photo was actually picked
+      const fd = new FormData()
+      Object.entries(payload).forEach(([key, value]) => fd.append(key, value ?? ''))
+      fd.set('basic_salary', payload.basic_salary || '')
+      fd.set('allowances', JSON.stringify(cleanAllowances))
+      if (photoFile) fd.append('photo', photoFile)
+      if (licensePhotoFile) fd.append('license_photo', licensePhotoFile)
+      return apiClient.post('/operator/drivers/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    },
     onSuccess: () => {
       toast.success(t('staff.drivers.toast.created'))
       setShowCreate(false)
       reset()
       setAllowances([])
+      setPhotoFile(null)
+      setLicensePhotoFile(null)
       qc.invalidateQueries({ queryKey: ['drivers'] })
     },
     onError: (err: unknown) => {
@@ -216,11 +245,25 @@ export default function DriversPage() {
 
   // ── Update ────────────────────────────────────────────────────────────────────
   const updateDriverMutation = useMutation({
-    mutationFn: (payload: Partial<Driver>) =>
-      apiClient.patch(`/operator/drivers/${editTarget!.id}/`, payload),
+    mutationFn: (payload: Partial<Driver>) => {
+      if (!editPhotoFile && !editLicensePhotoFile) {
+        return apiClient.patch(`/operator/drivers/${editTarget!.id}/`, payload)
+      }
+      const fd = new FormData()
+      Object.entries(payload).forEach(([key, value]) => {
+        if (value !== undefined) fd.append(key, value === null ? '' : String(value))
+      })
+      if (editPhotoFile) fd.append('photo', editPhotoFile)
+      if (editLicensePhotoFile) fd.append('license_photo', editLicensePhotoFile)
+      return apiClient.patch(`/operator/drivers/${editTarget!.id}/`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+    },
     onSuccess: () => {
       toast.success(t('staff.drivers.toast.updated'))
       setEditTarget(null)
+      setEditPhotoFile(null)
+      setEditLicensePhotoFile(null)
       qc.invalidateQueries({ queryKey: ['drivers'] })
     },
     onError: (err: unknown) => {
@@ -451,6 +494,9 @@ export default function DriversPage() {
               <strong>{editTarget.full_name_en}</strong> · {editTarget.employee_id}
             </p>
 
+            <PhotoUploadField label="Photo" existingUrl={editTarget.photo} onFileChange={setEditPhotoFile} />
+            <PhotoUploadField label="License Photo" existingUrl={editTarget.license_photo} onFileChange={setEditLicensePhotoFile} />
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.status')}</label>
@@ -616,7 +662,7 @@ export default function DriversPage() {
       {/* ── Add Driver Modal ──────────────────────────────────────────────── */}
       <Modal
         open={showCreate}
-        onClose={() => { setShowCreate(false); reset() }}
+        onClose={() => { setShowCreate(false); reset(); setAllowances([]); setPhotoFile(null); setLicensePhotoFile(null) }}
         title={t('staff.drivers.addDriver')}
         size="lg"
       >
@@ -624,6 +670,7 @@ export default function DriversPage() {
 
           {/* Personal Information */}
           <Section icon={User} title={t('staff.drivers.sections.personal')} />
+          <PhotoUploadField label="Photo" hint="Optional — can be added later via Edit" onFileChange={setPhotoFile} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <Input
@@ -715,6 +762,7 @@ export default function DriversPage() {
 
           {/* Driver License Information */}
           <Section icon={FileText} title={t('staff.drivers.sections.licenseInfo')} />
+          <PhotoUploadField label="License Photo" hint="Optional — can be added later via Edit" onFileChange={setLicensePhotoFile} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input
               label={t('staff.drivers.licenseNumber')}
@@ -925,7 +973,7 @@ export default function DriversPage() {
             <Button
               variant="secondary"
               type="button"
-              onClick={() => { setShowCreate(false); reset(); setAllowances([]) }}
+              onClick={() => { setShowCreate(false); reset(); setAllowances([]); setPhotoFile(null); setLicensePhotoFile(null) }}
             >
               {t('common:common.cancel')}
             </Button>
