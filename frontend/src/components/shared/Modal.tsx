@@ -8,7 +8,7 @@ interface ModalProps {
   onClose: () => void
   title?: string
   children: ReactNode
-  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full' | 'screen'
   closeOnBackdrop?: boolean
 }
 
@@ -18,6 +18,10 @@ const sizeClasses = {
   lg: 'max-w-lg',
   xl: 'max-w-2xl',
   full: 'max-w-5xl',
+  // For map/canvas-style editors that need real screen space rather than a
+  // popup-sized dialog -- fixed viewport-relative width AND height (every
+  // other size is width-only, sized to its content).
+  screen: 'max-w-[96vw] w-[96vw] h-[92vh]',
 }
 
 export function Modal({
@@ -63,11 +67,12 @@ export function Modal({
                 className={cn(
                   'w-full rounded-2xl bg-white shadow-2xl dark:bg-gray-900',
                   'ring-1 ring-gray-200 dark:ring-gray-700',
-                  sizeClasses[size]
+                  sizeClasses[size],
+                  size === 'screen' && 'flex flex-col overflow-hidden'
                 )}
               >
                 {title && (
-                  <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+                  <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
                     <Dialog.Title className="text-lg font-semibold text-gray-900 dark:text-white">
                       {title}
                     </Dialog.Title>
@@ -79,7 +84,7 @@ export function Modal({
                     </button>
                   </div>
                 )}
-                <div className={cn(!title && 'pt-6')}>{children}</div>
+                <div className={cn(!title && 'pt-6', size === 'screen' && 'min-h-0 flex-1')}>{children}</div>
               </Dialog.Panel>
             </Transition.Child>
           </div>

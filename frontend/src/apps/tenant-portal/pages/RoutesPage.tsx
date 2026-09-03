@@ -572,22 +572,22 @@ export default function RoutesPage() {
         open={showCreate}
         onClose={() => { setShowCreate(false); resetRouteDraft(); reset() }}
         title={t('routes.addRoute')}
-        size="xl"
+        size="screen"
       >
-        <div className="flex h-[620px] flex-col">
-          {/* Top form strip */}
-          <form
-            id="route-form"
-            onSubmit={handleSubmit((d) => {
-              if (!routeStart || !routeEnd) {
-                toast.error('Pick a Route Start and Route End before saving.')
-                return
-              }
-              createMutation.mutate(d)
-            })}
-            className="shrink-0 border-b border-gray-100 bg-gray-50 px-6 py-4"
-          >
-            <div className="mb-3 grid grid-cols-2 gap-4">
+        <div className="flex h-full">
+          {/* Left sidebar — all inputs, waypoints, and actions */}
+          <div className="flex w-96 shrink-0 flex-col overflow-y-auto border-r border-gray-100 bg-gray-50">
+            <form
+              id="route-form"
+              onSubmit={handleSubmit((d) => {
+                if (!routeStart || !routeEnd) {
+                  toast.error('Pick a Route Start and Route End before saving.')
+                  return
+                }
+                createMutation.mutate(d)
+              })}
+              className="space-y-4 border-b border-gray-100 p-5"
+            >
               <PlaceSearchInput
                 label="Route Start *"
                 placeholder="Search a starting place..."
@@ -602,117 +602,40 @@ export default function RoutesPage() {
                 biasLon={KATHMANDU[1]}
                 onSelect={(place) => { setRouteEnd(place); setFlyTarget([place.lat, place.lon]) }}
               />
-            </div>
-            {!routeStart || !routeEnd ? (
-              <p className="mb-3 -mt-1 text-xs text-amber-600">
-                Route Start and Route End are required — each becomes a real, bookable stop at the
-                two ends of this route, so every fare leg can run the full route rather than
-                stopping short of its actual start/end point.
-              </p>
-            ) : null}
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              {!routeStart || !routeEnd ? (
+                <p className="-mt-2 text-xs text-amber-600">
+                  Route Start and Route End are required — each becomes a real, bookable stop at the
+                  two ends of this route, so every fare leg can run the full route rather than
+                  stopping short of its actual start/end point.
+                </p>
+              ) : null}
               <Input
                 label={`${t('routes.editCodeLabel')} *`}
                 placeholder="e.g. 23, 37A"
                 error={errors.route_code?.message}
                 {...register('route_code', { required: t('routes.required') })}
               />
-              <div className="sm:col-span-2">
-                <Input
-                  label={`${t('routes.editNameEnLabel')} *`}
-                  placeholder="e.g. Ratnapark — Kalanki"
-                  error={errors.name_en?.message}
-                  {...nameEnField}
-                  onChange={(e) => {
-                    nameEnField.onChange(e)
-                    setNameEdited(true)
-                    if (!nameNeEdited) setValue('name_ne', suggestNepaliName(e.target.value))
-                  }}
-                />
-              </div>
+              <Input
+                label={`${t('routes.editNameEnLabel')} *`}
+                placeholder="e.g. Ratnapark — Kalanki"
+                error={errors.name_en?.message}
+                {...nameEnField}
+                onChange={(e) => {
+                  nameEnField.onChange(e)
+                  setNameEdited(true)
+                  if (!nameNeEdited) setValue('name_ne', suggestNepaliName(e.target.value))
+                }}
+              />
               <NepaliInput
                 label={t('routes.editNameNeLabel')}
                 placeholder="e.g. रत्नपार्क — कलंकी"
                 {...nameNeField}
                 onChange={(e) => { nameNeField.onChange(e); setNameNeEdited(true) }}
               />
-            </div>
-          </form>
+            </form>
 
-          {/* Map + sidebar */}
-          <div className="flex flex-1 overflow-hidden">
-            {/* Map */}
-            <div className="relative flex-1 h-full">
-              <Map
-                initialViewState={{ latitude: KATHMANDU[0], longitude: KATHMANDU[1], zoom: 12 }}
-                style={{ height: '100%', width: '100%' }}
-                mapStyle={BAATO_STYLE_URL}
-                cursor="crosshair"
-                onClick={(e) => {
-                  setOpenWaypointIdx(null)
-                  handleMapClick(e.lngLat.lat, e.lngLat.lng)
-                }}
-              >
-                <MapResizeHandler />
-                <MapFlyTo target={flyTarget} />
-
-                {/* Route polyline */}
-                {polylineGeoJSON && (
-                  <Source id="waypoint-route" type="geojson" data={polylineGeoJSON}>
-                    <Layer
-                      id="waypoint-route-line"
-                      type="line"
-                      paint={{ 'line-color': '#2563eb', 'line-width': 4, 'line-opacity': 0.85 }}
-                      layout={{ 'line-join': 'round', 'line-cap': 'round' }}
-                    />
-                  </Source>
-                )}
-
-                {/* Waypoint markers */}
-                {waypoints.map((pt, i) => (
-                  <Marker key={i} latitude={pt[0]} longitude={pt[1]} anchor="center">
-                    <div
-                      onClick={(e) => { e.stopPropagation(); setOpenWaypointIdx(i) }}
-                      style={{
-                        background: '#2563eb', color: '#fff', borderRadius: '50%',
-                        width: 26, height: 26, display: 'flex', alignItems: 'center',
-                        justifyContent: 'center', fontSize: 11, fontWeight: 700,
-                        boxShadow: '0 2px 6px rgba(0,0,0,.3)', border: '2px solid #fff',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {i + 1}
-                    </div>
-                  </Marker>
-                ))}
-
-                {/* Waypoint popup */}
-                {openWaypointIdx !== null && waypoints[openWaypointIdx] && (
-                  <Popup
-                    latitude={waypoints[openWaypointIdx][0]}
-                    longitude={waypoints[openWaypointIdx][1]}
-                    onClose={() => setOpenWaypointIdx(null)}
-                    closeButton
-                  >
-                    <div className="text-xs p-1">
-                      <p className="font-semibold">Point {openWaypointIdx + 1}</p>
-                      <p className="text-gray-500">
-                        {waypoints[openWaypointIdx][0].toFixed(5)}, {waypoints[openWaypointIdx][1].toFixed(5)}
-                      </p>
-                    </div>
-                  </Popup>
-                )}
-              </Map>
-
-              {/* Map instruction overlay */}
-              <div className="absolute top-3 left-1/2 z-10 -translate-x-1/2 rounded-xl bg-white/90 px-4 py-2 shadow text-sm font-medium text-gray-700 backdrop-blur-sm whitespace-nowrap pointer-events-none">
-                <MapIcon className="inline h-4 w-4 mr-1.5 text-primary-500" />
-                {directionsLoading ? 'Finding a suggested route…' : t('routes.mapInstruction')}
-              </div>
-            </div>
-
-            {/* Right sidebar */}
-            <div className="flex w-64 shrink-0 flex-col border-l border-gray-100 bg-white p-4">
+            {/* Waypoints */}
+            <div className="flex flex-1 flex-col p-5">
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-sm font-semibold text-gray-700">{t('routes.waypoints')}</p>
                 <div className="flex gap-1">
@@ -756,7 +679,7 @@ export default function RoutesPage() {
               </div>
 
               {/* Waypoints list */}
-              <div className="flex-1 overflow-y-auto space-y-1 text-xs">
+              <div className="max-h-64 flex-1 overflow-y-auto space-y-1 text-xs">
                 {waypoints.length === 0 ? (
                   <p className="text-center text-gray-400 mt-6 italic text-xs">
                     {t('routes.clickToStart')}
@@ -813,6 +736,76 @@ export default function RoutesPage() {
                   {t('common.cancel')}
                 </Button>
               </div>
+            </div>
+          </div>
+
+          {/* Map — takes all remaining space */}
+          <div className="relative flex-1 h-full">
+            <Map
+              initialViewState={{ latitude: KATHMANDU[0], longitude: KATHMANDU[1], zoom: 12 }}
+              style={{ height: '100%', width: '100%' }}
+              mapStyle={BAATO_STYLE_URL}
+              cursor="crosshair"
+              onClick={(e) => {
+                setOpenWaypointIdx(null)
+                handleMapClick(e.lngLat.lat, e.lngLat.lng)
+              }}
+            >
+              <MapResizeHandler />
+              <MapFlyTo target={flyTarget} />
+
+              {/* Route polyline */}
+              {polylineGeoJSON && (
+                <Source id="waypoint-route" type="geojson" data={polylineGeoJSON}>
+                  <Layer
+                    id="waypoint-route-line"
+                    type="line"
+                    paint={{ 'line-color': '#2563eb', 'line-width': 4, 'line-opacity': 0.85 }}
+                    layout={{ 'line-join': 'round', 'line-cap': 'round' }}
+                  />
+                </Source>
+              )}
+
+              {/* Waypoint markers */}
+              {waypoints.map((pt, i) => (
+                <Marker key={i} latitude={pt[0]} longitude={pt[1]} anchor="center">
+                  <div
+                    onClick={(e) => { e.stopPropagation(); setOpenWaypointIdx(i) }}
+                    style={{
+                      background: '#2563eb', color: '#fff', borderRadius: '50%',
+                      width: 26, height: 26, display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', fontSize: 11, fontWeight: 700,
+                      boxShadow: '0 2px 6px rgba(0,0,0,.3)', border: '2px solid #fff',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {i + 1}
+                  </div>
+                </Marker>
+              ))}
+
+              {/* Waypoint popup */}
+              {openWaypointIdx !== null && waypoints[openWaypointIdx] && (
+                <Popup
+                  latitude={waypoints[openWaypointIdx][0]}
+                  longitude={waypoints[openWaypointIdx][1]}
+                  onClose={() => setOpenWaypointIdx(null)}
+                  closeButton
+                >
+                  <div className="text-xs p-1">
+                    <p className="font-semibold">Point {openWaypointIdx + 1}</p>
+                    <p className="text-gray-500">
+                      {waypoints[openWaypointIdx][0].toFixed(5)}, {waypoints[openWaypointIdx][1].toFixed(5)}
+                    </p>
+                  </div>
+                </Popup>
+              )}
+            </Map>
+
+            {/* Map instruction overlay */}
+            <div className="absolute top-3 left-1/2 z-10 -translate-x-1/2 rounded-xl bg-white/90 px-4 py-2 shadow text-sm font-medium text-gray-700 backdrop-blur-sm whitespace-nowrap pointer-events-none">
+              <MapIcon className="inline h-4 w-4 mr-1.5 text-primary-500" />
+              {directionsLoading ? 'Finding a suggested route…' : t('routes.mapInstruction')}
             </div>
           </div>
         </div>
