@@ -288,6 +288,13 @@ export default function RoutesPage() {
   const handleUndo = () => setWaypoints((prev) => prev.slice(0, -1))
   const handleClear = () => setWaypoints([])
 
+  // Start/End stay fixed -- they're what Route Start/Route End actually
+  // named this route's two locked bookable stops from; only the shape of
+  // the path in between is ever draggable.
+  const handleWaypointDragEnd = useCallback((index: number, lat: number, lng: number) => {
+    setWaypoints((prev) => prev.map((pt, i) => (i === index ? [lat, lng] : pt)))
+  }, [])
+
   const distKm = totalDistance(waypoints).toFixed(2)
 
   // GeoJSON for the drawn polyline — [lng, lat] for MapLibre
@@ -766,23 +773,38 @@ export default function RoutesPage() {
                 </Source>
               )}
 
-              {/* Waypoint markers */}
-              {waypoints.map((pt, i) => (
-                <Marker key={i} latitude={pt[0]} longitude={pt[1]} anchor="center">
-                  <div
-                    onClick={(e) => { e.stopPropagation(); setOpenWaypointIdx(i) }}
-                    style={{
-                      background: '#2563eb', color: '#fff', borderRadius: '50%',
-                      width: 26, height: 26, display: 'flex', alignItems: 'center',
-                      justifyContent: 'center', fontSize: 11, fontWeight: 700,
-                      boxShadow: '0 2px 6px rgba(0,0,0,.3)', border: '2px solid #fff',
-                      cursor: 'pointer',
-                    }}
+              {/* Waypoint markers -- every point but the first/last can be
+                  dragged to reshape the path; Start/End stay put since
+                  they're what the Route Start/Route End search actually
+                  named this route's two locked stops from. */}
+              {waypoints.map((pt, i) => {
+                const isLocked = i === 0 || i === waypoints.length - 1
+                const color = i === 0 ? '#22c55e' : i === waypoints.length - 1 ? '#ef4444' : '#2563eb'
+                return (
+                  <Marker
+                    key={i}
+                    latitude={pt[0]}
+                    longitude={pt[1]}
+                    anchor="center"
+                    draggable={!isLocked}
+                    onDragEnd={(e) => handleWaypointDragEnd(i, e.lngLat.lat, e.lngLat.lng)}
                   >
-                    {i + 1}
-                  </div>
-                </Marker>
-              ))}
+                    <div
+                      onClick={(e) => { e.stopPropagation(); setOpenWaypointIdx(i) }}
+                      title={isLocked ? 'Fixed (Route Start/End)' : 'Drag to move'}
+                      style={{
+                        background: color, color: '#fff', borderRadius: '50%',
+                        width: 26, height: 26, display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', fontSize: 11, fontWeight: 700,
+                        boxShadow: '0 2px 6px rgba(0,0,0,.3)', border: '2px solid #fff',
+                        cursor: isLocked ? 'pointer' : 'grab',
+                      }}
+                    >
+                      {i + 1}
+                    </div>
+                  </Marker>
+                )
+              })}
 
               {/* Waypoint popup */}
               {openWaypointIdx !== null && waypoints[openWaypointIdx] && (
