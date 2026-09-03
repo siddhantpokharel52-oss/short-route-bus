@@ -69,6 +69,24 @@ export interface FareInfo {
   peak_hour_surcharge: number
 }
 
+// Mirrors _serialize_fare() in backend/fastapi_services/public_api/router.py --
+// the real shape GET /public-api/v1/fares/ actually returns (see fareForStops).
+export interface FareMatch {
+  id: string
+  route_id: string | null
+  zone_from: string | null
+  zone_to: string | null
+  base_fare: number
+  peak_fare: number
+  student_fare: number
+  senior_citizen_fare: number
+  ticket_type_id: string
+  ticket_type_code: string
+  ticket_type_name: string
+  distance_km: number | null
+  time_minutes: number | null
+}
+
 const publicService = {
   routes: {
     list: async (params?: Record<string, string>): Promise<Route[]> => {
@@ -117,6 +135,18 @@ const publicService = {
       params: { from_stop: fromStopId, to_stop: toStopId },
     })
     return data
+  },
+
+  // GET /public-api/v1/fares/ actually takes stop_code (not the stop's UUID
+  // id) for from_stop/to_stop, and returns { success, data: FareMatch[] } --
+  // one entry per ticket type priced on that route/pair. Matching is already
+  // direction-agnostic server-side (A->B and B->A resolve to the same row),
+  // so there's no need to try both orders here.
+  fareForStops: async (routeId: string, fromStopCode: string, toStopCode: string): Promise<FareMatch[]> => {
+    const { data } = await publicClient.get('/fares/', {
+      params: { route_id: routeId, from_stop: fromStopCode, to_stop: toStopCode },
+    })
+    return Array.isArray(data?.data) ? data.data : []
   },
 
   verifyTicket: async (ticketNumber: string): Promise<{

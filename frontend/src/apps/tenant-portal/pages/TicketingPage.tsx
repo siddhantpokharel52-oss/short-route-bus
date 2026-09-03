@@ -11,7 +11,7 @@ import { Badge, statusVariant } from '@components/shared/Badge'
 import { Modal } from '@components/shared/Modal'
 import { usePagination } from '@hooks/usePagination'
 import apiClient from '@services/api'
-import publicService from '@services/publicService'
+import publicService, { FareMatch } from '@services/publicService'
 import { formatNPR } from '@utils/nepaliDate'
 import { useUiStore } from '@store/uiStore'
 import { useDateFormatter } from '@hooks/useDateFormatter'
@@ -289,11 +289,19 @@ export default function TicketingPage() {
   })
 
   const watchedRouteId = watch('route_id')
+  const watchedFromStopId = watch('from_stop_id')
+  const watchedToStopId = watch('to_stop_id')
+
+  // Whether the operator has typed into Price themselves -- once true, the
+  // fare auto-fill below never overwrites it again (same "suggest but don't
+  // clobber a manual edit" rule used elsewhere in the app).
+  const [fareEdited, setFareEdited] = useState(false)
 
   // Reset stop selections whenever the route changes
   useEffect(() => {
     setValue('from_stop_id', '')
     setValue('to_stop_id', '')
+    setFareEdited(false)
   }, [watchedRouteId, setValue])
 
   const {
@@ -310,6 +318,34 @@ export default function TicketingPage() {
     staleTime: 5 * 60 * 1000,
     retry: 0,
   })
+
+  // ── Auto-fill Price from the real fare matrix ────────────────────────────
+  // Once Route + From + To are all picked, look up the actual configured
+  // fare for that leg (same bidirectional, route-aware lookup the public
+  // fare API already does) and suggest it -- editable, never forced, and
+  // it clears itself (falls back to manual entry) if no fare is set yet for
+  // that exact pair, rather than silently showing 0.
+  const fromStopCode = routeStops.find((s) => s.stop_id === watchedFromStopId)?.stop_code
+  const toStopCode = routeStops.find((s) => s.stop_id === watchedToStopId)?.stop_code
+
+  const { data: fareMatches, isFetching: fareLoading } = useQuery<FareMatch[]>({
+    queryKey: ['pos-fare-lookup', watchedRouteId, fromStopCode, toStopCode],
+    queryFn: () => publicService.fareForStops(watchedRouteId, fromStopCode!, toStopCode!),
+    enabled: !!watchedRouteId && !!fromStopCode && !!toStopCode && fromStopCode !== toStopCode,
+    staleTime: 60 * 1000,
+    retry: 0,
+  })
+
+  useEffect(() => {
+    if (fareEdited) return
+    if (fareMatches && fareMatches.length > 0) {
+      setValue('fare_paid', String(fareMatches[0].base_fare))
+    }
+  }, [fareMatches, fareEdited, setValue])
+
+  const noFareConfigured =
+    !!watchedRouteId && !!fromStopCode && !!toStopCode && fromStopCode !== toStopCode &&
+    !fareLoading && fareMatches?.length === 0
 
   const issueMutation = useMutation({
     mutationFn: async (payload: PosForm) => {
@@ -357,7 +393,7 @@ export default function TicketingPage() {
   const handleClosePOS = () => {
     setShowPos(false)
     setIssuedTicket(null)
-    reset({ payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '', fare_paid: '', passenger_name: '' })
+    reset({ payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '', fare_paid: '', passenger_name: '' }); setFareEdited(false)
   }
 
   // helper: stop dropdown placeholder based on loading/error state
@@ -474,7 +510,7 @@ export default function TicketingPage() {
           </Button>
           <Button
             leftIcon={<Plus className="h-4 w-4" />}
-            onClick={() => { setIssuedTicket(null); reset({ payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '', fare_paid: '', passenger_name: '' }); setShowPos(true) }}
+            onClick={() => { setIssuedTicket(null); reset({ payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '', fare_paid: '', passenger_name: '' }); setFareEdited(false); setShowPos(true) }}
           >
             {t('ticketing.issueTicketPOS')}
           </Button>
@@ -537,7 +573,7 @@ export default function TicketingPage() {
           <ETicket
             ticket={issuedTicket}
             company={company}
-            onNewTicket={() => { setIssuedTicket(null); reset({ payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '', fare_paid: '', passenger_name: '' }) }}
+            onNewTicket={() => { setIssuedTicket(null); reset({ payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '', fare_paid: '', passenger_name: '' }); setFareEdited(false) }}
           />
         ) : (
           <form
@@ -592,7 +628,9 @@ export default function TicketingPage() {
               </p>
             )}
 
-            {/* Price */}
+            {/* Price -- auto-filled from the real fare matrix once Route/From/To
+                are all picked, but always editable and never re-overwritten
+                once the operator has typed into it themselves. */}
             <Input
               label={t('ticketing.priceNPR')}
               type="number"
@@ -601,9 +639,11 @@ export default function TicketingPage() {
               required
               placeholder="e.g. 35"
               error={errors.fare_paid?.message}
+              hint={fareLoading ? 'Looking up the fare…' : noFareConfigured ? 'No fare set for this leg — enter it manually.' : undefined}
               {...register('fare_paid', {
                 required: t('ticketing.priceRequired'),
                 min: { value: 1, message: t('ticketing.priceMin') },
+                onChange: () => setFareEdited(true),
               })}
             />
 
