@@ -14,7 +14,7 @@ from .serializers import (
     ConductorSerializer, ConductorAttendanceSerializer, TicketCollectionSerializer,
     BusCompanySerializer, CompanyLicenseSerializer,
 )
-from backend.apps.users.permissions import IsHRRole, IsOperationsRole, IsConductor
+from backend.apps.users.permissions import IsHRRole, IsOperationsRole, IsConductor, CanViewStaff
 
 
 def api_response(data=None, message="Success", success=True, errors=None, status_code=200):
@@ -33,6 +33,11 @@ class DriverViewSet(ModelViewSet):
     filterset_fields = ["status", "employment_type"]
     search_fields = ["employee_id", "full_name_en", "license_no", "phone"]
     ordering_fields = ["employee_id", "full_name_en", "created_at"]
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [CanViewStaff()]
+        return [IsHRRole()]
 
     def get_queryset(self):
         return Driver.objects.filter(is_deleted=False)

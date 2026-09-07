@@ -93,6 +93,7 @@ export default function FleetPage() {
   const [editRouteId, setEditRouteId] = useState('')
   const [editInsurancePolicyNo, setEditInsurancePolicyNo] = useState('')
   const [editInsuranceExpiry, setEditInsuranceExpiry] = useState('')
+  const [editInsuranceFile, setEditInsuranceFile] = useState<File | null>(null)
 
   // Vehicle list
   const { data, isLoading } = useQuery({
@@ -180,10 +181,11 @@ export default function FleetPage() {
     const insDoc = editTarget.documents?.find((d) => d.doc_type === 'INSURANCE')
     setEditInsurancePolicyNo(insDoc?.doc_no ?? '')
     setEditInsuranceExpiry(insDoc?.expiry_date ?? '')
+    setEditInsuranceFile(null)
   }, [editTarget])
 
   const updateVehicleMutation = useMutation({
-    mutationFn: (id: string) => {
+    mutationFn: async (id: string) => {
       const payload: VehicleUpdatePayload = {
         vehicle_type: editType as Vehicle['vehicle_type'],
         status: editStatus as Vehicle['status'],
@@ -197,11 +199,21 @@ export default function FleetPage() {
         payload.insurance_policy_no = editInsurancePolicyNo
         payload.insurance_expiry_date = editInsuranceExpiry
       }
-      return fleetService.vehicles.update(id, payload)
+      const result = await fleetService.vehicles.update(id, payload)
+      if (editInsuranceFile) {
+        const insDoc = result.documents?.find((d) => d.doc_type === 'INSURANCE')
+        if (insDoc) {
+          await fleetService.attachDocumentFile(id, insDoc.id, editInsuranceFile)
+        } else {
+          toast.error('Set a policy number and expiry date before uploading the insurance document.')
+        }
+      }
+      return result
     },
     onSuccess: () => {
       toast.success('Vehicle updated.')
       setEditTarget(null)
+      setEditInsuranceFile(null)
       qc.invalidateQueries({ queryKey: ['vehicles'] })
     },
     onError: (err: unknown) => {
@@ -507,6 +519,25 @@ export default function FleetPage() {
                   />
                 </div>
               </div>
+              <div className="mt-3">
+                <label className="mb-1 block text-xs font-medium text-gray-700">Insurance Document</label>
+                {editTarget.documents?.find((d) => d.doc_type === 'INSURANCE') ? (
+                  <p className="mb-1 text-xs text-blue-600">
+                    A document is already on file — choose a new file below to replace it.
+                  </p>
+                ) : null}
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(e) => setEditInsuranceFile(e.target.files?.[0] ?? null)}
+                  className="w-full text-xs text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-blue-700 hover:file:bg-blue-200"
+                />
+                {editInsuranceFile && !(editInsurancePolicyNo && editInsuranceExpiry) && (
+                  <p className="mt-1 text-xs text-amber-600">
+                    Fill in the policy number and expiry date above too — the document attaches to that record.
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 border-t pt-3">
@@ -683,9 +714,9 @@ export default function FleetPage() {
           <Section icon={Route} title={t('fleet.sections.operational')} />
           <SelectField label={t('fleet.labels.routeAssigned')} {...register('assigned_route_id')}>
             <option value="">{t('fleet.notAssigned')}</option>
-            {(routes as { id: string; route_number?: string; name?: string }[]).map((r) => (
+            {(routes as { id: string; route_code?: string; name_en?: string }[]).map((r) => (
               <option key={r.id} value={r.id}>
-                {r.route_number ? `${r.route_number} — ` : ''}{r.name ?? r.id}
+                {r.route_code ? `${r.route_code} — ` : ''}{r.name_en ?? r.id}
               </option>
             ))}
           </SelectField>

@@ -12,7 +12,11 @@ class VehicleDocumentSerializer(serializers.ModelSerializer):
             "id", "vehicle", "doc_type", "doc_no", "issued_date",
             "expiry_date", "file", "days_to_expiry", "created_at",
         ]
-        read_only_fields = ["id", "created_at"]
+        # vehicle is injected server-side by VehicleDocumentViewSet.perform_create()
+        # from the URL's vehicle_pk, never supplied by the client -- read_only so
+        # is_valid() doesn't reject a create for lacking a field it was never
+        # meant to send.
+        read_only_fields = ["id", "vehicle", "created_at"]
 
 
 class VehicleGPSSerializer(serializers.ModelSerializer):

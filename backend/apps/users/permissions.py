@@ -66,6 +66,18 @@ class IsFleetRole(BasePermission):
                     request.user.role in self.fleet_roles)
 
 
+class CanViewVehicles(BasePermission):
+    """Read access to the vehicle list for anyone who needs it to do their
+    job -- fleet roles who own the data, plus dispatchers who need to pick
+    an active bus for a schedule/route assignment without needing any
+    fleet-editing rights."""
+    _roles = IsFleetRole.fleet_roles | {User.Role.DISPATCHER}
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and
+                    request.user.role in self._roles)
+
+
 class IsFinanceRole(BasePermission):
     finance_roles = {
         User.Role.SUPER_ADMIN,
@@ -90,6 +102,18 @@ class IsHRRole(BasePermission):
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated and
                     request.user.role in self.hr_roles)
+
+
+class CanViewStaff(BasePermission):
+    """Read access to the driver list for anyone who needs it to do their
+    job -- HR roles who own the data, plus dispatchers who need driver
+    names to assign a bus/trip on the Dispatcher Control Center without
+    needing any staff-editing rights."""
+    _roles = IsHRRole.hr_roles | {User.Role.DISPATCHER}
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and
+                    request.user.role in self._roles)
 
 
 class IsMaintenanceRole(BasePermission):

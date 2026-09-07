@@ -121,14 +121,27 @@ const fleetService = {
     },
   },
 
-  uploadDocument: async (_vehicleId: string, formData: FormData): Promise<VehicleDocument> => {
-    const { data } = await apiClient.post<ApiResponse<VehicleDocument>>(
-      '/fleet/vehicle-documents/',
+  uploadDocument: async (vehicleId: string, formData: FormData): Promise<VehicleDocument> => {
+    const { data } = await apiClient.post<VehicleDocument>(
+      `/fleet/vehicles/${vehicleId}/documents/`,
       formData,
       { headers: { 'Content-Type': 'multipart/form-data' } }
     )
-    if (!data.success) throw new Error(data.message)
-    return data.data
+    return data
+  },
+
+  // Attaches a file to an already-existing document row (e.g. the INSURANCE
+  // row VehicleSerializer.update() creates/updates from policy no + expiry
+  // date) rather than creating a duplicate document with no issued_date.
+  attachDocumentFile: async (vehicleId: string, documentId: string, file: File): Promise<VehicleDocument> => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const { data } = await apiClient.patch<VehicleDocument>(
+      `/fleet/vehicles/${vehicleId}/documents/${documentId}/`,
+      fd,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    )
+    return data
   },
 }
 

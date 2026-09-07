@@ -9,7 +9,7 @@ from .serializers import (
     VehicleSerializer, VehicleDocumentSerializer,
     VehicleInsuranceSerializer, VehicleGPSSerializer, VehicleExpiryAlertSerializer,
 )
-from backend.apps.users.permissions import IsFleetRole, IsOperationsRole
+from backend.apps.users.permissions import IsFleetRole, IsOperationsRole, CanViewVehicles
 
 
 def api_response(data=None, message="Success", success=True, errors=None, status_code=200):
@@ -28,6 +28,11 @@ class VehicleViewSet(ModelViewSet):
     filterset_fields = ["status", "fuel_type", "make"]
     search_fields = ["registration_no", "make", "model", "chassis_no"]
     ordering_fields = ["registration_no", "make", "created_at", "status"]
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [CanViewVehicles()]
+        return [IsFleetRole()]
 
     def get_queryset(self):
         return Vehicle.objects.filter(is_deleted=False)
