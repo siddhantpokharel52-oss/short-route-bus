@@ -90,8 +90,10 @@ class Vehicle(models.Model):
         ).exists()
         if not valid_insurance:
             return False
-        overdue_maintenance = self.maintenance_schedules.filter(
-            status="OVERDUE"
+        from backend.apps.maintenance.models import MaintenanceSchedule
+
+        overdue_maintenance = MaintenanceSchedule.objects.filter(
+            vehicle_id=self.id, status=MaintenanceSchedule.Status.OVERDUE
         ).exists()
         return not overdue_maintenance
 
