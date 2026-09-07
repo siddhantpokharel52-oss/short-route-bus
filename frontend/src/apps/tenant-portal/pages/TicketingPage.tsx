@@ -43,6 +43,7 @@ interface PosForm {
   fare_paid: string
   passenger_name: string
   payment_method: string
+  ticket_type_id: string
 }
 
 // Shape returned by GET /platform/routes/{id}/stops/
@@ -336,12 +337,27 @@ export default function TicketingPage() {
     retry: 0,
   })
 
+  // Each fare match is one Super-Admin-configured Customer/Ticket Type
+  // (General, Student, Senior Citizen, ...) priced for this exact leg --
+  // picking one both applies its fare and records who this ticket was
+  // issued as, instead of always charging the general rate.
   useEffect(() => {
-    if (fareEdited) return
     if (fareMatches && fareMatches.length > 0) {
-      setValue('fare_paid', String(fareMatches[0].base_fare))
+      setValue('ticket_type_id', fareMatches[0].ticket_type_id)
+      if (!fareEdited) setValue('fare_paid', String(fareMatches[0].base_fare))
+    } else {
+      setValue('ticket_type_id', '')
     }
-  }, [fareMatches, fareEdited, setValue])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fareMatches])
+
+  const watchedTicketTypeId = watch('ticket_type_id')
+
+  const handleTicketTypeChange = (ticketTypeId: string) => {
+    setValue('ticket_type_id', ticketTypeId)
+    const match = fareMatches?.find((f) => f.ticket_type_id === ticketTypeId)
+    if (match && !fareEdited) setValue('fare_paid', String(match.base_fare))
+  }
 
   const noFareConfigured =
     !!watchedRouteId && !!fromStopCode && !!toStopCode && fromStopCode !== toStopCode &&
@@ -355,6 +371,7 @@ export default function TicketingPage() {
         fare_paid: payload.fare_paid,
         passenger_name: payload.passenger_name || '',
         payment_method: payload.payment_method,
+        ticket_type_id: payload.ticket_type_id || null,
         issued_by: 'POS',
       })
       return data.data as TicketRecord
@@ -393,7 +410,7 @@ export default function TicketingPage() {
   const handleClosePOS = () => {
     setShowPos(false)
     setIssuedTicket(null)
-    reset({ payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '', fare_paid: '', passenger_name: '' }); setFareEdited(false)
+    reset({ payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '', fare_paid: '', passenger_name: '', ticket_type_id: '' }); setFareEdited(false)
   }
 
   // helper: stop dropdown placeholder based on loading/error state
@@ -510,7 +527,7 @@ export default function TicketingPage() {
           </Button>
           <Button
             leftIcon={<Plus className="h-4 w-4" />}
-            onClick={() => { setIssuedTicket(null); reset({ payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '', fare_paid: '', passenger_name: '' }); setFareEdited(false); setShowPos(true) }}
+            onClick={() => { setIssuedTicket(null); reset({ payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '', fare_paid: '', passenger_name: '', ticket_type_id: '' }); setFareEdited(false); setShowPos(true) }}
           >
             {t('ticketing.issueTicketPOS')}
           </Button>
@@ -573,7 +590,7 @@ export default function TicketingPage() {
           <ETicket
             ticket={issuedTicket}
             company={company}
-            onNewTicket={() => { setIssuedTicket(null); reset({ payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '', fare_paid: '', passenger_name: '' }); setFareEdited(false) }}
+            onNewTicket={() => { setIssuedTicket(null); reset({ payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '', fare_paid: '', passenger_name: '', ticket_type_id: '' }); setFareEdited(false) }}
           />
         ) : (
           <form
@@ -626,6 +643,23 @@ export default function TicketingPage() {
               <p className="text-xs text-red-500 -mt-3">
                 {errors.from_stop_id?.message ?? errors.to_stop_id?.message}
               </p>
+            )}
+
+            {/* Customer Type -- one option per Super-Admin-configured Ticket
+                Type actually priced for this leg (General, Student, Senior
+                Citizen, ...); picking one applies its own fare below. */}
+            {fareMatches && fareMatches.length > 0 && (
+              <SelectField
+                label="Customer Type"
+                value={watchedTicketTypeId}
+                onChange={(e) => handleTicketTypeChange(e.target.value)}
+              >
+                {fareMatches.map((f) => (
+                  <option key={f.ticket_type_id} value={f.ticket_type_id}>
+                    {f.ticket_type_name} — {formatNPR(f.base_fare, 'en')}
+                  </option>
+                ))}
+              </SelectField>
             )}
 
             {/* Price -- auto-filled from the real fare matrix once Route/From/To
