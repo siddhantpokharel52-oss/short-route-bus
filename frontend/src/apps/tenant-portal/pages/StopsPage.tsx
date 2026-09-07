@@ -700,8 +700,8 @@ export default function StopsPage() {
                 {selectedRoute?.route_stops?.map((rs) => (
                   <Marker
                     key={rs.id}
-                    latitude={rs.stop_detail.latitude}
-                    longitude={rs.stop_detail.longitude}
+                    latitude={Number(rs.stop_detail.latitude)}
+                    longitude={Number(rs.stop_detail.longitude)}
                     anchor="center"
                   >
                     <div
@@ -709,8 +709,8 @@ export default function StopsPage() {
                         e.stopPropagation()
                         setOpenPopup({
                           kind: 'existing',
-                          lat: rs.stop_detail.latitude,
-                          lng: rs.stop_detail.longitude,
+                          lat: Number(rs.stop_detail.latitude),
+                          lng: Number(rs.stop_detail.longitude),
                           seq: rs.sequence_no,
                           name: rs.stop_detail.name_en,
                           routeStopId: rs.id,
