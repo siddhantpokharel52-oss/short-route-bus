@@ -34,15 +34,18 @@ export interface TenantCreateResult extends Tenant {
   admin_credentials?: { email: string; password: string }
 }
 
+export type TenantDocType = 'REGISTRATION' | 'PAN' | 'ROUTE_LICENSE' | 'TAX_CLEARANCE' | 'OTHER'
+
 export interface TenantDocument {
   id: string
   tenant: string
-  document_type: string
-  document_name: string
-  document_url: string
-  is_verified: boolean
-  expiry_date: string | null
+  doc_type: TenantDocType
+  file: string
+  verified: boolean
+  verified_by: string | null
+  verified_at: string | null
   uploaded_at: string
+  remarks: string
 }
 
 export interface PaginatedResponse<T> {
@@ -93,6 +96,18 @@ const tenantService = {
     return data.data
   },
 
+  createAdmin: async (
+    id: string,
+    payload: { admin_email: string; admin_password: string; admin_full_name?: string }
+  ): Promise<{ email: string; password: string }> => {
+    const { data } = await apiClient.post<ApiResponse<{ admin_credentials: { email: string; password: string } }>>(
+      `/platform/tenants/${id}/create-admin/`,
+      payload
+    )
+    if (!data.success) throw new Error(data.message)
+    return data.data.admin_credentials
+  },
+
   suspend: async (id: string, reason: string): Promise<Tenant> => {
     const { data } = await apiClient.post<ApiResponse<Tenant>>(
       `/platform/tenants/${id}/suspend/`,
@@ -117,22 +132,18 @@ const tenantService = {
       return data.data
     },
 
-    upload: async (_tenantId: string, formData: FormData): Promise<TenantDocument> => {
-      const { data } = await apiClient.post<ApiResponse<TenantDocument>>(
-        `/platform/tenant-documents/`,
+    upload: async (tenantId: string, formData: FormData): Promise<TenantDocument> => {
+      // Plain ModelViewSet.create() -- no api_response envelope, unlike list().
+      const { data } = await apiClient.post<TenantDocument>(
+        `/platform/tenants/${tenantId}/documents/`,
         formData,
         { headers: { 'Content-Type': 'multipart/form-data' } }
       )
-      if (!data.success) throw new Error(data.message)
-      return data.data
+      return data
     },
 
-    verify: async (docId: string): Promise<TenantDocument> => {
-      const { data } = await apiClient.post<ApiResponse<TenantDocument>>(
-        `/platform/tenant-documents/${docId}/verify/`
-      )
-      if (!data.success) throw new Error(data.message)
-      return data.data
+    verify: async (tenantId: string, docId: string): Promise<void> => {
+      await apiClient.post(`/platform/tenants/${tenantId}/documents/${docId}/verify/`)
     },
   },
 }

@@ -63,6 +63,7 @@ export default function TenantsPage() {
 
   const [totalCount, setTotalCount] = useState(0)
   const [newTenantCreds, setNewTenantCreds] = useState<TenantCreateResult | null>(null)
+  const [panVatFile, setPanVatFile] = useState<File | null>(null)
   const pagination = usePagination(totalCount)
 
   const { data, isLoading } = useQuery({
@@ -148,11 +149,23 @@ export default function TenantsPage() {
   [])
 
   const createMutation = useMutation({
-    mutationFn: (payload: CreateTenantForm) => tenantService.create(payload),
+    mutationFn: async (payload: CreateTenantForm) => {
+      const result = await tenantService.create(payload)
+      if (panVatFile) {
+        const fd = new FormData()
+        fd.append('doc_type', 'PAN')
+        fd.append('file', panVatFile)
+        // Best-effort -- the tenant itself is already created at this point;
+        // a failed document attach shouldn't be reported as a failed onboarding.
+        await tenantService.documents.upload(result.id, fd).catch(() => {
+          toast.error('Tenant created, but the PAN/VAT document failed to upload — add it from the tenant\'s detail page.')
+        })
+      }
+      return result
+    },
     onSuccess: (result) => {
       toast.success(t('platform:tenants.toasts.created'))
-      setShowCreate(false)
-      reset()
+      setShowCreate(false); reset(); setPanVatFile(null)
       qc.invalidateQueries({ queryKey: ['tenants'] })
       // Show credentials modal if admin was created
       if (result?.admin_credentials) {
@@ -298,7 +311,7 @@ export default function TenantsPage() {
       </div>
 
       {/* Create modal */}
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title={t('platform:tenants.addNew')} size="md">
+      <Modal open={showCreate} onClose={() => { setShowCreate(false); reset(); setPanVatFile(null) }} title={t('platform:tenants.addNew')} size="md">
         <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-4 p-6">
           <Input label={t('platform:tenants.createModal.companyName')} required error={errors.name?.message}
             {...register('name', { required: t('platform:tenants.createModal.required') })} />
@@ -363,9 +376,22 @@ export default function TenantsPage() {
             </div>
             <Input
               label={t('platform:tenants.createModal.panVat')}
+              required
               placeholder={t('platform:tenants.createModal.panVatHint')}
-              {...register('pan_vat_number')}
+              error={errors.pan_vat_number?.message}
+              {...register('pan_vat_number', { required: t('platform:tenants.createModal.required') })}
             />
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                PAN/VAT Document
+              </label>
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png"
+                onChange={(e) => setPanVatFile(e.target.files?.[0] ?? null)}
+                className="w-full text-xs text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-primary-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-700 hover:file:bg-primary-200"
+              />
+            </div>
           </div>
 
           {/* Admin user section */}
@@ -383,7 +409,7 @@ export default function TenantsPage() {
           </div>
 
           <div className="flex justify-end gap-3 border-t pt-4">
-            <Button variant="secondary" onClick={() => setShowCreate(false)} type="button">{t('common:common.cancel')}</Button>
+            <Button variant="secondary" onClick={() => { setShowCreate(false); reset(); setPanVatFile(null) }} type="button">{t('common:common.cancel')}</Button>
             <Button type="submit" loading={createMutation.isPending}>{t('platform:tenants.addNew')}</Button>
           </div>
         </form>
@@ -524,7 +550,8 @@ export default function TenantsPage() {
             />
             <Input
               label={t('platform:tenants.createModal.panVat')}
-              {...editForm.register('pan_vat_number')}
+              required
+              {...editForm.register('pan_vat_number', { required: true })}
             />
             <div className="sm:col-span-2">
               <Input

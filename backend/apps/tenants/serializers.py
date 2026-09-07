@@ -117,7 +117,11 @@ class TenantDocumentSerializer(serializers.ModelSerializer):
             "id", "tenant", "doc_type", "file", "verified",
             "verified_by", "verified_at", "uploaded_at", "remarks",
         ]
-        read_only_fields = ["id", "verified", "verified_by", "verified_at", "uploaded_at"]
+        # tenant is injected server-side by TenantDocumentViewSet.perform_create()
+        # from the URL's tenant_pk, never supplied by the client -- read_only so
+        # is_valid() doesn't reject the upload for lacking a field it was never
+        # meant to send.
+        read_only_fields = ["id", "tenant", "verified", "verified_by", "verified_at", "uploaded_at"]
 
 
 class TenantAnalyticsSerializer(serializers.Serializer):

@@ -1,16 +1,20 @@
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Upload, CheckCircle, TrendingUp, Bus, Users } from 'lucide-react'
+import { ArrowLeft, Upload, CheckCircle, TrendingUp, Bus, Users, KeyRound } from 'lucide-react'
 import { Button } from '@components/shared/Button'
+import { Input } from '@components/shared/Input'
+import { Modal } from '@components/shared/Modal'
 import { Badge, statusVariant } from '@components/shared/Badge'
 import { StatCard } from '@components/shared/StatCard'
 import { DateDisplay } from '@components/shared/DateDisplay'
-import tenantService, { TenantDocument } from '@services/tenantService'
+import tenantService, { TenantDocument, TenantDocType } from '@services/tenantService'
+import { getMediaPath } from '@utils/media'
 import { formatNPR } from '@utils/nepaliDate'
 import { useUiStore } from '@store/uiStore'
 import toast from 'react-hot-toast'
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
+import { useForm } from 'react-hook-form'
 
 export default function TenantDetailPage() {
   const { t } = useTranslation(['common', 'platform'])
@@ -38,7 +42,7 @@ export default function TenantDetailPage() {
   })
 
   const verifyMutation = useMutation({
-    mutationFn: (docId: string) => tenantService.documents.verify(docId),
+    mutationFn: (docId: string) => tenantService.documents.verify(id!, docId),
     onSuccess: () => {
       toast.success(t('platform:tenantDetail.toasts.documentVerified'))
       qc.invalidateQueries({ queryKey: ['tenant-documents'] })
@@ -54,12 +58,27 @@ export default function TenantDetailPage() {
     onError: (err: Error) => toast.error(err.message),
   })
 
+  const [uploadDocType, setUploadDocType] = useState<TenantDocType>('OTHER')
+  const [showCreateAdmin, setShowCreateAdmin] = useState(false)
+  const [newCredentials, setNewCredentials] = useState<{ email: string; password: string } | null>(null)
+  const adminForm = useForm<{ admin_email: string; admin_password: string; admin_full_name: string }>()
+
+  const createAdminMutation = useMutation({
+    mutationFn: (payload: { admin_email: string; admin_password: string; admin_full_name: string }) =>
+      tenantService.createAdmin(id!, payload),
+    onSuccess: (credentials) => {
+      setShowCreateAdmin(false)
+      adminForm.reset()
+      setNewCredentials(credentials)
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
   const uploadMutation = useMutation({
     mutationFn: (file: File) => {
       const fd = new FormData()
-      fd.append('tenant', id!)
-      fd.append('document_file', file)
-      fd.append('document_name', file.name)
+      fd.append('doc_type', uploadDocType)
+      fd.append('file', file)
       return tenantService.documents.upload(id!, fd)
     },
     onSuccess: () => {
@@ -100,15 +119,24 @@ export default function TenantDetailPage() {
             <span className="text-sm text-gray-500">{tenant.commission_rate}% {t('platform:tenantDetail.commissionSuffix')}</span>
           </div>
         </div>
-        {tenant.status === 'PENDING' && (
+        <div className="flex items-center gap-2">
           <Button
-            leftIcon={<CheckCircle className="h-4 w-4" />}
-            onClick={() => activateMutation.mutate()}
-            loading={activateMutation.isPending}
+            variant="outline"
+            leftIcon={<KeyRound className="h-4 w-4" />}
+            onClick={() => setShowCreateAdmin(true)}
           >
-            {t('platform:tenantDetail.activateOperator')}
+            Generate Credentials
           </Button>
-        )}
+          {tenant.status === 'PENDING' && (
+            <Button
+              leftIcon={<CheckCircle className="h-4 w-4" />}
+              onClick={() => activateMutation.mutate()}
+              loading={activateMutation.isPending}
+            >
+              {t('platform:tenantDetail.activateOperator')}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Analytics */}
@@ -142,7 +170,18 @@ export default function TenantDetailPage() {
       <div className="card">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-semibold text-gray-900 dark:text-white">{t('platform:tenantDetail.documentsTitle')}</h2>
-          <div>
+          <div className="flex items-center gap-2">
+            <select
+              value={uploadDocType}
+              onChange={(e) => setUploadDocType(e.target.value as TenantDocType)}
+              className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            >
+              <option value="REGISTRATION">Company Registration</option>
+              <option value="PAN">PAN Certificate</option>
+              <option value="ROUTE_LICENSE">Route License</option>
+              <option value="TAX_CLEARANCE">Tax Clearance</option>
+              <option value="OTHER">Other</option>
+            </select>
             <input
               type="file"
               ref={fileInputRef}
@@ -173,17 +212,14 @@ export default function TenantDetailPage() {
               <div key={doc.id} className="flex items-center justify-between py-3">
                 <div>
                   <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {doc.document_name}
+                    {doc.doc_type.replace('_', ' ')}
                   </p>
                   <p className="text-xs text-gray-400">
                     {t('platform:tenantDetail.uploadedLabel')} <DateDisplay date={doc.uploaded_at} />
-                    {doc.expiry_date && (
-                      <> · {t('platform:tenantDetail.expiresLabel')} <DateDisplay date={doc.expiry_date} /></>
-                    )}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  {doc.is_verified ? (
+                  {doc.verified ? (
                     <Badge variant="success">
                       <CheckCircle className="mr-1 h-3 w-3" />
                       {t('platform:tenantDetail.verified')}
@@ -202,7 +238,7 @@ export default function TenantDetailPage() {
                       </Button>
                     </>
                   )}
-                  <a href={doc.document_url} target="_blank" rel="noopener" className="text-xs text-primary-600 underline">
+                  <a href={getMediaPath(doc.file) ?? '#'} target="_blank" rel="noopener" className="text-xs text-primary-600 underline">
                     {t('platform:tenantDetail.view')}
                   </a>
                 </div>
@@ -242,6 +278,76 @@ export default function TenantDetailPage() {
           </div>
         </dl>
       </div>
+
+      {/* Generate Credentials modal */}
+      <Modal open={showCreateAdmin} onClose={() => setShowCreateAdmin(false)} title="Generate Admin Credentials" size="sm">
+        <form
+          onSubmit={adminForm.handleSubmit((d) => createAdminMutation.mutate(d))}
+          className="space-y-4 p-6"
+        >
+          <p className="text-xs text-gray-500">
+            Creates a Company Admin login for this tenant. Only works if this tenant doesn't already have one.
+          </p>
+          <Input
+            label="Admin Full Name"
+            placeholder={`e.g. ${tenant.name} Admin`}
+            {...adminForm.register('admin_full_name')}
+          />
+          <Input
+            label="Admin Email"
+            type="email"
+            required
+            placeholder="admin@example.com"
+            error={adminForm.formState.errors.admin_email?.message}
+            {...adminForm.register('admin_email', { required: 'Admin email is required.' })}
+          />
+          <Input
+            label="Admin Password"
+            type="text"
+            required
+            placeholder="At least 8 characters"
+            error={adminForm.formState.errors.admin_password?.message}
+            {...adminForm.register('admin_password', {
+              required: 'Password is required.',
+              minLength: { value: 8, message: 'Password must be at least 8 characters.' },
+            })}
+          />
+          <div className="flex justify-end gap-3 border-t pt-4">
+            <Button variant="secondary" type="button" onClick={() => setShowCreateAdmin(false)}>
+              {t('common:common.cancel')}
+            </Button>
+            <Button type="submit" loading={createAdminMutation.isPending}>
+              Generate
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Credentials result modal */}
+      <Modal open={!!newCredentials} onClose={() => setNewCredentials(null)} title="Admin Credentials Created" size="sm">
+        {newCredentials && (
+          <div className="space-y-4 p-6">
+            <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+              <p className="mb-3 text-sm font-semibold text-green-800">
+                Share these credentials with the operator — they won't be shown again.
+              </p>
+              <dl className="space-y-2 text-sm">
+                <div>
+                  <dt className="text-xs text-green-600">Email</dt>
+                  <dd className="font-mono font-medium text-green-900">{newCredentials.email}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-green-600">Password</dt>
+                  <dd className="font-mono font-medium text-green-900">{newCredentials.password}</dd>
+                </div>
+              </dl>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={() => setNewCredentials(null)}>{t('common:common.close')}</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

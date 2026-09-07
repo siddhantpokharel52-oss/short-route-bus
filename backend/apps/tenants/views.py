@@ -74,6 +74,50 @@ class TenantViewSet(ModelViewSet):
         serializer.save()
         return api_response(data=serializer.data, message="Tenant updated.")
 
+    @action(detail=True, methods=["post"], url_path="create-admin")
+    def create_admin(self, request, pk=None):
+        """Generates login credentials for a tenant that was onboarded
+        without an admin at creation time (e.g. verification wasn't done
+        yet) -- the one gap in the original create() flow, which had no way
+        back into admin creation once the initial POST was made."""
+        from backend.apps.users.models import User
+
+        tenant = self.get_object()
+
+        if User.objects.filter(tenant_schema=tenant.schema_name, role=User.Role.COMPANY_ADMIN).exists():
+            return api_response(
+                success=False,
+                message="This tenant already has an admin account. Use password reset instead of creating a new one.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        email = (request.data.get("admin_email") or "").strip()
+        password = (request.data.get("admin_password") or "").strip()
+        full_name = (request.data.get("admin_full_name") or "").strip()
+
+        if not email:
+            return api_response(success=False, message="Admin email is required.", status_code=400)
+        if len(password) < 8:
+            return api_response(success=False, message="Password must be at least 8 characters.", status_code=400)
+        if User.objects.filter(email=email).exists():
+            return api_response(success=False, message=f"A user with email '{email}' already exists.", status_code=400)
+
+        user = User(
+            email=email,
+            full_name_en=full_name or f"{tenant.name} Admin",
+            role=User.Role.COMPANY_ADMIN,
+            tenant_schema=tenant.schema_name,
+            is_active=True,
+        )
+        user.set_password(password)
+        user.save()
+
+        return api_response(
+            data={"admin_credentials": {"email": email, "password": password}},
+            message="Admin credentials created.",
+            status_code=status.HTTP_201_CREATED,
+        )
+
     @action(detail=True, methods=["post"])
     def activate(self, request, pk=None):
         tenant = self.get_object()
