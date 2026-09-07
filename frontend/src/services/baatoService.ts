@@ -94,20 +94,27 @@ function decodePolyline(encoded: string): [number, number][] {
   return points
 }
 
+// Baato's router only ever optimizes for a single fastest/shortest driving
+// path -- it has no bus-aware mode. Asking for alternatives=true is the
+// closest real lever available: it returns 1-3 genuinely different road
+// paths between the same two points, so the operator (who knows which
+// roads a bus can actually use) can pick the practical one instead of
+// being handed only the mathematically shortest option.
 export async function getDirections(
   start: [number, number],
   end: [number, number]
-): Promise<BaatoDirectionsResult | null> {
-  const params = new URLSearchParams({ key: BAATO_KEY, mode: 'car' })
+): Promise<BaatoDirectionsResult[]> {
+  const params = new URLSearchParams({ key: BAATO_KEY, mode: 'car', alternatives: 'true' })
   params.append('points[]', `${start[0]},${start[1]}`)
   params.append('points[]', `${end[0]},${end[1]}`)
   const res = await fetch(`${BASE}/directions?${params.toString()}`)
-  if (!res.ok) return null
+  if (!res.ok) return []
   const data = await res.json()
-  const route = data.data?.[0]
-  if (!route?.encodedPolyline) return null
-  return {
-    points: decodePolyline(route.encodedPolyline),
-    distanceKm: route.distanceInMeters / 1000,
-  }
+  const routes = (data.data ?? []) as { encodedPolyline?: string; distanceInMeters: number }[]
+  return routes
+    .filter((r) => r.encodedPolyline)
+    .map((r) => ({
+      points: decodePolyline(r.encodedPolyline!),
+      distanceKm: r.distanceInMeters / 1000,
+    }))
 }

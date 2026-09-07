@@ -7,7 +7,7 @@ import { Plus, Search, MapPin, Ruler, Trash2, Undo2, Map as MapIcon, CheckCircle
 import Map, { Marker, Popup, Source, Layer, useMap } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { BAATO_STYLE_URL } from '@/config/baato'
-import { getDirections, BaatoPlace } from '@services/baatoService'
+import { getDirections, BaatoPlace, BaatoDirectionsResult } from '@services/baatoService'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
 import { NepaliInput } from '@components/shared/NepaliInput'
@@ -44,6 +44,40 @@ function totalDistance(pts: [number, number][]) {
   return d
 }
 
+// Perpendicular distance from a point to a segment, in the same rough units
+// as haversine (km) -- good enough to compare segments against each other,
+// not meant to be geodesically exact.
+function pointToSegmentDistance(
+  p: [number, number], a: [number, number], b: [number, number]
+): number {
+  const [px, py] = p, [ax, ay] = a, [bx, by] = b
+  const dx = bx - ax, dy = by - ay
+  const lenSq = dx * dx + dy * dy
+  if (lenSq === 0) return haversine(p, a)
+  let t = ((px - ax) * dx + (py - ay) * dy) / lenSq
+  t = Math.max(0, Math.min(1, t))
+  const proj: [number, number] = [ax + t * dx, ay + t * dy]
+  return haversine(p, proj)
+}
+
+// A raw map click doesn't say where in the route it belongs -- find the
+// existing segment it lands closest to and insert it there instead of
+// always tacking it onto the end, so editing the middle of a long route
+// doesn't quietly append past the real last stop.
+function insertionIndexFor(point: [number, number], pts: [number, number][]): number {
+  if (pts.length < 2) return pts.length
+  let bestIdx = pts.length
+  let bestDist = Infinity
+  for (let i = 0; i < pts.length - 1; i++) {
+    const dist = pointToSegmentDistance(point, pts[i], pts[i + 1])
+    if (dist < bestDist) {
+      bestDist = dist
+      bestIdx = i + 1
+    }
+  }
+  return bestIdx
+}
+
 // Invalidates map size after the modal's CSS scale transition (≈200 ms).
 function MapResizeHandler() {
   const { current: map } = useMap()
@@ -74,7 +108,20 @@ interface Route {
   distance_km: number
   status: string
   geojson_path: string
-  route_stops: { id: string; sequence_no: number; stop_detail: { name_en: string } }[]
+  route_stops: { id: string; sequence_no: number; stop_detail: { name_en: string; latitude: string; longitude: string } }[]
+}
+
+// Parse a route's stored GeoJSON LineString back into [lat, lng][] waypoints
+// (the stored coordinate order is [lng, lat] per GeoJSON spec).
+function parseRouteGeoJSON(geojson: string): [number, number][] {
+  if (!geojson) return []
+  try {
+    const parsed = JSON.parse(geojson)
+    const coords: [number, number][] = parsed?.geometry?.coordinates ?? []
+    return coords.map(([lng, lat]) => [lat, lng])
+  } catch {
+    return []
+  }
 }
 
 interface RouteForm {
@@ -105,6 +152,8 @@ export default function RoutesPage() {
   const [nameNeEdited, setNameNeEdited] = useState(false)
   const [flyTarget, setFlyTarget] = useState<[number, number] | null>(null)
   const [directionsLoading, setDirectionsLoading] = useState(false)
+  const [routeOptions, setRouteOptions] = useState<BaatoDirectionsResult[]>([])
+  const [selectedOptionIdx, setSelectedOptionIdx] = useState(0)
 
   const resetRouteDraft = () => {
     setWaypoints([])
@@ -113,6 +162,8 @@ export default function RoutesPage() {
     setNameEdited(false)
     setNameNeEdited(false)
     setFlyTarget(null)
+    setRouteOptions([])
+    setSelectedOptionIdx(0)
   }
 
   const [viewTarget, setViewTarget] = useState<Route | null>(null)
@@ -121,6 +172,8 @@ export default function RoutesPage() {
   const [editCode, setEditCode] = useState('')
   const [editNameEn, setEditNameEn] = useState('')
   const [editNameNe, setEditNameNe] = useState('')
+  const [editWaypoints, setEditWaypoints] = useState<[number, number][]>([])
+  const [editOpenWaypointIdx, setEditOpenWaypointIdx] = useState<number | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['routes', pagination.page, search],
@@ -152,20 +205,24 @@ export default function RoutesPage() {
     }
   }, [routeStart, routeEnd, nameEdited, nameNeEdited, setValue])
 
-  // Once both Start and End are set, fetch a suggested road path and
-  // pre-fill it as the waypoints -- the operator can still add/undo/clear
-  // points on top of it, since a bus's real path often isn't the fastest
-  // driving route Directions would compute.
+  // Once both Start and End are set, fetch every road-path alternative
+  // Baato's router can find (not just the single shortest one) and pre-fill
+  // the first as the waypoints. The operator can switch to another option
+  // below, or still add/undo/clear points on top of it -- a bus's real path
+  // often isn't the fastest driving route Directions would compute.
   useEffect(() => {
     if (!routeStart || !routeEnd) return
     let cancelled = false
     setDirectionsLoading(true)
     getDirections([routeStart.lat, routeStart.lon], [routeEnd.lat, routeEnd.lon])
-      .then((result) => {
+      .then((results) => {
         if (cancelled) return
-        if (result) {
-          setWaypoints(result.points)
+        if (results.length > 0) {
+          setRouteOptions(results)
+          setSelectedOptionIdx(0)
+          setWaypoints(results[0].points)
         } else {
+          setRouteOptions([])
           toast.error('Could not find a road route between those two points — draw the path manually on the map.')
         }
       })
@@ -245,7 +302,31 @@ export default function RoutesPage() {
     setEditCode(editTarget.route_code)
     setEditNameEn(editTarget.name_en)
     setEditNameNe(editTarget.name_ne ?? '')
+    setEditWaypoints(parseRouteGeoJSON(editTarget.geojson_path))
+    setEditOpenWaypointIdx(null)
   }, [editTarget])
+
+  const handleEditMapClick = useCallback((lat: number, lng: number) => {
+    setEditWaypoints((prev) => {
+      const idx = insertionIndexFor([lat, lng], prev)
+      const next = [...prev]
+      next.splice(idx, 0, [lat, lng])
+      return next
+    })
+    setEditOpenWaypointIdx(null)
+  }, [])
+
+  const handleEditWaypointDragEnd = useCallback((index: number, lat: number, lng: number) => {
+    setEditWaypoints((prev) => prev.map((pt, i) => (i === index ? [lat, lng] : pt)))
+  }, [])
+
+  const editDistKm = totalDistance(editWaypoints).toFixed(2)
+  const editPolylineGeoJSON = editWaypoints.length >= 2 ? {
+    type: 'Feature' as const,
+    geometry: { type: 'LineString' as const, coordinates: editWaypoints.map(([lat, lng]) => [lng, lat]) },
+    properties: {},
+  } : null
+  const editMapCenter = editWaypoints.length > 0 ? editWaypoints[0] : KATHMANDU
 
   const updateRouteMutation = useMutation({
     mutationFn: (id: string) =>
@@ -253,6 +334,15 @@ export default function RoutesPage() {
         route_code: editCode,
         name_en: editNameEn,
         name_ne: editNameNe,
+        ...(editWaypoints.length >= 2
+          ? {
+              distance_km: parseFloat(totalDistance(editWaypoints).toFixed(2)),
+              geojson_path: JSON.stringify({
+                type: 'Feature',
+                geometry: { type: 'LineString', coordinates: editWaypoints.map(([lat, lng]) => [lng, lat]) },
+              }),
+            }
+          : {}),
       }),
     onSuccess: () => {
       toast.success(t('routes.toasts.updated'))
@@ -281,7 +371,12 @@ export default function RoutesPage() {
   })
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
-    setWaypoints((prev) => [...prev, [lat, lng]])
+    setWaypoints((prev) => {
+      const idx = insertionIndexFor([lat, lng], prev)
+      const next = [...prev]
+      next.splice(idx, 0, [lat, lng])
+      return next
+    })
     setOpenWaypointIdx(null)
   }, [])
 
@@ -501,45 +596,224 @@ export default function RoutesPage() {
         </Modal>
       )}
 
-      {/* ── Edit Route Modal ──────────────────────────────────────────────────── */}
+      {/* ── Edit Route Modal — map editor, same layout as Create ────────────── */}
       {editTarget && (
-        <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={t('routes.editRoute')} size="sm">
-          <div className="p-5 space-y-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">{t('routes.editCodeLabel')} *</label>
-              <input
-                value={editCode}
-                onChange={(e) => setEditCode(e.target.value)}
-                placeholder="e.g. 23, 37A"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-              />
+        <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={`${t('routes.editRoute')} — ${editTarget.route_code}`} size="screen">
+          <div className="flex h-full">
+            {/* Left sidebar */}
+            <div className="flex w-96 shrink-0 flex-col overflow-y-auto border-r border-gray-100 bg-gray-50">
+              <div className="space-y-4 border-b border-gray-100 p-5">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">{t('routes.editCodeLabel')} *</label>
+                  <input
+                    value={editCode}
+                    onChange={(e) => setEditCode(e.target.value)}
+                    placeholder="e.g. 23, 37A"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">{t('routes.editNameEnLabel')} *</label>
+                  <input
+                    value={editNameEn}
+                    onChange={(e) => setEditNameEn(e.target.value)}
+                    placeholder="e.g. Ratnapark — Kalanki"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  />
+                </div>
+                <NepaliInput
+                  label={t('routes.editNameNeLabel')}
+                  value={editNameNe}
+                  onChange={(e) => setEditNameNe(e.target.value)}
+                  placeholder="e.g. रत्नपार्क — कलंकी"
+                />
+              </div>
+
+              {/* Waypoints */}
+              <div className="flex flex-1 flex-col p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-sm font-semibold text-gray-700">{t('routes.waypoints')}</p>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setEditWaypoints((prev) => prev.slice(0, -1))}
+                      disabled={editWaypoints.length === 0}
+                      title="Undo last point"
+                      className={cn('rounded-lg p-1.5 text-gray-500 hover:bg-gray-100', editWaypoints.length === 0 && 'opacity-30 cursor-not-allowed')}
+                    >
+                      <Undo2 className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditWaypoints([])}
+                      disabled={editWaypoints.length === 0}
+                      title="Clear all"
+                      className={cn('rounded-lg p-1.5 text-red-400 hover:bg-red-50', editWaypoints.length === 0 && 'opacity-30 cursor-not-allowed')}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mb-3 rounded-lg bg-primary-50 p-3 space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">{t('routes.points')}</span>
+                    <span className="font-semibold text-primary-700">{editWaypoints.length}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">{t('routes.distanceLabel')}</span>
+                    <span className="font-semibold text-primary-700">{editDistKm} {t('routes.distanceUnit')}</span>
+                  </div>
+                </div>
+
+                {editTarget.route_stops?.length > 0 && (
+                  <div className="mb-3 rounded-lg bg-blue-50 p-3">
+                    <p className="mb-2 text-xs font-semibold text-blue-600">{t('routes.stopsOnRoute')}</p>
+                    <div className="max-h-32 space-y-1 overflow-y-auto">
+                      {editTarget.route_stops.map((rs) => (
+                        <div key={rs.id} className="flex items-center gap-2 text-xs text-blue-700">
+                          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-blue-500 text-[9px] font-bold text-white">
+                            {rs.sequence_no}
+                          </span>
+                          {rs.stop_detail.name_en}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="max-h-64 flex-1 overflow-y-auto space-y-1 text-xs">
+                  {editWaypoints.length === 0 ? (
+                    <p className="text-center text-gray-400 mt-6 italic text-xs">{t('routes.clickToStart')}</p>
+                  ) : (
+                    editWaypoints.map((pt, i) => (
+                      <div
+                        key={i}
+                        className={cn(
+                          'flex items-center gap-2 rounded-lg px-2.5 py-1.5',
+                          i === 0 ? 'bg-green-50' : i === editWaypoints.length - 1 ? 'bg-red-50' : 'bg-gray-50'
+                        )}
+                      >
+                        <span className={cn(
+                          'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white',
+                          i === 0 ? 'bg-green-500' : i === editWaypoints.length - 1 ? 'bg-red-500' : 'bg-blue-500'
+                        )}>
+                          {i + 1}
+                        </span>
+                        <p className="text-gray-400">{pt[0].toFixed(4)}, {pt[1].toFixed(4)}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="mt-4 border-t border-gray-100 pt-4 space-y-2">
+                  <Button
+                    className="w-full"
+                    loading={updateRouteMutation.isPending}
+                    disabled={!editCode.trim() || !editNameEn.trim()}
+                    onClick={() => updateRouteMutation.mutate(editTarget.id)}
+                  >
+                    {t('routes.saveChanges')}
+                  </Button>
+                  <Button variant="secondary" className="w-full" onClick={() => setEditTarget(null)}>
+                    {t('common.cancel')}
+                  </Button>
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">{t('routes.editNameEnLabel')} *</label>
-              <input
-                value={editNameEn}
-                onChange={(e) => setEditNameEn(e.target.value)}
-                placeholder="e.g. Ratnapark — Kalanki"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-              />
-            </div>
-            <div>
-              <NepaliInput
-                label={t('routes.editNameNeLabel')}
-                value={editNameNe}
-                onChange={(e) => setEditNameNe(e.target.value)}
-                placeholder="e.g. रत्नपार्क — कलंकी"
-              />
-            </div>
-            <div className="flex justify-end gap-2 border-t pt-3">
-              <Button variant="secondary" onClick={() => setEditTarget(null)}>{t('common.cancel')}</Button>
-              <Button
-                loading={updateRouteMutation.isPending}
-                disabled={!editCode.trim() || !editNameEn.trim()}
-                onClick={() => updateRouteMutation.mutate(editTarget.id)}
+
+            {/* Map */}
+            <div className="relative flex-1 h-full">
+              <Map
+                initialViewState={{ latitude: editMapCenter[0], longitude: editMapCenter[1], zoom: editWaypoints.length > 0 ? 13 : 12 }}
+                style={{ height: '100%', width: '100%' }}
+                mapStyle={BAATO_STYLE_URL}
+                cursor="crosshair"
+                onClick={(e) => { setEditOpenWaypointIdx(null); handleEditMapClick(e.lngLat.lat, e.lngLat.lng) }}
               >
-                {t('routes.saveChanges')}
-              </Button>
+                <MapResizeHandler />
+
+                {editPolylineGeoJSON && (
+                  <Source id="edit-waypoint-route" type="geojson" data={editPolylineGeoJSON}>
+                    <Layer
+                      id="edit-waypoint-route-line"
+                      type="line"
+                      paint={{ 'line-color': '#2563eb', 'line-width': 4, 'line-opacity': 0.85 }}
+                      layout={{ 'line-join': 'round', 'line-cap': 'round' }}
+                    />
+                  </Source>
+                )}
+
+                {editWaypoints.map((pt, i) => {
+                  const isLocked = i === 0 || i === editWaypoints.length - 1
+                  const color = i === 0 ? '#22c55e' : i === editWaypoints.length - 1 ? '#ef4444' : '#2563eb'
+                  return (
+                    <Marker
+                      key={i}
+                      latitude={pt[0]}
+                      longitude={pt[1]}
+                      anchor="center"
+                      draggable={!isLocked}
+                      onDragEnd={(e) => handleEditWaypointDragEnd(i, e.lngLat.lat, e.lngLat.lng)}
+                    >
+                      <div
+                        onClick={(e) => { e.stopPropagation(); setEditOpenWaypointIdx(i) }}
+                        title={isLocked ? 'Fixed (Route Start/End)' : 'Drag to move'}
+                        style={{
+                          background: color, color: '#fff', borderRadius: '50%',
+                          width: 26, height: 26, display: 'flex', alignItems: 'center',
+                          justifyContent: 'center', fontSize: 11, fontWeight: 700,
+                          boxShadow: '0 2px 6px rgba(0,0,0,.3)', border: '2px solid #fff',
+                          cursor: isLocked ? 'pointer' : 'grab',
+                        }}
+                      >
+                        {i + 1}
+                      </div>
+                    </Marker>
+                  )
+                })}
+
+                {/* Bus stops already on this route -- plotted for reference,
+                    distinct purple pins so they read apart from the path's
+                    own waypoint markers. */}
+                {editTarget.route_stops?.map((rs) => (
+                  <Marker
+                    key={rs.id}
+                    latitude={Number(rs.stop_detail.latitude)}
+                    longitude={Number(rs.stop_detail.longitude)}
+                    anchor="bottom"
+                  >
+                    <div title={rs.stop_detail.name_en} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none' }}>
+                      <div style={{
+                        background: '#7c3aed', color: '#fff', borderRadius: '9999px 9999px 9999px 0',
+                        width: 20, height: 20, transform: 'rotate(45deg)',
+                        boxShadow: '0 2px 4px rgba(0,0,0,.35)', border: '2px solid #fff',
+                      }} />
+                    </div>
+                  </Marker>
+                ))}
+
+                {editOpenWaypointIdx !== null && editWaypoints[editOpenWaypointIdx] && (
+                  <Popup
+                    latitude={editWaypoints[editOpenWaypointIdx][0]}
+                    longitude={editWaypoints[editOpenWaypointIdx][1]}
+                    onClose={() => setEditOpenWaypointIdx(null)}
+                    closeButton
+                  >
+                    <div className="text-xs p-1">
+                      <p className="font-semibold">Point {editOpenWaypointIdx + 1}</p>
+                      <p className="text-gray-500">
+                        {editWaypoints[editOpenWaypointIdx][0].toFixed(5)}, {editWaypoints[editOpenWaypointIdx][1].toFixed(5)}
+                      </p>
+                    </div>
+                  </Popup>
+                )}
+              </Map>
+
+              <div className="absolute top-3 left-1/2 z-10 -translate-x-1/2 rounded-xl bg-white/90 px-4 py-2 shadow text-sm font-medium text-gray-700 backdrop-blur-sm whitespace-nowrap pointer-events-none">
+                <MapIcon className="inline h-4 w-4 mr-1.5 text-primary-500" />
+                {t('routes.mapInstruction')}
+              </div>
             </div>
           </div>
         </Modal>
@@ -640,6 +914,35 @@ export default function RoutesPage() {
                 onChange={(e) => { nameNeField.onChange(e); setNameNeEdited(true) }}
               />
             </form>
+
+            {/* Suggested route alternatives -- Baato's router only returns
+                driving paths, never a bus-aware one, so the operator picks
+                whichever alternative actually matches a bus-usable road. */}
+            {routeOptions.length > 1 && (
+              <div className="border-b border-gray-100 p-5 space-y-2">
+                <p className="text-sm font-semibold text-gray-700">Suggested Routes</p>
+                <p className="text-xs text-gray-400 -mt-1">
+                  Pick whichever option matches a real bus route — these are road-routing
+                  suggestions, not verified bus paths.
+                </p>
+                {routeOptions.map((opt, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => { setSelectedOptionIdx(i); setWaypoints(opt.points) }}
+                    className={cn(
+                      'flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition-colors',
+                      i === selectedOptionIdx
+                        ? 'border-primary-400 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                    )}
+                  >
+                    <span className="font-medium">Option {i + 1}</span>
+                    <span>{opt.distanceKm.toFixed(2)} {t('routes.distanceUnit')}</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Waypoints */}
             <div className="flex flex-1 flex-col p-5">
