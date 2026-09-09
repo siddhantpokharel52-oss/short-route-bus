@@ -307,7 +307,12 @@ function SubscriptionsTab() {
       </div>
 
       <div className="card p-0">
-        <Table columns={columns} data={subs} keyExtractor={(s) => s.id} loading={isLoading} />
+        <Table
+          columns={columns} data={subs} keyExtractor={(s) => s.id} loading={isLoading}
+          emptyIcon={<CreditCard className="h-10 w-10" />}
+          emptyMessage={t('platform:billing.noSubscriptionsYet', { defaultValue: 'No subscriptions yet.' })}
+          emptyAction={<Button size="sm" onClick={() => setShowCreate(true)}>{t('platform:billing.newSubscription')}</Button>}
+        />
         <Pagination page={pagination.page} totalPages={pagination.totalPages}
           totalCount={totalCount} pageSize={pagination.pageSize} onPageChange={pagination.setPage} />
       </div>
@@ -639,7 +644,11 @@ function InvoicesTab() {
       </div>
 
       <div className="card p-0">
-        <Table columns={columns} data={invoices} keyExtractor={(i) => i.id} loading={isLoading} />
+        <Table
+          columns={columns} data={invoices} keyExtractor={(i) => i.id} loading={isLoading}
+          emptyIcon={<Receipt className="h-10 w-10" />}
+          emptyMessage={t('platform:billing.noInvoicesYet', { defaultValue: 'No invoices yet — generate one from the Subscriptions tab.' })}
+        />
         <Pagination page={pagination.page} totalPages={pagination.totalPages}
           totalCount={totalCount} pageSize={pagination.pageSize} onPageChange={pagination.setPage} />
       </div>

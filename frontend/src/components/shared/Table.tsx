@@ -17,6 +17,8 @@ interface TableProps<T> {
   keyExtractor: (row: T) => string
   loading?: boolean
   emptyMessage?: string
+  emptyIcon?: ReactNode
+  emptyAction?: ReactNode
   className?: string
 }
 
@@ -34,6 +36,8 @@ export function Table<T>({
   keyExtractor,
   loading = false,
   emptyMessage,
+  emptyIcon,
+  emptyAction,
   className,
 }: TableProps<T>) {
   const { t } = useTranslation()
@@ -68,8 +72,10 @@ export function Table<T>({
             </tr>
           ) : data.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="py-12 text-center text-gray-400">
-                {emptyMessage ?? t('common.noData')}
+              <td colSpan={columns.length} className="py-12 text-center">
+                {emptyIcon && <div className="mx-auto mb-3 flex justify-center text-gray-300">{emptyIcon}</div>}
+                <p className="text-gray-400">{emptyMessage ?? t('common.noData')}</p>
+                {emptyAction && <div className="mt-4 flex justify-center">{emptyAction}</div>}
               </td>
             </tr>
           ) : (
