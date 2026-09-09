@@ -22,6 +22,11 @@ interface MyRoute {
   route_type: 'EXCLUSIVE' | 'SHARED'
 }
 
+interface TicketTypeOption {
+  id: string
+  name_en: string
+}
+
 interface FareRow {
   id: string
   route: string | null
@@ -61,6 +66,18 @@ export default function FaresPage() {
     [myRoutes]
   )
 
+  const { data: ticketTypes } = useQuery({
+    queryKey: ['ticket-types-for-fares-readonly'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/platform/ticket-types/', { params: { page_size: 100 } })
+      return (data.data ?? []) as TicketTypeOption[]
+    },
+  })
+  const ticketTypeById = useMemo(
+    () => Object.fromEntries((ticketTypes ?? []).map((tt) => [tt.id, tt])),
+    [ticketTypes]
+  )
+
   const { data: fares, isLoading } = useQuery({
     queryKey: ['fare-matrix-tenant', pagination.page, routeFilter],
     queryFn: async () => {
@@ -79,10 +96,9 @@ export default function FaresPage() {
     },
     { key: 'zone_from', header: 'From', render: (r) => r.zone_from || <span className="text-gray-400">—</span> },
     { key: 'zone_to', header: 'To', render: (r) => r.zone_to || <span className="text-gray-400">—</span> },
-    { key: 'base_fare', header: 'Base Fare', render: (r) => `Rs. ${r.base_fare}` },
+    { key: 'ticket_type', header: 'Ticket Type', render: (r) => ticketTypeById[r.ticket_type]?.name_en ?? <span className="text-gray-400">—</span> },
+    { key: 'base_fare', header: 'Fare', render: (r) => `Rs. ${r.base_fare}` },
     { key: 'peak_fare', header: 'Peak Fare', render: (r) => `Rs. ${r.peak_fare}` },
-    { key: 'student_fare', header: 'Student Fare', render: (r) => `Rs. ${r.student_fare}` },
-    { key: 'senior_citizen_fare', header: 'Senior Citizen Fare', render: (r) => `Rs. ${r.senior_citizen_fare}` },
     {
       key: 'id', header: '',
       render: (r) => (
@@ -137,10 +153,9 @@ export default function FaresPage() {
             <div className="flex justify-between"><span className="text-gray-500">Route</span><span className="font-medium">{viewTarget.route ? (routeById[viewTarget.route]?.route_code ?? viewTarget.route) : 'Flat / all routes'}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">From</span><span className="font-medium">{viewTarget.zone_from || '—'}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">To</span><span className="font-medium">{viewTarget.zone_to || '—'}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Base Fare</span><span className="font-medium">Rs. {viewTarget.base_fare}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Ticket Type</span><span className="font-medium">{ticketTypeById[viewTarget.ticket_type]?.name_en ?? '—'}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Fare</span><span className="font-medium">Rs. {viewTarget.base_fare}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Peak Fare</span><span className="font-medium">Rs. {viewTarget.peak_fare}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Student Fare</span><span className="font-medium">Rs. {viewTarget.student_fare}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Senior Citizen Fare</span><span className="font-medium">Rs. {viewTarget.senior_citizen_fare}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Created</span><span className="font-medium">{new Date(viewTarget.created_at).toLocaleString()}</span></div>
             <div className="flex justify-end border-t pt-4">
               <Button variant="secondary" onClick={() => setViewTarget(null)}>Close</Button>
