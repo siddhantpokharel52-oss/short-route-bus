@@ -337,19 +337,34 @@ export default function TicketingPage() {
     retry: 0,
   })
 
-  // Each fare match is one Super-Admin-configured Customer/Ticket Type
-  // (General, Student, Senior Citizen, ...) priced for this exact leg --
-  // picking one both applies its fare and records who this ticket was
-  // issued as, instead of always charging the general rate.
+  // Every active Ticket Type (Super-Admin-configured), independent of
+  // whether this specific route/leg already has a fare priced for it --
+  // the selector must stay usable even before a fare's been entered yet,
+  // same as Price itself already falls back to manual entry.
+  const { data: allTicketTypes = [] } = useQuery<{ id: string; name_en: string }[]>({
+    queryKey: ['all-ticket-types'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/platform/ticket-types/')
+      return data.data ?? []
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Default the selection to whichever type already has a priced fare for
+  // this leg (so Price auto-fills immediately); if none do, fall back to
+  // the first active type with no price pre-filled -- never leave the
+  // field empty just because this particular leg isn't priced yet.
   useEffect(() => {
     if (fareMatches && fareMatches.length > 0) {
       setValue('ticket_type_id', fareMatches[0].ticket_type_id)
       if (!fareEdited) setValue('fare_paid', String(fareMatches[0].base_fare))
+    } else if (allTicketTypes.length > 0) {
+      setValue('ticket_type_id', allTicketTypes[0].id)
     } else {
       setValue('ticket_type_id', '')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fareMatches])
+  }, [fareMatches, allTicketTypes])
 
   const watchedTicketTypeId = watch('ticket_type_id')
 
@@ -646,19 +661,26 @@ export default function TicketingPage() {
             )}
 
             {/* Customer Type -- one option per Super-Admin-configured Ticket
-                Type actually priced for this leg (General, Student, Senior
-                Citizen, ...); picking one applies its own fare below. */}
-            {fareMatches && fareMatches.length > 0 && (
+                Type (General, Student, Senior Citizen, ...), always shown so
+                it's captured on every ticket even before this specific leg
+                has a fare entered for it. Picking a type that already has a
+                priced fare here auto-fills Price below; one that doesn't
+                just leaves Price for manual entry, same as an unpriced leg
+                already does. */}
+            {allTicketTypes.length > 0 && (
               <SelectField
                 label="Customer Type"
                 value={watchedTicketTypeId}
                 onChange={(e) => handleTicketTypeChange(e.target.value)}
               >
-                {fareMatches.map((f) => (
-                  <option key={f.ticket_type_id} value={f.ticket_type_id}>
-                    {f.ticket_type_name} — {formatNPR(f.base_fare, 'en')}
-                  </option>
-                ))}
+                {allTicketTypes.map((tt) => {
+                  const match = fareMatches?.find((f) => f.ticket_type_id === tt.id)
+                  return (
+                    <option key={tt.id} value={tt.id}>
+                      {tt.name_en}{match ? ` — ${formatNPR(match.base_fare, 'en')}` : ''}
+                    </option>
+                  )
+                })}
               </SelectField>
             )}
 
