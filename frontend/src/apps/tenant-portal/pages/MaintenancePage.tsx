@@ -32,6 +32,7 @@ interface MaintenanceRecord {
 interface VehicleListItem {
   id: string
   registration_no: string
+  status: string
 }
 
 interface ScheduleForm {
@@ -64,15 +65,20 @@ export default function MaintenancePage() {
     },
   })
 
-  // Fetch active vehicles for the registration number dropdown
-  const { data: vehicles = [] } = useQuery<VehicleListItem[]>({
+  // Fetch every vehicle still in the fleet for the registration number
+  // dropdown -- scheduling maintenance is picking a *future* service date,
+  // not pulling the bus off the road right now, so a bus that's Assigned or
+  // In Service today (i.e. doing its job) still needs to be selectable.
+  // Only Retired is excluded, since that bus is permanently out of the fleet.
+  const { data: allVehicles = [] } = useQuery<VehicleListItem[]>({
     queryKey: ['vehicles-dropdown'],
     queryFn: async () => {
-      const { data } = await apiClient.get('/fleet/vehicles/', { params: { page_size: 200, status: 'ACTIVE' } })
+      const { data } = await apiClient.get('/fleet/vehicles/', { params: { page_size: 200 } })
       return (Array.isArray(data.data) ? data.data : (data.data?.results ?? [])) as VehicleListItem[]
     },
     staleTime: 5 * 60 * 1000,
   })
+  const vehicles = allVehicles.filter((v) => v.status !== 'RETIRED')
 
   const { register, handleSubmit, reset, control, formState: { errors } } = useForm<ScheduleForm>({
     defaultValues: { service_type: 'PERIODIC' },
