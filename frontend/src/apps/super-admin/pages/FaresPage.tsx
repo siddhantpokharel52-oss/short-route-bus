@@ -462,12 +462,14 @@ export default function FaresPage() {
             <Input
               label="Base Fare (NPR)" hint="Fare for stops 1 apart"
               type="number" step="0.01" min="0" required
-              {...generateForm.register('base_fare', { required: true })}
+              error={generateForm.formState.errors.base_fare?.message}
+              {...generateForm.register('base_fare', { required: 'Required', min: { value: 0, message: 'Cannot be negative' } })}
             />
             <Input
               label="Step (NPR per stop)" hint="Added per extra stop apart"
               type="number" step="0.01" min="0" required
-              {...generateForm.register('step', { required: true })}
+              error={generateForm.formState.errors.step?.message}
+              {...generateForm.register('step', { required: 'Required', min: { value: 0, message: 'Cannot be negative' } })}
             />
           </div>
           <div className="flex justify-end gap-3 border-t pt-4">
@@ -515,8 +517,16 @@ export default function FaresPage() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Fare (NPR)" type="number" step="0.01" min="0" required {...addForm.register('base_fare', { required: true })} />
-            <Input label="Peak Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Fare" {...addForm.register('peak_fare')} />
+            <Input
+              label="Fare (NPR)" type="number" step="0.01" min="0" required
+              error={addForm.formState.errors.base_fare?.message}
+              {...addForm.register('base_fare', { required: 'Required', min: { value: 0, message: 'Cannot be negative' } })}
+            />
+            <Input
+              label="Peak Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Fare"
+              error={addForm.formState.errors.peak_fare?.message}
+              {...addForm.register('peak_fare', { min: { value: 0, message: 'Cannot be negative' } })}
+            />
           </div>
           <div className="flex justify-end gap-3 border-t pt-4">
             <Button variant="secondary" type="button" onClick={() => setShowAdd(false)}>Cancel</Button>
@@ -574,8 +584,16 @@ export default function FaresPage() {
                 <div key={field.id} className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-center gap-2">
                   <StopSelect stops={bulkRouteStops ?? []} defaultValue={field.zone_from} {...bulkForm.register(`fares.${index}.zone_from` as const, { required: true })} />
                   <StopSelect stops={toOptionsAfter(bulkRouteStops ?? [], rowFromName)} defaultValue={field.zone_to} {...bulkForm.register(`fares.${index}.zone_to` as const, { required: true })} />
-                  <Input type="number" step="0.01" min="0" {...bulkForm.register(`fares.${index}.base_fare` as const, { required: true })} />
-                  <Input type="number" step="0.01" min="0" {...bulkForm.register(`fares.${index}.peak_fare` as const)} />
+                  <Input
+                    type="number" step="0.01" min="0"
+                    error={bulkForm.formState.errors.fares?.[index]?.base_fare?.message}
+                    {...bulkForm.register(`fares.${index}.base_fare` as const, { required: 'Required', min: { value: 0, message: 'Cannot be negative' } })}
+                  />
+                  <Input
+                    type="number" step="0.01" min="0"
+                    error={bulkForm.formState.errors.fares?.[index]?.peak_fare?.message}
+                    {...bulkForm.register(`fares.${index}.peak_fare` as const, { min: { value: 0, message: 'Cannot be negative' } })}
+                  />
                   <Button
                     variant="ghost" size="sm" type="button"
                     onClick={() => remove(index)}
@@ -655,8 +673,16 @@ export default function FaresPage() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Fare (NPR)" type="number" step="0.01" min="0" required {...editForm.register('base_fare', { required: true })} />
-            <Input label="Peak Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Fare" {...editForm.register('peak_fare')} />
+            <Input
+              label="Fare (NPR)" type="number" step="0.01" min="0" required
+              error={editForm.formState.errors.base_fare?.message}
+              {...editForm.register('base_fare', { required: 'Required', min: { value: 0, message: 'Cannot be negative' } })}
+            />
+            <Input
+              label="Peak Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Fare"
+              error={editForm.formState.errors.peak_fare?.message}
+              {...editForm.register('peak_fare', { min: { value: 0, message: 'Cannot be negative' } })}
+            />
           </div>
           <div className="flex justify-end gap-3 border-t pt-4">
             <Button variant="secondary" type="button" onClick={() => setEditTarget(null)}>Cancel</Button>
