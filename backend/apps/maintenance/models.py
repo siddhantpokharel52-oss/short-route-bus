@@ -1,5 +1,6 @@
 import uuid
 from django.db import models
+from django.core.validators import MinValueValidator
 
 
 class Workshop(models.Model):
@@ -36,6 +37,13 @@ class MaintenanceSchedule(models.Model):
     due_date = models.DateField()
     due_km = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.UPCOMING)
+    service_center_name = models.CharField(max_length=255, blank=True)
+    service_center_location = models.CharField(max_length=255, blank=True)
+    service_center_contact = models.CharField(max_length=50, blank=True)
+    cost = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0)],
+    )
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

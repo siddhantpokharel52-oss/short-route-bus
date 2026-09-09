@@ -16,7 +16,9 @@ class MaintenanceScheduleSerializer(serializers.ModelSerializer):
         model = MaintenanceSchedule
         fields = [
             "id", "vehicle_id", "vehicle_registration",
-            "service_type", "due_date", "due_km", "status", "notes", "created_at",
+            "service_type", "due_date", "due_km", "status",
+            "service_center_name", "service_center_location", "service_center_contact",
+            "cost", "notes", "created_at",
         ]
         read_only_fields = ["id", "created_at", "vehicle_registration"]
 

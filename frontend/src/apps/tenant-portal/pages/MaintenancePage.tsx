@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Plus, Wrench, Eye, Car, CalendarDays, MapPin, Phone, Banknote, FileText, Hash, Clock } from 'lucide-react'
+import { Plus, Wrench, Eye, Pencil, Trash2, Car, CalendarDays, MapPin, Phone, Banknote, FileText, Hash, Clock } from 'lucide-react'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
 import { Table, Column, Pagination } from '@components/shared/Table'
@@ -21,6 +21,10 @@ interface MaintenanceRecord {
   service_type: string
   due_date: string
   status: string
+  service_center_name: string
+  service_center_location: string
+  service_center_contact: string
+  cost: string | null
   notes: string | null
   created_at: string
 }
@@ -41,30 +45,13 @@ interface ScheduleForm {
   notes: string
 }
 
-// Parses the structured notes block written by the Schedule form
-// Format: "Service Center: X\nLocation: Y\nContact: Z\nTotal Cost: NPR N\n<free notes>"
-// Also handles legacy "Estimated Cost: NPR" prefix for older records.
-function parseNotes(raw: string | null) {
-  if (!raw) return { serviceCenterName: '', location: '', contact: '', cost: '', freeNotes: '' }
-  const lines = raw.split('\n')
-  let serviceCenterName = '', location = '', contact = '', cost = ''
-  const freeLines: string[] = []
-  for (const line of lines) {
-    if (line.startsWith('Service Center: '))   { serviceCenterName = line.replace('Service Center: ', '');   continue }
-    if (line.startsWith('Location: '))          { location = line.replace('Location: ', '');                  continue }
-    if (line.startsWith('Contact: '))           { contact  = line.replace('Contact: ', '');                   continue }
-    if (line.startsWith('Total Cost: NPR '))    { cost = line.replace('Total Cost: NPR ', '');                continue }
-    if (line.startsWith('Estimated Cost: NPR '))  { cost = line.replace('Estimated Cost: NPR ', '');          continue } // legacy
-    freeLines.push(line)
-  }
-  return { serviceCenterName, location, contact, cost, freeNotes: freeLines.join('\n').trim() }
-}
-
 export default function MaintenancePage() {
   const { t } = useTranslation('tenant')
   const qc = useQueryClient()
   const [showCreate, setShowCreate] = useState(false)
   const [selectedRecord, setSelectedRecord] = useState<MaintenanceRecord | null>(null)
+  const [editTarget, setEditTarget] = useState<MaintenanceRecord | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<MaintenanceRecord | null>(null)
   const [totalCount, setTotalCount] = useState(0)
   const pagination = usePagination(totalCount)
 
@@ -87,32 +74,71 @@ export default function MaintenancePage() {
     staleTime: 5 * 60 * 1000,
   })
 
-  const { register, handleSubmit, reset, control } = useForm<ScheduleForm>({
+  const { register, handleSubmit, reset, control, formState: { errors } } = useForm<ScheduleForm>({
     defaultValues: { service_type: 'PERIODIC' },
   })
 
   const createMutation = useMutation({
-    mutationFn: (payload: ScheduleForm) => {
-      // Build an enriched notes block so service center info is stored
-      const noteLines = [
-        payload.service_center_name     && `Service Center: ${payload.service_center_name}`,
-        payload.service_center_location && `Location: ${payload.service_center_location}`,
-        payload.service_center_contact  && `Contact: ${payload.service_center_contact}`,
-        payload.cost                    && `Total Cost: NPR ${payload.cost}`,
-        payload.notes,
-      ].filter(Boolean).join('\n')
-
-      return apiClient.post('/maintenance/schedules/', {
-        vehicle_id: payload.vehicle_id,
-        service_type: payload.service_type,
-        due_date: payload.due_date,
-        notes: noteLines,
-      }).then((r) => r.data)
-    },
+    mutationFn: (payload: ScheduleForm) => apiClient.post('/maintenance/schedules/', {
+      vehicle_id: payload.vehicle_id,
+      service_type: payload.service_type,
+      due_date: payload.due_date,
+      service_center_name: payload.service_center_name,
+      service_center_location: payload.service_center_location,
+      service_center_contact: payload.service_center_contact,
+      cost: payload.cost || null,
+      notes: payload.notes,
+    }).then((r) => r.data),
     onSuccess: () => {
       toast.success(t('maintenance.toasts.scheduled'))
       setShowCreate(false)
       reset()
+      qc.invalidateQueries({ queryKey: ['maintenance'] })
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  // ── Edit an existing record ─────────────────────────────────────────
+  const editForm = useForm<ScheduleForm>()
+
+  const openEdit = (m: MaintenanceRecord) => {
+    setEditTarget(m)
+    editForm.reset({
+      vehicle_id: m.vehicle_id,
+      service_type: m.service_type,
+      due_date: m.due_date,
+      service_center_name: m.service_center_name ?? '',
+      service_center_location: m.service_center_location ?? '',
+      service_center_contact: m.service_center_contact ?? '',
+      cost: m.cost ?? '',
+      notes: m.notes ?? '',
+    })
+  }
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: ScheduleForm) => apiClient.patch(`/maintenance/schedules/${editTarget?.id}/`, {
+      vehicle_id: payload.vehicle_id,
+      service_type: payload.service_type,
+      due_date: payload.due_date,
+      service_center_name: payload.service_center_name,
+      service_center_location: payload.service_center_location,
+      service_center_contact: payload.service_center_contact,
+      cost: payload.cost || null,
+      notes: payload.notes,
+    }).then((r) => r.data),
+    onSuccess: () => {
+      toast.success(t('common:common.saved', { defaultValue: 'Saved.' }))
+      setEditTarget(null)
+      qc.invalidateQueries({ queryKey: ['maintenance'] })
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/maintenance/schedules/${id}/`),
+    onSuccess: () => {
+      toast.success(t('common:common.deleted', { defaultValue: 'Deleted.' }))
+      setDeleteTarget(null)
       qc.invalidateQueries({ queryKey: ['maintenance'] })
     },
     onError: (err: Error) => toast.error(err.message),
@@ -139,24 +165,44 @@ export default function MaintenancePage() {
       render: (m) => <DateDisplay date={m.due_date} />,
     },
     {
-      key: 'notes',
-      header: t('maintenance.notes'),
-      render: (m) => m.notes
-        ? <span className="max-w-xs truncate text-sm text-gray-600">{m.notes}</span>
+      key: 'service_center_name',
+      header: t('maintenance.serviceCenter'),
+      render: (m) => m.service_center_name || <span className="text-gray-300">—</span>,
+    },
+    {
+      key: 'cost',
+      header: t('maintenance.totalCostLabel'),
+      render: (m) => m.cost != null
+        ? <span className="font-medium text-emerald-700">NPR {Number(m.cost).toLocaleString()}</span>
         : <span className="text-gray-300">—</span>,
     },
     {
       key: 'id',
       header: '',
       render: (m) => (
-        <button
-          onClick={() => setSelectedRecord(m)}
-          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium
-                     text-primary-600 hover:bg-primary-50 transition-colors"
-        >
-          <Eye className="h-3.5 w-3.5" />
-          {t('maintenance.view')}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setSelectedRecord(m)}
+            className="flex items-center gap-1.5 rounded-lg p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+            title={t('maintenance.view')}
+          >
+            <Eye className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => openEdit(m)}
+            className="flex items-center gap-1.5 rounded-lg p-1.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
+            title={t('common:common.edit')}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => setDeleteTarget(m)}
+            className="flex items-center gap-1.5 rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+            title={t('common:common.delete')}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       ),
     },
   ]
@@ -248,7 +294,11 @@ export default function MaintenancePage() {
           />
 
           {/* Total Cost */}
-          <Input label={t('maintenance.totalCost')} type="number" step="0.01" {...register('cost')} />
+          <Input
+            label={t('maintenance.totalCost')} type="number" step="0.01" min="0"
+            error={errors.cost?.message}
+            {...register('cost', { min: { value: 0, message: 'Cannot be negative' } })}
+          />
 
           {/* Notes */}
           <div>
@@ -277,7 +327,12 @@ export default function MaintenancePage() {
         size="md"
       >
         {selectedRecord && (() => {
-          const parsed = parseNotes(selectedRecord.notes)
+          const parsed = {
+            serviceCenterName: selectedRecord.service_center_name,
+            location: selectedRecord.service_center_location,
+            contact: selectedRecord.service_center_contact,
+            cost: selectedRecord.cost,
+          }
           return (
             <div className="divide-y divide-gray-100">
 
@@ -343,13 +398,13 @@ export default function MaintenancePage() {
               </div>
 
               {/* Notes */}
-              {parsed.freeNotes && (
+              {selectedRecord.notes && (
                 <div className="px-6 py-4">
                   <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">
                     <FileText className="h-3.5 w-3.5" /> {t('maintenance.notes')}
                   </p>
                   <p className="whitespace-pre-wrap text-sm text-gray-700 leading-relaxed">
-                    {parsed.freeNotes}
+                    {selectedRecord.notes}
                   </p>
                 </div>
               )}
@@ -361,6 +416,95 @@ export default function MaintenancePage() {
             </div>
           )
         })()}
+      </Modal>
+
+      {/* ── Edit Modal ────────────────────────────────────────────────────── */}
+      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={t('maintenance.scheduleService')} size="md">
+        <form onSubmit={editForm.handleSubmit((d) => updateMutation.mutate(d))} className="space-y-4 p-6">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">
+              {t('maintenance.vehicleRegLabel')} <span className="text-red-500">*</span>
+            </label>
+            <select
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
+                         focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              {...editForm.register('vehicle_id', { required: true })}
+            >
+              <option value="">{t('maintenance.selectVehicle')}</option>
+              {vehicles.map((v) => (
+                <option key={v.id} value={v.id}>{v.registration_no}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">{t('maintenance.maintenanceType')}</label>
+            <select
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
+                         focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              {...editForm.register('service_type')}
+            >
+              <option value="PERIODIC">{t('maintenance.serviceTypeLabels.PERIODIC')}</option>
+              <option value="REPAIR">{t('maintenance.serviceTypeLabels.REPAIR')}</option>
+              <option value="INSPECTION">{t('maintenance.serviceTypeLabels.INSPECTION')}</option>
+              <option value="EMERGENCY">{t('maintenance.serviceTypeLabels.EMERGENCY')}</option>
+            </select>
+          </div>
+
+          <Controller
+            name="due_date"
+            control={editForm.control}
+            rules={{ required: true }}
+            render={({ field }) => (
+              <NepaliDateInput label={t('maintenance.repairDate')} required value={field.value} onChange={field.onChange} />
+            )}
+          />
+
+          <Input label={t('maintenance.serviceCenterName')} placeholder="e.g. Ratna Motors Service Centre" {...editForm.register('service_center_name')} />
+          <Input label={t('maintenance.serviceCenterLocation')} placeholder="e.g. Kalanki, Kathmandu" {...editForm.register('service_center_location')} />
+          <Input label={t('maintenance.serviceCenterContact')} type="tel" placeholder="e.g. 01-4XXXXXX" {...editForm.register('service_center_contact')} />
+          <Input
+            label={t('maintenance.totalCost')} type="number" step="0.01" min="0"
+            error={editForm.formState.errors.cost?.message}
+            {...editForm.register('cost', { min: { value: 0, message: 'Cannot be negative' } })}
+          />
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">{t('maintenance.notes')}</label>
+            <textarea
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
+                         focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              rows={3}
+              {...editForm.register('notes')}
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 border-t pt-4">
+            <Button variant="secondary" type="button" onClick={() => setEditTarget(null)}>{t('common:common.cancel')}</Button>
+            <Button type="submit" loading={updateMutation.isPending}>{t('common:common.save')}</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ── Delete Modal ──────────────────────────────────────────────────── */}
+      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title={t('common:common.delete')} size="sm">
+        {deleteTarget && (
+          <div className="space-y-4 p-6">
+            <p className="text-sm text-gray-600">
+              {t('common:common.deleteConfirm', { defaultValue: 'Are you sure? This cannot be undone.' })}
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setDeleteTarget(null)}>{t('common:common.cancel')}</Button>
+              <Button
+                variant="danger"
+                loading={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(deleteTarget.id)}
+              >
+                {t('common:common.delete')}
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   )
