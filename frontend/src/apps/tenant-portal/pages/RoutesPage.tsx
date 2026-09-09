@@ -3,7 +3,7 @@
  */
 import { useState, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, MapPin, Ruler, Trash2, Undo2, Map as MapIcon, CheckCircle, Eye, Pencil } from 'lucide-react'
+import { Plus, Search, MapPin, Ruler, Trash2, Undo2, Map as MapIcon, CheckCircle, Clock, Eye, Pencil } from 'lucide-react'
 import Map, { Marker, Popup, Source, Layer, useMap } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { BAATO_STYLE_URL } from '@/config/baato'
@@ -284,19 +284,6 @@ export default function RoutesPage() {
     },
   })
 
-  const approveMutation = useMutation({
-    mutationFn: (id: string) => apiClient.post(`/platform/routes/${id}/approve/`),
-    onSuccess: () => {
-      toast.success(t('routes.toasts.approved'))
-      qc.invalidateQueries({ queryKey: ['routes'] })
-    },
-    onError: (err: unknown) => {
-      const e = err as { response?: { status?: number; data?: { message?: string } } }
-      if (e?.response?.status === 403) return
-      toast.error(e?.response?.data?.message || t('routes.toasts.approveFailed'))
-    },
-  })
-
   useEffect(() => {
     if (!editTarget) return
     setEditCode(editTarget.route_code)
@@ -479,23 +466,17 @@ export default function RoutesPage() {
               <Trash2 className="h-3 w-3" /> {t('common.delete')}
             </button>
           </div>
-          {r.status !== 'APPROVED' ? (
-            <button
-              onClick={() => approveMutation.mutate(r.id)}
-              disabled={approveMutation.isPending}
-              className={cn(
-                'flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold w-fit',
-                'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors',
-                'disabled:opacity-50 disabled:cursor-not-allowed'
-              )}
-            >
-              <CheckCircle className="h-3 w-3" />
-              {t('routes.approve')}
-            </button>
-          ) : (
+          {/* Approval is a Super Admin review gate, not something a tenant
+              grants itself -- this is status-only, no action here. */}
+          {r.status === 'APPROVED' ? (
             <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium">
               <CheckCircle className="h-3 w-3" />
               {t('routes.approved')}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-xs text-amber-600 font-medium">
+              <Clock className="h-3 w-3" />
+              {t('routes.pendingApproval', { defaultValue: 'Pending Approval' })}
             </span>
           )}
         </div>

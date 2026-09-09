@@ -1,18 +1,22 @@
 /**
  * RoutesPage (super-admin) — platform-wide oversight of every route and who
- * operates it. Read-only: route creation/geometry drawing stays where it
- * already lives, the tenant-portal's own Routes page. This page just
- * surfaces the route <-> tenant link (RouteAssignment) that nothing else
- * showed together in one place before.
+ * operates it. Route creation/geometry drawing stays where it already
+ * lives, the tenant-portal's own Routes page -- this page just surfaces
+ * the route <-> tenant link (RouteAssignment) that nothing else showed
+ * together in one place before, plus the one action that belongs here
+ * specifically: approving a route out of Draft, which is a platform-level
+ * review gate, not something a tenant grants itself.
  */
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { MapPin, Ruler } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { MapPin, Ruler, CheckCircle } from 'lucide-react'
 import { Input } from '@components/shared/Input'
+import { Button } from '@components/shared/Button'
 import { Table, Column, Pagination } from '@components/shared/Table'
 import { Badge, statusVariant } from '@components/shared/Badge'
 import { usePagination } from '@hooks/usePagination'
 import apiClient from '@services/api'
+import toast from 'react-hot-toast'
 
 interface RouteOperator {
   tenant_id: string
@@ -44,10 +48,23 @@ const selectClass =
   'border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent'
 
 export default function RoutesPage() {
+  const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [tenantFilter, setTenantFilter] = useState('')
   const [totalCount, setTotalCount] = useState(0)
   const pagination = usePagination(totalCount)
+
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => apiClient.post(`/platform/routes/${id}/approve/`),
+    onSuccess: () => {
+      toast.success('Route approved.')
+      qc.invalidateQueries({ queryKey: ['routes-oversight'] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || 'Failed to approve route.')
+    },
+  })
 
   const { data: tenants } = useQuery({
     queryKey: ['tenants-for-routes-filter'],
@@ -136,6 +153,25 @@ export default function RoutesPage() {
     {
       key: 'status', header: 'Status',
       render: (r) => <Badge variant={statusVariant(r.status)} dot>{r.status}</Badge>,
+    },
+    {
+      key: 'id', header: 'Actions',
+      render: (r) => r.status === 'APPROVED' ? (
+        <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium">
+          <CheckCircle className="h-3.5 w-3.5" /> Approved
+        </span>
+      ) : (
+        <Button
+          size="sm"
+          variant="outline"
+          leftIcon={<CheckCircle className="h-3.5 w-3.5" />}
+          loading={approveMutation.isPending}
+          disabled={r.status === 'INACTIVE'}
+          onClick={() => approveMutation.mutate(r.id)}
+        >
+          Approve
+        </Button>
+      ),
     },
   ]
 

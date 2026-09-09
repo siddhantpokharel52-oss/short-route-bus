@@ -100,6 +100,12 @@ class RouteViewSet(ModelViewSet):
         # (same policy as list/retrieve: route stop data is public)
         if self.action in ["list", "retrieve", "stops"]:
             return [AllowAny()]
+        # Draft -> Approved is a platform-level safety/quality review, not a
+        # tenant-internal readiness flag -- a tenant operator can create and
+        # manage their own routes via CanManageRoutes, but approving one is
+        # reserved for Super Admin specifically, not the tenant that created it.
+        if self.action == "approve":
+            return [IsSuperAdmin()]
         return [CanManageRoutes()]
 
     def perform_create(self, serializer):
