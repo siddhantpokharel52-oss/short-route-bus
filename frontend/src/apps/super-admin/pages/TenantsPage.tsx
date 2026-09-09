@@ -63,6 +63,11 @@ export default function TenantsPage() {
 
   const [totalCount, setTotalCount] = useState(0)
   const [newTenantCreds, setNewTenantCreds] = useState<TenantCreateResult | null>(null)
+  // Distinguishes "just created this tenant" (create flow) from "generated
+  // a login for a tenant that already existed" (Edit modal) -- same result
+  // modal, different copy, so the wording doesn't falsely claim the tenant
+  // itself was just created.
+  const [credsFromExisting, setCredsFromExisting] = useState(false)
   const [panVatFile, setPanVatFile] = useState<File | null>(null)
   const pagination = usePagination(totalCount)
 
@@ -136,7 +141,30 @@ export default function TenantsPage() {
       address: tenant.address,
       pan_vat_number: tenant.pan_vat_number,
     })
+    setEditAdminEmail('')
+    setEditAdminPassword('')
+    setEditAdminFullName('')
   }
+
+  // ── Generate login credentials for a tenant onboarded without them ──
+  // Reachable from the same Edit modal an admin would naturally open to
+  // manage an existing tenant -- the earlier version of this only lived on
+  // the separate Tenant Detail page, which a retester never found.
+  const [editAdminEmail, setEditAdminEmail] = useState('')
+  const [editAdminPassword, setEditAdminPassword] = useState('')
+  const [editAdminFullName, setEditAdminFullName] = useState('')
+
+  const createAdminMutation = useMutation({
+    mutationFn: (payload: { admin_email: string; admin_password: string; admin_full_name: string }) =>
+      tenantService.createAdmin(editTarget!.id, payload),
+    onSuccess: (credentials) => {
+      setEditTarget(null)
+      setCredsFromExisting(true)
+      setNewTenantCreds({ ...(editTarget as Tenant), admin_credentials: credentials })
+      qc.invalidateQueries({ queryKey: ['tenants'] })
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
 
   const subdomainValue = watch('subdomain') ?? ''
   const baseDomain = import.meta.env.VITE_BASE_DOMAIN || 'localhost'
@@ -169,6 +197,7 @@ export default function TenantsPage() {
       qc.invalidateQueries({ queryKey: ['tenants'] })
       // Show credentials modal if admin was created
       if (result?.admin_credentials) {
+        setCredsFromExisting(false)
         setNewTenantCreds(result)
       }
     },
@@ -415,13 +444,16 @@ export default function TenantsPage() {
         </form>
       </Modal>
 
-      {/* Credentials modal — shown after successful creation */}
-      <Modal open={!!newTenantCreds} onClose={() => setNewTenantCreds(null)} title={t('platform:tenants.credentialsModal.title')} size="sm">
+      {/* Credentials modal — shown after tenant creation, or after
+          generating credentials for a tenant that already existed */}
+      <Modal open={!!newTenantCreds} onClose={() => setNewTenantCreds(null)} title={credsFromExisting ? 'Credentials Generated' : t('platform:tenants.credentialsModal.title')} size="sm">
         {newTenantCreds?.admin_credentials && (
           <div className="space-y-4 p-6">
             <div className="rounded-lg border border-green-200 bg-green-50 p-4">
               <p className="mb-3 text-sm font-semibold text-green-800">
-                {t('platform:tenants.credentialsModal.createdSuccess', { name: newTenantCreds.name })}
+                {credsFromExisting
+                  ? `✅ Login credentials generated for ${newTenantCreds.name}!`
+                  : t('platform:tenants.credentialsModal.createdSuccess', { name: newTenantCreds.name })}
               </p>
               {(() => {
                 const domain = (newTenantCreds.domains?.find((d) => d.is_primary) ?? newTenantCreds.domains?.[0])?.domain ?? ''
@@ -560,6 +592,54 @@ export default function TenantsPage() {
               />
             </div>
           </div>
+
+          {/* Login credentials -- for a tenant that was onboarded without
+              them, or needs a fresh admin login generated. The backend
+              refuses this if the tenant already has an admin, so it's safe
+              to always show. */}
+          <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+            <p className="mb-3 text-sm font-semibold text-blue-800">Login Credentials</p>
+            <p className="mb-3 text-xs text-blue-600">
+              If this tenant has no admin login yet, generate one here. Already has one? This will be rejected — use password reset instead.
+            </p>
+            <div className="space-y-3">
+              <Input
+                label={t('platform:tenants.createModal.adminFullName')}
+                placeholder={t('platform:tenants.createModal.adminFullNameHint')}
+                value={editAdminFullName}
+                onChange={(e) => setEditAdminFullName(e.target.value)}
+              />
+              <Input
+                label={t('platform:tenants.createModal.adminEmail')}
+                type="email"
+                placeholder="admin@sajha.com.np"
+                value={editAdminEmail}
+                onChange={(e) => setEditAdminEmail(e.target.value)}
+              />
+              <Input
+                label={t('platform:tenants.createModal.adminPassword')}
+                type="text"
+                placeholder={t('platform:tenants.createModal.adminPasswordHint')}
+                value={editAdminPassword}
+                onChange={(e) => setEditAdminPassword(e.target.value)}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full"
+                loading={createAdminMutation.isPending}
+                disabled={!editAdminEmail || editAdminPassword.length < 8}
+                onClick={() => createAdminMutation.mutate({
+                  admin_email: editAdminEmail,
+                  admin_password: editAdminPassword,
+                  admin_full_name: editAdminFullName,
+                })}
+              >
+                Generate Credentials
+              </Button>
+            </div>
+          </div>
+
           <div className="flex justify-end gap-3 border-t pt-4">
             <Button variant="secondary" type="button" onClick={() => setEditTarget(null)}>{t('common:common.cancel')}</Button>
             <Button type="submit" loading={updateMutation.isPending}>{t('common:common.edit')}</Button>
