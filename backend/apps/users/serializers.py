@@ -45,10 +45,16 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             "id", "email", "full_name_en", "full_name_ne", "phone",
-            "role", "language_preference", "is_active", "is_2fa_enabled",
-            "created_at", "updated_at",
+            "role", "tenant_schema", "language_preference", "is_active", "is_2fa_enabled",
+            "created_at", "updated_at", "last_login",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        # tenant_schema is read-only here specifically: this serializer also
+        # backs UserProfileView (a user editing their own profile), and a
+        # writable tenant_schema there would let a user reassign themselves
+        # to a different tenant's schema -- a real tenant-isolation bypass.
+        # It's only ever meant to be set by the flows that actually create
+        # tenant-scoped users (onboarding, driver/conductor login creation).
+        read_only_fields = ["id", "created_at", "updated_at", "last_login", "tenant_schema"]
 
 
 class UserCreateSerializer(serializers.ModelSerializer):

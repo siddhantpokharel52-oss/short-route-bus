@@ -16,7 +16,7 @@ interface User {
   role: string
   tenant_schema: string | null
   is_active: boolean
-  date_joined: string
+  created_at: string
   last_login: string | null
 }
 
@@ -29,11 +29,15 @@ export default function UsersPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['users', pagination.page, search],
     queryFn: async () => {
-      const { data } = await apiClient.get('/users/', {
+      const { data } = await apiClient.get('/auth/users/', {
         params: { ...pagination.queryParams, ...(search && { search }) },
       })
       setTotalCount(data.meta?.total_count ?? 0)
-      return data.data?.results ?? []
+      // StandardResultsPagination wraps a plain array directly under "data"
+      // (not "data.results") -- this page was the one place still assuming
+      // the "results" shape, so it always fell through to [] regardless of
+      // how many users actually existed.
+      return data.data?.results ?? data.data ?? []
     },
   })
 
@@ -86,9 +90,9 @@ export default function UsersPage() {
       ),
     },
     {
-      key: 'date_joined',
+      key: 'created_at',
       header: t('platform:users.joined'),
-      render: (u) => <DateDisplay date={u.date_joined} />,
+      render: (u) => <DateDisplay date={u.created_at} />,
     },
     {
       key: 'last_login',
