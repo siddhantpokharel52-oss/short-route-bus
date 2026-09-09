@@ -150,10 +150,40 @@ class FareMatrixSerializer(serializers.ModelSerializer):
 
 
 class SmartCardSerializer(serializers.ModelSerializer):
+    # holder_name/email were never actually returned before (the frontend's
+    # column read a field that didn't exist on this serializer at all), and
+    # `passenger` itself is a raw User FK -- issuing a card previously had no
+    # way to identify who to issue it to except by pasting in a raw user
+    # UUID, which no admin has memorized. passenger_email resolves that.
+    passenger_name = serializers.CharField(source="passenger.full_name_en", read_only=True)
+    passenger_email = serializers.EmailField(source="passenger.email", read_only=True)
+    issue_to_email = serializers.EmailField(write_only=True, required=False)
+
     class Meta:
         model = SmartCard
-        fields = ["id", "card_no", "passenger", "balance", "status", "issued_at", "issued_by_tenant"]
-        read_only_fields = ["id", "balance", "issued_at"]
+        fields = [
+            "id", "card_no", "passenger", "passenger_name", "passenger_email",
+            "issue_to_email", "balance", "status", "issued_at", "issued_by_tenant",
+        ]
+        read_only_fields = ["id", "passenger", "balance", "issued_at"]
+
+    def validate(self, data):
+        if self.instance is None:
+            email = (data.pop("issue_to_email", "") or "").strip().lower()
+            if not email:
+                raise serializers.ValidationError({"issue_to_email": "Required to issue a new card."})
+            from backend.apps.users.models import User
+            try:
+                passenger = User.objects.get(email=email, role=User.Role.PASSENGER)
+            except User.DoesNotExist:
+                raise serializers.ValidationError({
+                    "issue_to_email": f"No passenger account found for '{email}'. "
+                                       "The passenger must already have an account before a card can be issued."
+                })
+            data["passenger"] = passenger
+        else:
+            data.pop("issue_to_email", None)
+        return data
 
 
 class CardTransactionSerializer(serializers.ModelSerializer):
