@@ -9,6 +9,9 @@ Auto-generate double-entry journal entries from operational events:
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from decimal import Decimal
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
@@ -19,6 +22,15 @@ def _get_account(code):
     try:
         return ChartOfAccount.objects.get(code=code)
     except ChartOfAccount.DoesNotExist:
+        # Never raise here -- a missing COA entry must not block the real
+        # operational event (a ticket sale, a salary payment) that triggered
+        # this signal. But silently dropping the line is exactly what made
+        # this bug invisible last time (every journal entry just read
+        # NPR 0.00 with no error anywhere), so at minimum it goes to the logs.
+        logger.warning(
+            "Chart of Accounts code '%s' not found -- skipping this journal "
+            "line. Run 'manage.py seed_coa' for this tenant's schema.", code
+        )
         return None
 
 

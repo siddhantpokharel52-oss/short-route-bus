@@ -907,6 +907,15 @@ function ReportsPanel({ accounts }: { accounts: COA[] }) {
   const [glAccount, setGlAccount] = useState('')
   const [fetched, setFetched] = useState(false)
 
+  const { data: company } = useQuery<{ company_name: string } | null>({
+    queryKey: ['company-info'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/operator/company/')
+      return data.data
+    },
+    staleTime: 10 * 60 * 1000,
+  })
+
   const needsRange = ['profit-loss', 'cash-flow', 'expense-analysis', 'general-ledger'].includes(reportType)
   const leafAccounts = accounts.filter(a => a.is_posting_allowed !== false && !a.is_group)
 
@@ -1037,7 +1046,7 @@ function ReportsPanel({ accounts }: { accounts: COA[] }) {
                   : `${t('accounting.reports.asOf')} ${dateTo}`}
               </p>
             </div>
-            <span className="text-xs text-gray-400">Shangrila City Bus</span>
+            <span className="text-xs text-gray-400">{company?.company_name ?? ''}</span>
           </div>
           <div className="p-6 overflow-x-auto">
             {reportType === 'profit-loss'      && <PLReport data={data} />}

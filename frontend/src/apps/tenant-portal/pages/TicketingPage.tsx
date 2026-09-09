@@ -266,7 +266,7 @@ export default function TicketingPage() {
   const { data: company = null } = useQuery<CompanyInfo | null>({
     queryKey: ['company-info'],
     queryFn: async () => {
-      const { data } = await apiClient.get('/staff/company/')
+      const { data } = await apiClient.get('/operator/company/')
       return data.data as CompanyInfo
     },
     staleTime: 10 * 60 * 1000,

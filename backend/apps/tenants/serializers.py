@@ -77,6 +77,12 @@ class TenantSerializer(serializers.ModelSerializer):
         # assign until someone manually runs seed_permissions for this tenant.
         call_command("seed_permissions", schema=schema_name)
 
+        # Seed the standard Chart of Accounts -- without this, every journal
+        # entry silently drops its lines (the posting account code can't be
+        # found), so Journal Entries/Reports show real entries with NPR 0.00
+        # everywhere instead of an error, which is much harder to notice.
+        call_command("seed_coa", schema=schema_name)
+
         # Create a COMPANY_ADMIN user in the public schema for this tenant
         if admin_email:
             user = User(
