@@ -160,7 +160,7 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
       </aside>
 
       {/* Main */}
-      <div className={cn('flex-1 flex flex-col', sidebarOpen && 'lg:ml-[var(--sidebar-width)]')}>
+      <div className={cn('flex-1 flex flex-col min-w-0', sidebarOpen && 'lg:ml-[var(--sidebar-width)]')}>
         {/* Header */}
         <header className="sticky top-0 z-30 flex h-[var(--header-height)] items-center gap-4 border-b border-gray-200 bg-white/80 px-4 backdrop-blur-sm dark:border-gray-700 dark:bg-gray-900/80">
           <button
@@ -178,8 +178,11 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
           </button>
         </header>
 
-        {/* Page content */}
-        <main className="flex-1 p-6">
+        {/* Page content -- min-w-0 lets a wide table's own overflow-x-auto
+            actually engage, instead of a flex child refusing to shrink
+            below its content's natural width and pushing the whole page
+            (title, primary button, tabs) off-screen with it. */}
+        <main className="flex-1 min-w-0 p-6">
           {children}
         </main>
       </div>
