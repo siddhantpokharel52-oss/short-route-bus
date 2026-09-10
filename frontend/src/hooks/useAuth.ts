@@ -97,16 +97,19 @@ export function useAuth() {
 }
 
 function redirectByRole(role: string, navigate: (path: string) => void) {
-  if (['SUPER_ADMIN', 'TRANSPORT_AUTHORITY', 'PLATFORM_ANALYST'].includes(role)) {
+  if (
+    ['SUPER_ADMIN', 'TRANSPORT_AUTHORITY_OFFICER', 'REVENUE_AUDITOR',
+     'COMPLIANCE_OFFICER', 'PLATFORM_SUPPORT'].includes(role)
+  ) {
     navigate('/super-admin/dashboard')
   } else if (
-    ['COMPANY_ADMIN', 'COMPANY_MANAGER', 'DISPATCHER', 'DRIVER',
-     'CONDUCTOR', 'FINANCE_OFFICER', 'HR_OFFICER', 'MAINTENANCE_OFFICER',
-     'INVENTORY_OFFICER'].includes(role)
+    ['COMPANY_ADMIN', 'OPERATIONS_MANAGER', 'DISPATCHER', 'FLEET_MANAGER',
+     'MAINTENANCE_MANAGER', 'STATION_MANAGER', 'DRIVER', 'CONDUCTOR',
+     'INSPECTOR', 'FINANCE_OFFICER', 'HR_OFFICER'].includes(role)
   ) {
     navigate('/tenant/live-tracking')
   } else {
-    // PUBLIC_USER, PASSENGER, or any unknown role → public home
+    // PASSENGER, STUDENT, TOURIST, or any unknown role → public home
     navigate('/')
   }
 }

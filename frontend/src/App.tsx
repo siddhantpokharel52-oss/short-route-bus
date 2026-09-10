@@ -165,7 +165,10 @@ export default function App() {
           path="/super-admin/*"
           element={
             <ProtectedRoute
-              allowedRoles={['SUPER_ADMIN', 'TRANSPORT_AUTHORITY', 'PLATFORM_ANALYST']}
+              allowedRoles={[
+                'SUPER_ADMIN', 'TRANSPORT_AUTHORITY_OFFICER', 'REVENUE_AUDITOR',
+                'COMPLIANCE_OFFICER', 'PLATFORM_SUPPORT',
+              ]}
             >
               <SuperAdminApp />
             </ProtectedRoute>
@@ -178,9 +181,10 @@ export default function App() {
           element={
             <ProtectedRoute
               allowedRoles={[
-                'COMPANY_ADMIN', 'COMPANY_MANAGER', 'DISPATCHER',
-                'DRIVER', 'CONDUCTOR', 'FINANCE_OFFICER',
-                'HR_OFFICER', 'MAINTENANCE_OFFICER', 'INVENTORY_OFFICER',
+                'COMPANY_ADMIN', 'OPERATIONS_MANAGER', 'DISPATCHER',
+                'FLEET_MANAGER', 'MAINTENANCE_MANAGER', 'STATION_MANAGER',
+                'DRIVER', 'CONDUCTOR', 'INSPECTOR',
+                'FINANCE_OFFICER', 'HR_OFFICER',
               ]}
             >
               <TenantApp />

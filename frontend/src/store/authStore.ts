@@ -3,18 +3,24 @@ import { persist } from 'zustand/middleware'
 
 export type UserRole =
   | 'SUPER_ADMIN'
-  | 'TRANSPORT_AUTHORITY'
-  | 'PLATFORM_ANALYST'
+  | 'TRANSPORT_AUTHORITY_OFFICER'
+  | 'REVENUE_AUDITOR'
+  | 'COMPLIANCE_OFFICER'
+  | 'PLATFORM_SUPPORT'
   | 'COMPANY_ADMIN'
-  | 'COMPANY_MANAGER'
+  | 'OPERATIONS_MANAGER'
   | 'DISPATCHER'
-  | 'DRIVER'
-  | 'CONDUCTOR'
+  | 'FLEET_MANAGER'
+  | 'MAINTENANCE_MANAGER'
   | 'FINANCE_OFFICER'
   | 'HR_OFFICER'
-  | 'MAINTENANCE_OFFICER'
-  | 'INVENTORY_OFFICER'
-  | 'PUBLIC_USER'
+  | 'STATION_MANAGER'
+  | 'DRIVER'
+  | 'CONDUCTOR'
+  | 'INSPECTOR'
+  | 'PASSENGER'
+  | 'STUDENT'
+  | 'TOURIST'
 
 export interface AuthUser {
   id: string
@@ -99,9 +105,11 @@ export const useAuthStore = create<AuthState>()(
 // Role-based helpers
 export const isSuperAdmin = (role?: UserRole) => role === 'SUPER_ADMIN'
 export const isPlatformRole = (role?: UserRole) =>
-  ['SUPER_ADMIN', 'TRANSPORT_AUTHORITY', 'PLATFORM_ANALYST'].includes(role ?? '')
+  ['SUPER_ADMIN', 'TRANSPORT_AUTHORITY_OFFICER', 'REVENUE_AUDITOR',
+   'COMPLIANCE_OFFICER', 'PLATFORM_SUPPORT'].includes(role ?? '')
 export const isTenantRole = (role?: UserRole) =>
-  ['COMPANY_ADMIN', 'COMPANY_MANAGER', 'DISPATCHER', 'DRIVER', 'CONDUCTOR',
-   'FINANCE_OFFICER', 'HR_OFFICER', 'MAINTENANCE_OFFICER', 'INVENTORY_OFFICER'].includes(role ?? '')
+  ['COMPANY_ADMIN', 'OPERATIONS_MANAGER', 'DISPATCHER', 'FLEET_MANAGER',
+   'MAINTENANCE_MANAGER', 'FINANCE_OFFICER', 'HR_OFFICER', 'STATION_MANAGER',
+   'DRIVER', 'CONDUCTOR', 'INSPECTOR'].includes(role ?? '')
 export const isOperationsRole = (role?: UserRole) =>
   ['DISPATCHER', 'DRIVER', 'CONDUCTOR'].includes(role ?? '')
