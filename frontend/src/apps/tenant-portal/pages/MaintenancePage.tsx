@@ -236,7 +236,7 @@ export default function MaintenancePage() {
       </div>
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title={t('maintenance.scheduleService')} size="md">
-        <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-4 p-6">
+        <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} noValidate className="space-y-4 p-6">
           {/* Vehicle Registration Number — value is the vehicle UUID */}
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">
@@ -427,7 +427,7 @@ export default function MaintenancePage() {
 
       {/* ── Edit Modal ────────────────────────────────────────────────────── */}
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={t('maintenance.scheduleService')} size="md">
-        <form onSubmit={editForm.handleSubmit((d) => updateMutation.mutate(d))} className="space-y-4 p-6">
+        <form onSubmit={editForm.handleSubmit((d) => updateMutation.mutate(d))} noValidate className="space-y-4 p-6">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">
               {t('maintenance.vehicleRegLabel')} <span className="text-red-500">*</span>

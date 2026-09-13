@@ -117,7 +117,7 @@ export default function FleetPage() {
     staleTime: 5 * 60 * 1000,
   })
 
-  const { register, handleSubmit, reset, control, formState: { errors } } = useForm<VehicleForm>({
+  const { register, handleSubmit, reset, control, setError, formState: { errors } } = useForm<VehicleForm>({
     defaultValues: {
       vehicle_type: 'BUS',
       fuel_type: 'DIESEL',
@@ -154,15 +154,27 @@ export default function FleetPage() {
       qc.invalidateQueries({ queryKey: ['vehicles'] })
     },
     onError: (err: unknown) => {
-      const e = err as { response?: { status?: number; data?: { message?: string; errors?: Record<string, unknown> } } }
+      const e = err as { response?: { status?: number; data?: Record<string, unknown> } }
       if (e?.response?.status === 403) return
-      const res = e?.response?.data
-      if (res?.errors && typeof res.errors === 'object' && Object.keys(res.errors).length > 0) {
-        const firstKey = Object.keys(res.errors)[0]
-        const val = res.errors[firstKey]
-        toast.error(`${firstKey}: ${Array.isArray(val) ? String(val[0]) : String(val)}`)
+      const res = e?.response?.data ?? {}
+      // Prefer the { errors: {...} } shape used by hand-written views; fall back to
+      // DRF ModelViewSet's default validation body, which puts field errors directly
+      // at the top level (e.g. { registration_no: ["...already exists."] }) with no
+      // wrapper at all -- that shape was previously falling through to a generic,
+      // unhelpful message because only the wrapped shape was ever checked.
+      const fieldErrors = (
+        res.errors && typeof res.errors === 'object' ? res.errors : res
+      ) as Record<string, unknown>
+      const firstKey = Object.keys(fieldErrors).find(
+        (k) => !['success', 'data', 'message', 'meta'].includes(k)
+      )
+      if (firstKey) {
+        const val = fieldErrors[firstKey]
+        const msg = Array.isArray(val) ? String(val[0]) : String(val)
+        setError(firstKey as keyof VehicleForm, { type: 'server', message: msg })
+        toast.error(`${firstKey}: ${msg}`)
       } else {
-        toast.error(res?.message || (err as Error).message || 'Failed to add vehicle')
+        toast.error((res as { message?: string }).message || (err as Error).message || 'Failed to add vehicle')
       }
     },
   })
@@ -589,7 +601,7 @@ export default function FleetPage() {
         title={t('fleet.addVehicle')}
         size="lg"
       >
-        <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-6 p-6">
+        <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} noValidate className="space-y-6 p-6">
 
           {/* ── Basic Information ──────────────────────────────────────────── */}
           <Section icon={Bus} title={t('fleet.sections.basicInfo')} />

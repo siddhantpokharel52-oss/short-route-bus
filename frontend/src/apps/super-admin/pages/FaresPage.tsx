@@ -431,7 +431,7 @@ export default function FaresPage() {
 
       {/* Generate a whole fare chart from a formula */}
       <Modal open={showGenerate} onClose={() => setShowGenerate(false)} title="Generate Fares" size="md">
-        <form onSubmit={generateForm.handleSubmit(onSubmitGenerate)} className="space-y-4 p-6">
+        <form onSubmit={generateForm.handleSubmit(onSubmitGenerate)} noValidate className="space-y-4 p-6">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
               Route <span className="text-red-500">*</span>
@@ -481,7 +481,7 @@ export default function FaresPage() {
 
       {/* Add single fare */}
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Fare" size="lg">
-        <form onSubmit={addForm.handleSubmit(onSubmitAdd)} className="space-y-4 p-6">
+        <form onSubmit={addForm.handleSubmit(onSubmitAdd)} noValidate className="space-y-4 p-6">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
               Route <span className="text-red-500">*</span>
@@ -537,7 +537,7 @@ export default function FaresPage() {
 
       {/* Bulk import a whole fare chart */}
       <Modal open={showBulk} onClose={() => setShowBulk(false)} title="Bulk Import Fares" size="full">
-        <form onSubmit={bulkForm.handleSubmit(onSubmitBulk)} className="space-y-4 p-6">
+        <form onSubmit={bulkForm.handleSubmit(onSubmitBulk)} noValidate className="space-y-4 p-6">
           <p className="text-sm text-gray-500">
             Pick a route and its stops load below automatically, one row per consecutive leg
             (A→B, B→C, ...) — just fill in the fare for each. Add more rows for a through-fare
@@ -643,7 +643,7 @@ export default function FaresPage() {
 
       {/* Edit a fare */}
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Fare" size="lg">
-        <form onSubmit={editForm.handleSubmit(onSubmitEdit)} className="space-y-4 p-6">
+        <form onSubmit={editForm.handleSubmit(onSubmitEdit)} noValidate className="space-y-4 p-6">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
               Route <span className="text-red-500">*</span>

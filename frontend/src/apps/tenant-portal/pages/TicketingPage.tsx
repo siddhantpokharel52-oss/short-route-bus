@@ -236,7 +236,13 @@ export default function TicketingPage() {
   const [showVerify, setShowVerify] = useState(false)
   const [issuedTicket, setIssuedTicket] = useState<TicketRecord | null>(null)
   const [verifyTicketNum, setVerifyTicketNum] = useState('')
-  const [verifyResult, setVerifyResult] = useState<Awaited<ReturnType<typeof publicService.verifyTicket>> | null>(null)
+  const [verifyResult, setVerifyResult] = useState<{
+    is_valid: boolean
+    status: string
+    passenger_name: string
+    route: string
+    fare: number
+  } | null>(null)
   const [selectedTicket, setSelectedTicket] = useState<TicketRecord | null>(null)
   const [totalCount, setTotalCount] = useState(0)
   const pagination = usePagination(totalCount)
@@ -370,13 +376,25 @@ export default function TicketingPage() {
 
   const handleTicketTypeChange = (ticketTypeId: string) => {
     setValue('ticket_type_id', ticketTypeId)
+    if (fareEdited) return
     const match = fareMatches?.find((f) => f.ticket_type_id === ticketTypeId)
-    if (match && !fareEdited) setValue('fare_paid', String(match.base_fare))
+    // Clearing here (instead of leaving whatever the previous type's price
+    // was) matters: a cashier switching from Student to Senior Citizen on a
+    // leg that only prices Student would otherwise still see Student's price
+    // sitting in the field and could issue a ticket at the wrong fare.
+    setValue('fare_paid', match ? String(match.base_fare) : '')
   }
 
   const noFareConfigured =
     !!watchedRouteId && !!fromStopCode && !!toStopCode && fromStopCode !== toStopCode &&
     !fareLoading && fareMatches?.length === 0
+
+  // Leg has fares for *some* ticket type, just not the one currently selected
+  // -- distinct from noFareConfigured (leg has no fares at all).
+  const noFareForSelectedType =
+    !!watchedRouteId && !!fromStopCode && !!toStopCode && fromStopCode !== toStopCode &&
+    !fareLoading && !!watchedTicketTypeId && (fareMatches?.length ?? 0) > 0 &&
+    !fareMatches?.some((f) => f.ticket_type_id === watchedTicketTypeId)
 
   const issueMutation = useMutation({
     mutationFn: async (payload: PosForm) => {
@@ -413,9 +431,22 @@ export default function TicketingPage() {
   })
 
   const handleVerify = async () => {
+    const uid = verifyTicketNum.trim()
     try {
-      const result = await publicService.verifyTicket(verifyTicketNum)
-      setVerifyResult(result)
+      const { data } = await apiClient.get('/ticketing/tickets/', { params: { search: uid } })
+      const match = (data.data?.results ?? []).find((r: TicketRecord) => r.ticket_uid === uid)
+      if (!match) {
+        toast.error(t('ticketing.ticketNotFound'))
+        setVerifyResult(null)
+        return
+      }
+      setVerifyResult({
+        is_valid: match.status === 'VALID',
+        status: match.status,
+        passenger_name: match.passenger_name,
+        route: [match.from_stop_name, match.to_stop_name].filter(Boolean).join(' → '),
+        fare: Number(match.fare_paid),
+      })
     } catch {
       toast.error(t('ticketing.ticketNotFound'))
       setVerifyResult(null)
@@ -695,7 +726,15 @@ export default function TicketingPage() {
               required
               placeholder="e.g. 35"
               error={errors.fare_paid?.message}
-              hint={fareLoading ? 'Looking up the fare…' : noFareConfigured ? 'No fare set for this leg — enter it manually.' : undefined}
+              hint={
+                fareLoading
+                  ? 'Looking up the fare…'
+                  : noFareConfigured
+                    ? 'No fare set for this leg — enter it manually.'
+                    : noFareForSelectedType
+                      ? 'No fare configured for this type on this route — enter it manually.'
+                      : undefined
+              }
               {...register('fare_paid', {
                 required: t('ticketing.priceRequired'),
                 min: { value: 1, message: t('ticketing.priceMin') },
