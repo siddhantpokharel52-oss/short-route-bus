@@ -185,7 +185,7 @@ class RouteViewSet(ModelViewSet):
         # Same reasoning for approve_stop -- a stop added to an already-live
         # route is a change to something already reviewed, not a tenant's own
         # call to make.
-        if self.action in ["approve", "approve_stop"]:
+        if self.action in ["approve", "approve_stop", "approve_all_stops"]:
             return [IsSuperAdmin()]
         return [CanManageRoutes()]
 
@@ -475,6 +475,27 @@ class RouteViewSet(ModelViewSet):
         route_stop.save(update_fields=["status"])
         AdminNotification.objects.filter(route_stop=route_stop, is_read=False).update(is_read=True)
         return api_response(message=f"Stop '{route_stop.stop.name_en}' approved.")
+
+    @action(detail=True, methods=["post"], url_path="approve-all-stops")
+    def approve_all_stops(self, request, pk=None):
+        """
+        POST /platform/routes/{id}/approve-all-stops/
+        Approves every stop on this route still awaiting its own review (see
+        RouteStop.status) in one action, instead of one-by-one via
+        approve_stop. A plain status update, not a sequence_no reshuffle, so
+        the unique-constraint-per-row hazard _shift_route_stops_up guards
+        against doesn't apply here -- a single bulk .update() is safe.
+        """
+        route = self.get_object()
+        pending = RouteStop.objects.filter(route=route, status=RouteStop.Status.PENDING_APPROVAL)
+        pending_ids = list(pending.values_list("id", flat=True))
+        if not pending_ids:
+            return api_response(
+                success=False, message="No pending stops to approve.", status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        pending.update(status=RouteStop.Status.APPROVED)
+        AdminNotification.objects.filter(route_stop_id__in=pending_ids, is_read=False).update(is_read=True)
+        return api_response(message=f"{len(pending_ids)} stop(s) approved.")
 
     @action(detail=True, methods=["post"], url_path="remove-stop")
     def remove_stop(self, request, pk=None):

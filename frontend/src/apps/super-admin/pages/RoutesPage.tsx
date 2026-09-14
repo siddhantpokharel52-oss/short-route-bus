@@ -88,6 +88,18 @@ export default function RoutesPage() {
     },
   })
 
+  const approveAllStopsMutation = useMutation({
+    mutationFn: (routeId: string) => apiClient.post(`/platform/routes/${routeId}/approve-all-stops/`),
+    onSuccess: (res) => {
+      toast.success(res.data?.message || 'All pending stops approved.')
+      qc.invalidateQueries({ queryKey: ['routes-oversight'] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || 'Failed to approve all stops.')
+    },
+  })
+
 
   const { data: tenants } = useQuery({
     queryKey: ['tenants-for-routes-filter'],
@@ -270,10 +282,29 @@ export default function RoutesPage() {
       >
         {pendingStopsRouteLive && (
           <div className="space-y-2 p-6">
-            <p className="text-xs text-gray-500">
-              Added after this route was already approved -- each needs its own review before
-              it's usable for ticketing.
-            </p>
+            {(() => {
+              const pendingCount = pendingStopsRouteLive.route_stops.filter((rs) => rs.status === 'PENDING_APPROVAL').length
+              return (
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-xs text-gray-500">
+                    Added after this route was already approved -- each needs its own review before
+                    it's usable for ticketing.
+                  </p>
+                  {pendingCount > 1 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      leftIcon={<CheckCircle className="h-3.5 w-3.5" />}
+                      loading={approveAllStopsMutation.isPending}
+                      onClick={() => approveAllStopsMutation.mutate(pendingStopsRouteLive.id)}
+                    >
+                      Approve all ({pendingCount})
+                    </Button>
+                  )}
+                </div>
+              )
+            })()}
             {pendingStopsRouteLive.route_stops.filter((rs) => rs.status === 'PENDING_APPROVAL').length === 0 && (
               <p className="py-6 text-center text-sm text-gray-400">All caught up — nothing pending.</p>
             )}
