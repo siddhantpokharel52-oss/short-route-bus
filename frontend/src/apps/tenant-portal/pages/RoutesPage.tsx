@@ -1,7 +1,7 @@
 /**
  * RoutesPage — draw a route on the map by clicking waypoints, then name & save it.
  */
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, MapPin, Ruler, Trash2, Undo2, Map as MapIcon, CheckCircle, Clock, Eye, Pencil } from 'lucide-react'
 import Map, { Marker, Popup, Source, Layer, NavigationControl, useMap } from 'react-map-gl/maplibre'
@@ -111,6 +111,16 @@ const placeNameCache = new globalThis.Map<string, string | null>()
 // generic "Point N" label while the lookup is in flight or if it fails --
 // a route can have thousands of waypoints, so this only ever geocodes the
 // one the user actually clicked, never the whole list eagerly.
+// Cache-first lookup, only hitting the network on a cache miss.
+async function getCachedPlaceName(lat: number, lon: number): Promise<string | null> {
+  const key = `${lat.toFixed(5)},${lon.toFixed(5)}`
+  const cached = placeNameCache.get(key)
+  if (cached !== undefined) return cached
+  const result = await reverseGeocode(lat, lon)
+  placeNameCache.set(key, result?.name ?? null)
+  return result?.name ?? null
+}
+
 function useWaypointPlaceName(openIdx: number | null, points: [number, number][]): string | null {
   const [name, setName] = useState<string | null>(null)
 
@@ -119,24 +129,104 @@ function useWaypointPlaceName(openIdx: number | null, points: [number, number][]
       setName(null)
       return
     }
-    const [lat, lon] = points[openIdx]
-    const key = `${lat.toFixed(5)},${lon.toFixed(5)}`
-    const cached = placeNameCache.get(key)
-    if (cached !== undefined) {
-      setName(cached)
-      return
-    }
     setName(null)
     let cancelled = false
-    reverseGeocode(lat, lon).then((result) => {
-      if (cancelled) return
-      placeNameCache.set(key, result?.name ?? null)
-      setName(result?.name ?? null)
+    const [lat, lon] = points[openIdx]
+    getCachedPlaceName(lat, lon).then((resolved) => {
+      if (!cancelled) setName(resolved)
     })
     return () => { cancelled = true }
   }, [openIdx, points])
 
   return name
+}
+
+// One row in the Waypoints sidebar list. A route can have thousands of
+// points, so this only resolves its own place name once it actually
+// scrolls into view -- not the whole list eagerly -- via IntersectionObserver
+// against the scrollable list container. `presetName` skips the network
+// lookup entirely for Start/End rows, since the create flow already knows
+// those names from the Route Start/Route End search.
+function WaypointListRow({
+  lat, lon, index, total, presetName,
+}: { lat: number; lon: number; index: number; total: number; presetName?: string }) {
+  const { t } = useTranslation('tenant')
+  const rowRef = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
+  const [name, setName] = useState<string | null>(presetName ?? null)
+
+  // IntersectionObserver's callback depends on the browser's compositor
+  // actually running a paint/composite pass -- observed hanging indefinitely
+  // in real testing here for the same underlying reason the old Modal
+  // close-transition did (see Modal.tsx). getBoundingClientRect() reflects
+  // real layout geometry regardless of paint state, so scroll position is
+  // checked manually against it instead of trusting that callback to fire.
+  useEffect(() => {
+    if (presetName || !rowRef.current) return
+    const el = rowRef.current
+    const container = el.closest('.overflow-y-auto') as HTMLElement | null
+
+    const checkVisible = () => {
+      if (!container) {
+        setVisible(true)
+        return
+      }
+      const elRect = el.getBoundingClientRect()
+      const containerRect = container.getBoundingClientRect()
+      const margin = 150
+      const isNear = elRect.bottom >= containerRect.top - margin && elRect.top <= containerRect.bottom + margin
+      if (isNear) {
+        setVisible(true)
+        container.removeEventListener('scroll', checkVisible)
+      }
+    }
+
+    checkVisible()
+    if (!container) return
+    container.addEventListener('scroll', checkVisible, { passive: true })
+    return () => container.removeEventListener('scroll', checkVisible)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetName])
+
+  useEffect(() => {
+    if (presetName || !visible) return
+    let cancelled = false
+    getCachedPlaceName(lat, lon).then((resolved) => {
+      if (!cancelled) setName(resolved)
+    })
+    return () => { cancelled = true }
+  }, [visible, presetName, lat, lon])
+
+  const isStart = index === 0
+  const isEnd = index === total - 1
+  const fallback = isStart
+    ? t('routes.waypointStart')
+    : isEnd
+      ? t('routes.waypointEnd')
+      : t('routes.waypointPoint', { n: index + 1 })
+
+  return (
+    <div
+      ref={rowRef}
+      className={cn(
+        'flex items-center gap-2 rounded-lg px-2.5 py-1.5',
+        isStart ? 'bg-green-50' : isEnd ? 'bg-red-50' : 'bg-gray-50'
+      )}
+    >
+      <span className={cn(
+        'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white',
+        isStart ? 'bg-green-500' : isEnd ? 'bg-red-500' : 'bg-blue-500'
+      )}>
+        {index + 1}
+      </span>
+      <div className="min-w-0">
+        <p className="truncate font-medium text-gray-700" title={name ?? fallback}>
+          {name ?? fallback}
+        </p>
+        <p className="text-gray-400">{lat.toFixed(4)}, {lon.toFixed(4)}</p>
+      </div>
+    </div>
+  )
 }
 
 // ── Route interface ──────────────────────────────────────────────────────────
@@ -710,21 +800,13 @@ export default function RoutesPage() {
                     <p className="text-center text-gray-400 mt-6 italic text-xs">{t('routes.clickToStart')}</p>
                   ) : (
                     editWaypoints.map((pt, i) => (
-                      <div
+                      <WaypointListRow
                         key={i}
-                        className={cn(
-                          'flex items-center gap-2 rounded-lg px-2.5 py-1.5',
-                          i === 0 ? 'bg-green-50' : i === editWaypoints.length - 1 ? 'bg-red-50' : 'bg-gray-50'
-                        )}
-                      >
-                        <span className={cn(
-                          'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white',
-                          i === 0 ? 'bg-green-500' : i === editWaypoints.length - 1 ? 'bg-red-500' : 'bg-blue-500'
-                        )}>
-                          {i + 1}
-                        </span>
-                        <p className="text-gray-400">{pt[0].toFixed(4)}, {pt[1].toFixed(4)}</p>
-                      </div>
+                        lat={pt[0]}
+                        lon={pt[1]}
+                        index={i}
+                        total={editWaypoints.length}
+                      />
                     ))
                   )}
                 </div>
@@ -1022,26 +1104,18 @@ export default function RoutesPage() {
                   </p>
                 ) : (
                   waypoints.map((pt, i) => (
-                    <div
+                    <WaypointListRow
                       key={i}
-                      className={cn(
-                        'flex items-center gap-2 rounded-lg px-2.5 py-1.5',
-                        i === 0 ? 'bg-green-50' : i === waypoints.length - 1 ? 'bg-red-50' : 'bg-gray-50'
-                      )}
-                    >
-                      <span className={cn(
-                        'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white',
-                        i === 0 ? 'bg-green-500' : i === waypoints.length - 1 ? 'bg-red-500' : 'bg-blue-500'
-                      )}>
-                        {i + 1}
-                      </span>
-                      <div>
-                        <p className="font-medium text-gray-700">
-                          {i === 0 ? t('routes.waypointStart') : i === waypoints.length - 1 ? t('routes.waypointEnd') : t('routes.waypointPoint', { n: i + 1 })}
-                        </p>
-                        <p className="text-gray-400">{pt[0].toFixed(4)}, {pt[1].toFixed(4)}</p>
-                      </div>
-                    </div>
+                      lat={pt[0]}
+                      lon={pt[1]}
+                      index={i}
+                      total={waypoints.length}
+                      presetName={
+                        i === 0 ? routeStart?.name
+                          : i === waypoints.length - 1 ? routeEnd?.name
+                            : undefined
+                      }
+                    />
                   ))
                 )}
               </div>
