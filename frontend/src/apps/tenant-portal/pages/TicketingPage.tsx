@@ -244,8 +244,23 @@ export default function TicketingPage() {
     fare: number
   } | null>(null)
   const [selectedTicket, setSelectedTicket] = useState<TicketRecord | null>(null)
+  const [voidTarget, setVoidTarget] = useState<TicketRecord | null>(null)
   const [totalCount, setTotalCount] = useState(0)
   const pagination = usePagination(totalCount)
+
+  const voidMutation = useMutation({
+    mutationFn: (uid: string) => apiClient.post(`/ticketing/tickets/${uid}/cancel/`),
+    onSuccess: () => {
+      toast.success(t('ticketing.voidSuccess', { defaultValue: 'Ticket voided.' }))
+      setVoidTarget(null)
+      setSelectedTicket(null)
+      qc.invalidateQueries({ queryKey: ['tickets'] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || (err as Error).message || 'Failed to void ticket.')
+    },
+  })
 
   // ── Queries ──────────────────────────────────────────────────────────────
   const { data, isLoading } = useQuery({
@@ -873,6 +888,47 @@ export default function TicketingPage() {
               <p>{selectedTicket.from_stop_name} → {selectedTicket.to_stop_name}</p>
               <p>{formatNPR(Number(selectedTicket.fare_paid), language as 'en' | 'ne')}</p>
               {selectedTicket.passenger_name && <p>{selectedTicket.passenger_name}</p>}
+            </div>
+            {selectedTicket.status === 'VALID' && (
+              <Button
+                variant="secondary"
+                className="text-red-600 hover:bg-red-50"
+                onClick={() => setVoidTarget(selectedTicket)}
+              >
+                {t('ticketing.voidTicket', { defaultValue: 'Void Ticket' })}
+              </Button>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Void Ticket Confirmation ─────────────────────────────────────── */}
+      <Modal
+        open={!!voidTarget}
+        onClose={() => setVoidTarget(null)}
+        title={t('ticketing.voidTicket', { defaultValue: 'Void Ticket' })}
+        size="sm"
+      >
+        {voidTarget && (
+          <div className="space-y-4 p-6">
+            <p className="text-sm text-gray-600">
+              {t('ticketing.voidConfirm', {
+                defaultValue: 'This permanently voids ticket {{uid}} ({{fare}}). This cannot be undone — the passenger will need a new ticket.',
+                uid: voidTarget.ticket_uid,
+                fare: formatNPR(Number(voidTarget.fare_paid), language as 'en' | 'ne'),
+              })}
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setVoidTarget(null)}>
+                {t('common:common.cancel')}
+              </Button>
+              <Button
+                variant="danger"
+                loading={voidMutation.isPending}
+                onClick={() => voidMutation.mutate(voidTarget.ticket_uid)}
+              >
+                {t('ticketing.voidTicket', { defaultValue: 'Void Ticket' })}
+              </Button>
             </div>
           </div>
         )}

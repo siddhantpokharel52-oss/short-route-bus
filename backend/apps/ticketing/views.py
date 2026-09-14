@@ -107,12 +107,15 @@ class VerifyTicketView(views.APIView):
 
 
 class CancelTicketView(views.APIView):
-    """Voids a ticket — called by the public API proxy after Yatroo (or any integrator)
-    processes a refund on their side and reports it back (brief §8: "the corresponding
-    void/cancel is posted to your platform"). AllowAny for the same reason as
-    VerifyTicketView above: the public API's proxy layer (public_api/router.py
-    cancel_ticket()) already checks ownership/tenant staff before this is ever reached."""
-    permission_classes = [AllowAny]
+    """Voids a ticket. Called two ways: directly by tenant-portal staff (Ticketing ->
+    void a wrongly-issued ticket), and by the public API proxy after Yatroo (or any
+    integrator) processes a refund on its own side and reports it back (brief §8: "the
+    corresponding void/cancel is posted to your platform"). IsAuthenticated is enough on
+    its own here -- django-tenants' schema-per-tenant isolation already confines a direct
+    staff call to that tenant's own tickets, and the proxy path always forwards a real
+    bearer token (the staff member's own, or a minted self-service token for a passenger),
+    so this never needs to trust an unauthenticated caller."""
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, uid):
         try:
