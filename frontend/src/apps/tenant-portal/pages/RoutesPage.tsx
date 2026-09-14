@@ -4,10 +4,10 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, MapPin, Ruler, Trash2, Undo2, Map as MapIcon, CheckCircle, Clock, Eye, Pencil } from 'lucide-react'
-import Map, { Marker, Popup, Source, Layer, useMap } from 'react-map-gl/maplibre'
+import Map, { Marker, Popup, Source, Layer, NavigationControl, useMap } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { BAATO_STYLE_URL } from '@/config/baato'
-import { getDirections, BaatoPlace, BaatoDirectionsResult } from '@services/baatoService'
+import { getDirections, reverseGeocode, BaatoPlace, BaatoDirectionsResult } from '@services/baatoService'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
 import { NepaliInput } from '@components/shared/NepaliInput'
@@ -99,6 +99,46 @@ function MapFlyTo({ target }: { target: [number, number] | null }) {
   return null
 }
 
+// Module-level (not per-render) so a place name looked up once stays cached
+// for the rest of the session, even across reopening the same popup or
+// switching between the create/edit flows.
+// globalThis.Map -- the default `Map` import above is this file's react-map-gl
+// map component, which shadows the built-in Map class at module scope.
+const placeNameCache = new globalThis.Map<string, string | null>()
+
+// Names whichever waypoint popup is currently open with the real place
+// nearest it (e.g. "Bhaktapur International Clinic"), falling back to the
+// generic "Point N" label while the lookup is in flight or if it fails --
+// a route can have thousands of waypoints, so this only ever geocodes the
+// one the user actually clicked, never the whole list eagerly.
+function useWaypointPlaceName(openIdx: number | null, points: [number, number][]): string | null {
+  const [name, setName] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (openIdx === null || !points[openIdx]) {
+      setName(null)
+      return
+    }
+    const [lat, lon] = points[openIdx]
+    const key = `${lat.toFixed(5)},${lon.toFixed(5)}`
+    const cached = placeNameCache.get(key)
+    if (cached !== undefined) {
+      setName(cached)
+      return
+    }
+    setName(null)
+    let cancelled = false
+    reverseGeocode(lat, lon).then((result) => {
+      if (cancelled) return
+      placeNameCache.set(key, result?.name ?? null)
+      setName(result?.name ?? null)
+    })
+    return () => { cancelled = true }
+  }, [openIdx, points])
+
+  return name
+}
+
 // ── Route interface ──────────────────────────────────────────────────────────
 interface Route {
   id: string
@@ -142,6 +182,7 @@ export default function RoutesPage() {
 
   const [waypoints, setWaypoints] = useState<[number, number][]>([])
   const [openWaypointIdx, setOpenWaypointIdx] = useState<number | null>(null)
+  const openWaypointPlaceName = useWaypointPlaceName(openWaypointIdx, waypoints)
 
   // Route Start / Route End (Baato search) -- drive the map fly-to and the
   // auto-suggested Directions path; manual waypoint editing still layers on
@@ -174,6 +215,7 @@ export default function RoutesPage() {
   const [editNameNe, setEditNameNe] = useState('')
   const [editWaypoints, setEditWaypoints] = useState<[number, number][]>([])
   const [editOpenWaypointIdx, setEditOpenWaypointIdx] = useState<number | null>(null)
+  const editOpenWaypointPlaceName = useWaypointPlaceName(editOpenWaypointIdx, editWaypoints)
 
   const { data, isLoading } = useQuery({
     queryKey: ['routes', pagination.page, search],
@@ -782,13 +824,16 @@ export default function RoutesPage() {
                     closeButton
                   >
                     <div className="text-xs p-1">
-                      <p className="font-semibold">Point {editOpenWaypointIdx + 1}</p>
+                      <p className="font-semibold">
+                        {editOpenWaypointPlaceName ?? `Point ${editOpenWaypointIdx + 1}`}
+                      </p>
                       <p className="text-gray-500">
                         {editWaypoints[editOpenWaypointIdx][0].toFixed(5)}, {editWaypoints[editOpenWaypointIdx][1].toFixed(5)}
                       </p>
                     </div>
                   </Popup>
                 )}
+                <NavigationControl position="top-right" showCompass={false} />
               </Map>
 
               <div className="absolute top-3 left-1/2 z-10 -translate-x-1/2 rounded-xl bg-white/90 px-4 py-2 shadow text-sm font-medium text-gray-700 backdrop-blur-sm whitespace-nowrap pointer-events-none">
@@ -1099,13 +1144,16 @@ export default function RoutesPage() {
                   closeButton
                 >
                   <div className="text-xs p-1">
-                    <p className="font-semibold">Point {openWaypointIdx + 1}</p>
+                    <p className="font-semibold">
+                      {openWaypointPlaceName ?? `Point ${openWaypointIdx + 1}`}
+                    </p>
                     <p className="text-gray-500">
                       {waypoints[openWaypointIdx][0].toFixed(5)}, {waypoints[openWaypointIdx][1].toFixed(5)}
                     </p>
                   </div>
                 </Popup>
               )}
+              <NavigationControl position="top-right" showCompass={false} />
             </Map>
 
             {/* Map instruction overlay */}

@@ -61,6 +61,29 @@ export async function getPlaceDetails(placeId: number): Promise<BaatoPlace | nul
   return { placeId: place.placeId, name: place.name, lat: place.centroid.lat, lon: place.centroid.lon }
 }
 
+export interface BaatoReverseResult {
+  name: string
+  address: string
+}
+
+// Names a raw lat/lon (e.g. a route waypoint dropped on the map) with the
+// nearest real place, instead of showing the coordinate pair or a generic
+// "Point N" label. Returns null on no match or a network failure -- callers
+// fall back to the generic label rather than showing an error for this.
+export async function reverseGeocode(lat: number, lon: number): Promise<BaatoReverseResult | null> {
+  const params = new URLSearchParams({ lat: String(lat), lon: String(lon), key: BAATO_KEY })
+  try {
+    const res = await fetch(`${BASE}/reverse?${params.toString()}`)
+    if (!res.ok) return null
+    const data = await res.json()
+    const place = data.data?.[0]
+    if (!place?.name) return null
+    return { name: place.name, address: place.address ?? '' }
+  } catch {
+    return null
+  }
+}
+
 // Decodes a Google-style encoded polyline (precision 5) -- the format
 // Baato's Directions API returns -- into an ordered [lat, lng][] list.
 function decodePolyline(encoded: string): [number, number][] {
