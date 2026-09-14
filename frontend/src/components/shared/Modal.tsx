@@ -36,6 +36,14 @@ export function Modal({
   // happens via the X button or an explicit Cancel action.
   closeOnBackdrop = false,
 }: ModalProps) {
+  // Gate on `open` here, rather than relying solely on Transition's own
+  // `show` prop, so closing is a real React unmount -- not contingent on
+  // Headless UI's leave-transition ever firing its completion callback.
+  // That callback was observed hanging in real browser testing (not just
+  // automated/backgrounded-tab testing), leaving the dialog visibly stuck
+  // open indefinitely even though the `open` prop had already gone false.
+  if (!open) return null
+
   return (
     <Transition appear show={open} as={Fragment}>
       <Dialog
