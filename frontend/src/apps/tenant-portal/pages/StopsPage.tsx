@@ -31,6 +31,27 @@ function parseRouteGeoJSON(geojson: string): [number, number][] {
   }
 }
 
+// Index of the closest point in `path` ([lng, lat][], road-snapped and
+// densely sampled by Baato's directions API) to a given lat/lng. Used to
+// place a new stop exactly on the route's line instead of wherever the
+// cursor landed, and to order it relative to the route's existing stops --
+// see handleMapClick. A nearest-vertex lookup is precise enough for this
+// (ordering and a visually-on-the-road snap), without the added complexity
+// of projecting onto line segments between vertices.
+function nearestPathIndex(path: [number, number][], lat: number, lng: number): number {
+  let bestIdx = 0
+  let bestDist = Infinity
+  for (let i = 0; i < path.length; i++) {
+    const [plng, plat] = path[i]
+    const d = (plat - lat) ** 2 + (plng - lng) ** 2
+    if (d < bestDist) {
+      bestDist = d
+      bestIdx = i
+    }
+  }
+  return bestIdx
+}
+
 // Invalidates map size after the modal's CSS scale transition (≈200 ms).
 function MapResizeHandler() {
   const { current: map } = useMap()
@@ -89,6 +110,11 @@ interface PendingStop {
   name_en: string
   name_ne: string
   is_terminal: boolean
+  // Computed from click position relative to the route's existing stops --
+  // see nearestPathIndex/handleMapClick. Undefined means "append at the
+  // end" (no route path to compute a mid-route position against yet).
+  sequence_no?: number
+  insertAfterLabel?: string
 }
 
 interface SavedStop extends PendingStop {
@@ -213,12 +239,56 @@ export default function StopsPage() {
   const stopNameNeField = register('name_ne')
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
-    if (!pendingStop) {
-      setPendingStop({ lat, lng, name_en: '', name_ne: '', is_terminal: false })
-      setOpenPopup(null)
-      setStopNameNeEdited(false)
+    if (pendingStop) return
+
+    // Snap onto the route's actual road-drawn path (routePath, densely
+    // sampled) instead of leaving the stop wherever the cursor happened to
+    // land, and use that same path to figure out where in the existing stop
+    // order this click falls -- see nearestPathIndex.
+    let snappedLat = lat
+    let snappedLng = lng
+    let sequence_no: number | undefined
+    let insertAfterLabel: string | undefined
+
+    if (routePath.length > 0) {
+      const clickIdx = nearestPathIndex(routePath, lat, lng)
+      const [snapLng, snapLat] = routePath[clickIdx]
+      snappedLat = snapLat
+      snappedLng = snapLng
+
+      // "Existing stops" = ones already saved on the route, plus ones added
+      // earlier in this same session (selectedRoute.route_stops doesn't
+      // reflect those yet -- see addStopMutation's invalidateQueries key).
+      const existing = [
+        ...(selectedRoute?.route_stops ?? []).map((rs) => ({
+          seq: rs.sequence_no,
+          label: rs.stop_detail.name_en,
+          pathIdx: nearestPathIndex(routePath, rs.stop_detail.latitude, rs.stop_detail.longitude),
+        })),
+        ...savedStops.map((s) => ({
+          seq: s.seq,
+          label: s.name_en,
+          pathIdx: nearestPathIndex(routePath, s.lat, s.lng),
+        })),
+      ].sort((a, b) => a.pathIdx - b.pathIdx)
+
+      const before = existing.filter((x) => x.pathIdx <= clickIdx)
+      if (before.length > 0) {
+        const closest = before[before.length - 1]
+        sequence_no = closest.seq + 1
+        insertAfterLabel = closest.label
+      } else if (existing.length > 0) {
+        sequence_no = 1
+      }
     }
-  }, [pendingStop])
+
+    setPendingStop({
+      lat: snappedLat, lng: snappedLng, name_en: '', name_ne: '', is_terminal: false,
+      sequence_no, insertAfterLabel,
+    })
+    setOpenPopup(null)
+    setStopNameNeEdited(false)
+  }, [pendingStop, routePath, selectedRoute, savedStops])
 
   const addStopMutation = useMutation({
     mutationFn: async (form: StopForm) => {
@@ -229,6 +299,7 @@ export default function StopsPage() {
         latitude: pendingStop.lat.toFixed(7),
         longitude: pendingStop.lng.toFixed(7),
         is_terminal: form.is_terminal,
+        ...(pendingStop.sequence_no !== undefined && { sequence_no: pendingStop.sequence_no }),
       })
       return { ...res.data.data, formData: form }
     },
@@ -248,7 +319,13 @@ export default function StopsPage() {
       setStopNameNeEdited(false)
       reset()
       qc.invalidateQueries({ queryKey: ['stops'] })
-      qc.invalidateQueries({ queryKey: ['routes'] })
+      // Was ['routes'] -- no query anywhere uses that key (this file's is
+      // 'routes-dropdown'), so this was a no-op that never actually
+      // refreshed selectedRoute.route_stops after adding a stop. savedStops
+      // (above) was the workaround; this fix means sequence math for the
+      // *next* click in the same session no longer needs to rely solely on
+      // that workaround staying in sync.
+      qc.invalidateQueries({ queryKey: ['routes-dropdown'] })
     },
     onError: (err: unknown) => {
       const e = err as { response?: { status?: number; data?: { message?: string; errors?: Record<string, unknown> } } }
@@ -872,6 +949,13 @@ export default function StopsPage() {
 
                   <div className="mb-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">
                     📍 {pendingStop.lat.toFixed(5)}, {pendingStop.lng.toFixed(5)}
+                    <p className="mt-1 font-medium text-blue-800">
+                      {pendingStop.insertAfterLabel
+                        ? `Will be inserted right after "${pendingStop.insertAfterLabel}"`
+                        : pendingStop.sequence_no === 1
+                          ? 'Will be inserted as the first stop'
+                          : 'Will be added as the last stop'}
+                    </p>
                   </div>
 
                   <form

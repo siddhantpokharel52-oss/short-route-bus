@@ -34,6 +34,26 @@ def api_response(data=None, message="Success", success=True, errors=None, status
     }, status=status_code)
 
 
+def _shift_route_stops_up(route, from_sequence_no):
+    """Makes room at `from_sequence_no` by bumping every RouteStop at or past
+    it up by one, for RouteViewSet.add_stop's mid-route insert. A single
+    bulk .update(sequence_no=F('sequence_no') + 1) looks like the obvious
+    way to do this but isn't safe here: (route, sequence_no) is a unique
+    constraint, and Postgres checks it per-row as the UPDATE physically
+    writes each one -- confirmed live, it raised a real IntegrityError ("Key
+    (route_id, sequence_no)=(...) already exists") because the rows weren't
+    all written in descending order. Updating one at a time, highest first,
+    means nothing is ever briefly sitting on a value another row still
+    holds: the top row moves into a slot nothing occupies (past the old
+    max), which frees its old slot for the next one down, and so on."""
+    stops = list(
+        RouteStop.objects.filter(route=route, sequence_no__gte=from_sequence_no).order_by("-sequence_no")
+    )
+    for rs in stops:
+        rs.sequence_no += 1
+        rs.save(update_fields=["sequence_no"])
+
+
 def _round_to_nearest_5(value: Decimal) -> Decimal:
     """42 -> 40, 43 -> 45 -- standard round-half-up on the nearest multiple
     of 5, matching how real stage-fare charts are denominated (see
@@ -247,7 +267,7 @@ class RouteViewSet(ModelViewSet):
         stop_ser.is_valid(raise_exception=True)
         stop = stop_ser.save(created_by=request.user)
 
-        from django.db.models import F, Max
+        from django.db.models import Max
 
         # A stop added while the route is still under its own first review
         # rides along with that review (Approved by default). One added to a
@@ -266,10 +286,14 @@ class RouteViewSet(ModelViewSet):
             end_route_stop = RouteStop.objects.filter(route=route, stop_id=route.end_stop_id).first()
             requested_seq = request.data.get("sequence_no")
             sequence_no = requested_seq or (end_route_stop.sequence_no if end_route_stop else 1)
-            if not requested_seq:
-                RouteStop.objects.filter(route=route, sequence_no__gte=sequence_no).update(
-                    sequence_no=F("sequence_no") + 1
-                )
+            # Shifting unconditionally is safe either way: when sequence_no is
+            # past every existing row (a plain append), this matches nothing.
+            # When it's an explicit mid-route insert (frontend now computes
+            # one based on click position -- see StopsPage.tsx), the existing
+            # occupant of that slot and everything after it must move down,
+            # or the create() below collides with it on the (route,
+            # sequence_no) unique constraint.
+            _shift_route_stops_up(route, sequence_no)
             route_stop = RouteStop.objects.create(
                 route=route,
                 stop=stop,
@@ -280,7 +304,11 @@ class RouteViewSet(ModelViewSet):
             # start_stop/end_stop stay pinned to the original picks -- do not touch them.
         else:
             max_seq = RouteStop.objects.filter(route=route).aggregate(m=Max("sequence_no"))["m"] or 0
-            sequence_no = request.data.get("sequence_no", max_seq + 1)
+            requested_seq = request.data.get("sequence_no")
+            is_append = not requested_seq or requested_seq > max_seq
+            sequence_no = requested_seq or (max_seq + 1)
+            if not is_append:
+                _shift_route_stops_up(route, sequence_no)
 
             route_stop = RouteStop.objects.create(
                 route=route,
@@ -290,10 +318,13 @@ class RouteViewSet(ModelViewSet):
                 status=new_stop_status,
             )
 
-            # Update start/end stop on route
+            # Update start/end stop on route -- only when this stop is
+            # genuinely becoming the new first/last, not when it's being
+            # inserted somewhere in the middle of an existing sequence.
             if sequence_no == 1 or route.start_stop is None:
                 route.start_stop = stop
-            route.end_stop = stop
+            if is_append:
+                route.end_stop = stop
             route.save(update_fields=["start_stop", "end_stop", "updated_at"])
 
         if route_already_approved:
