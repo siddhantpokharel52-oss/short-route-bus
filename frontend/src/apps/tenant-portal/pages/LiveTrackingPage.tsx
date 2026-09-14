@@ -89,6 +89,7 @@ export default function LiveTrackingPage() {
   const { tenantSlug } = useAuthStore()
   const [positions, setPositions] = useState<Record<string, VehiclePosition>>({})
   const [selectedVehicle, setSelectedVehicle] = useState<string | null>(null)
+  const [selectedStopId, setSelectedStopId] = useState<string | null>(null)
   const [selectedRouteId, setSelectedRouteId] = useState<string>('')
   const [activeTab, setActiveTab] = useState<'buses' | 'eta' | 'headway'>('buses')
   const [isSimulating, setIsSimulating] = useState(false)
@@ -489,7 +490,11 @@ export default function LiveTrackingPage() {
             </Source>
           )}
 
-          {/* Stop markers along the route */}
+          {/* Stop markers along the route -- terminals get an always-visible
+              label (start/end matter at a glance); every stop shows its name
+              on hover and via click, same as everywhere else stops are
+              shown, rather than cluttering the whole route with permanent
+              labels on every dot. */}
           {validCoordinates.map((stop, i) => {
             const isTerminal = i === 0 || i === validCoordinates.length - 1
             return (
@@ -497,17 +502,51 @@ export default function LiveTrackingPage() {
                 key={stop.stop_id}
                 latitude={stop.latitude}
                 longitude={stop.longitude}
-                anchor="center"
+                anchor={isTerminal ? 'bottom' : 'center'}
               >
-                <div style={{
-                  width: 16, height: 16, borderRadius: '50%',
-                  background: isTerminal ? '#7c3aed' : '#64748b',
-                  border: '2px solid white',
-                  boxShadow: '0 1px 3px rgba(0,0,0,.3)',
-                }} />
+                <div
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setSelectedStopId(stop.stop_id)
+                  }}
+                  title={stop.name}
+                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer' }}
+                >
+                  {isTerminal && (
+                    <div style={{
+                      background: '#fff', color: '#5b21b6', fontSize: 11, fontWeight: 600,
+                      padding: '2px 6px', borderRadius: 6, boxShadow: '0 1px 3px rgba(0,0,0,.25)',
+                      marginBottom: 4, whiteSpace: 'nowrap', border: '1px solid #7c3aed',
+                    }}>
+                      {stop.name}
+                    </div>
+                  )}
+                  <div style={{
+                    width: 16, height: 16, borderRadius: '50%',
+                    background: isTerminal ? '#7c3aed' : '#64748b',
+                    border: '2px solid white',
+                    boxShadow: '0 1px 3px rgba(0,0,0,.3)',
+                  }} />
+                </div>
               </Marker>
             )
           })}
+
+          {selectedStopId && (() => {
+            const stop = validCoordinates.find((s) => s.stop_id === selectedStopId)
+            if (!stop) return null
+            return (
+              <Popup
+                latitude={stop.latitude}
+                longitude={stop.longitude}
+                onClose={() => setSelectedStopId(null)}
+                closeButton
+              >
+                <p className="text-sm font-semibold text-gray-800">#{stop.sequence_no} {stop.name}</p>
+                <p className="text-xs text-gray-400">{stop.stop_code}</p>
+              </Popup>
+            )
+          })()}
 
           {/* Live bus markers */}
           {Object.values(positions).map((bus) => {

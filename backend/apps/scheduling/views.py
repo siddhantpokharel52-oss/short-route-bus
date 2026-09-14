@@ -369,7 +369,9 @@ class ETAView(views.APIView):
             with schema_context("public"):
                 from backend.apps.platform.models import RouteStop
                 stops = list(
-                    RouteStop.objects.filter(route_id=route_id)
+                    # Exclude stops still PENDING_APPROVAL (see RouteStop.status) --
+                    # not live yet, so riders shouldn't get an ETA for one.
+                    RouteStop.objects.filter(route_id=route_id, status=RouteStop.Status.APPROVED)
                     .select_related("stop")
                     .order_by("sequence_no")
                 )
@@ -458,7 +460,9 @@ class HeadwayView(views.APIView):
             with schema_context("public"):
                 from backend.apps.platform.models import RouteStop
                 route_stops = list(
-                    RouteStop.objects.filter(route_id=route_id)
+                    # Same rule as ETAView -- a stop still PENDING_APPROVAL
+                    # shouldn't factor into the route-progress calculation.
+                    RouteStop.objects.filter(route_id=route_id, status=RouteStop.Status.APPROVED)
                     .select_related("stop")
                     .order_by("sequence_no")
                 )
@@ -587,7 +591,11 @@ class RoutePolylineView(views.APIView):
                         status_code=404,
                     )
                 stops = list(
-                    RouteStop.objects.filter(route_id=route_id)
+                    # A stop still PENDING_APPROVAL (see RouteStop.status)
+                    # isn't live yet -- same rule platform.RouteViewSet.stops
+                    # already applies for ticketing, so the polyline riders
+                    # actually see shouldn't include it either.
+                    RouteStop.objects.filter(route_id=route_id, status=RouteStop.Status.APPROVED)
                     .select_related("stop")
                     .order_by("sequence_no")
                 )
