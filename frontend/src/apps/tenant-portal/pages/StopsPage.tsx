@@ -151,7 +151,7 @@ type PopupInfo =
 // (not the whole list eagerly -- a route can have a dozen suggestions and
 // this only ever geocodes the one being looked at). Cache-first via
 // @utils/placeNameCache, same helper the route builder's waypoints use.
-function useSuggestedStopName(lat: number | null, lng: number | null): string | null {
+function usePlaceName(lat: number | null, lng: number | null): string | null {
   const [name, setName] = useState<string | null>(null)
   useEffect(() => {
     if (lat === null || lng === null) {
@@ -181,7 +181,7 @@ function SuggestedStopPopup({
   onReject: () => void
   rejecting: boolean
 }) {
-  const name = useSuggestedStopName(lat, lng)
+  const name = usePlaceName(lat, lng)
   return (
     <Popup latitude={lat} longitude={lng} onClose={onClose} closeButton>
       <div className="text-sm min-w-[180px]">
@@ -228,7 +228,7 @@ function SuggestedStopRow({
   applying: boolean
   rejecting: boolean
 }) {
-  const name = useSuggestedStopName(s.latitude, s.longitude)
+  const name = usePlaceName(s.latitude, s.longitude)
   const label = name ?? `${s.latitude.toFixed(5)}, ${s.longitude.toFixed(5)}`
   return (
     <div className="flex items-start gap-1.5 text-xs text-violet-700">
@@ -260,7 +260,7 @@ function SuggestedStopRow({
 // same lazy pattern as the sidebar row and popup, so hovering shows the real
 // place name instead of a generic "Recommended stop" label.
 function SuggestedStopMarker({ s, onClick }: { s: SuggestedStopItem; onClick: () => void }) {
-  const name = useSuggestedStopName(s.latitude, s.longitude)
+  const name = usePlaceName(s.latitude, s.longitude)
   return (
     <Marker latitude={s.latitude} longitude={s.longitude} anchor="center">
       <div
@@ -278,6 +278,31 @@ function SuggestedStopMarker({ s, onClick }: { s: SuggestedStopItem; onClick: ()
         title={name ? `Recommended stop: ${name}` : 'Recommended stop'}
       >
         <Sparkles size={11} />
+      </div>
+    </Marker>
+  )
+}
+
+// Map marker for the point just clicked, awaiting its name/details form --
+// resolves and shows the real place name right on the map (eagerly, not on
+// hover, since this is the one point the operator is actively looking at),
+// falling back to coordinates while the lookup is in flight or if it fails.
+function PendingStopMarker({ lat, lng, name }: { lat: number; lng: number; name: string | null }) {
+  return (
+    <Marker latitude={lat} longitude={lng} anchor="bottom">
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none' }}>
+        <div style={{
+          background: '#fff', color: '#92400e', fontSize: 11, fontWeight: 600,
+          padding: '3px 7px', borderRadius: 6, boxShadow: '0 2px 6px rgba(0,0,0,.25)',
+          marginBottom: 4, whiteSpace: 'nowrap', border: '1px solid #f59e0b',
+        }}>
+          {name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`}
+        </div>
+        <div style={{
+          width: 16, height: 16, borderRadius: '50%',
+          background: '#f59e0b', border: '3px solid #fff',
+          boxShadow: '0 2px 6px rgba(0,0,0,.4)',
+        }} />
       </div>
     </Marker>
   )
@@ -408,6 +433,10 @@ export default function StopsPage() {
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<StopForm>()
   const stopNameEnField = register('name_en', { required: 'Stop name is required' })
   const stopNameNeField = register('name_ne')
+
+  // Resolved once here (not inside PendingStopMarker) so the same lookup
+  // backs both the map label and the sidebar's coordinate line.
+  const pendingStopName = usePlaceName(pendingStop?.lat ?? null, pendingStop?.lng ?? null)
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
     if (pendingStop) return
@@ -870,7 +899,10 @@ export default function StopsPage() {
               </p>
               {deleteTarget.routes?.length > 0 && (
                 <p className="mt-2 text-xs text-red-500">
-                  {t('stops.routesAffected', { count: deleteTarget.routes.length })}
+                  {t('stops.routesAffected', {
+                    count: deleteTarget.routes.length,
+                    defaultValue: `Used on ${deleteTarget.routes.length} route(s) -- it will be removed from those routes too.`,
+                  })}
                 </p>
               )}
             </div>
@@ -1036,15 +1068,7 @@ export default function StopsPage() {
                 ))}
 
                 {/* Pending stop pin */}
-                {pendingStop && (
-                  <Marker latitude={pendingStop.lat} longitude={pendingStop.lng} anchor="center">
-                    <div style={{
-                      width: 16, height: 16, borderRadius: '50%',
-                      background: '#f59e0b', border: '3px solid #fff',
-                      boxShadow: '0 2px 6px rgba(0,0,0,.4)',
-                    }} />
-                  </Marker>
-                )}
+                {pendingStop && <PendingStopMarker lat={pendingStop.lat} lng={pendingStop.lng} name={pendingStopName} />}
 
                 {/* Popups */}
                 {openPopup?.kind === 'existing' && (
@@ -1193,7 +1217,7 @@ export default function StopsPage() {
                   </div>
 
                   <div className="mb-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">
-                    📍 {pendingStop.lat.toFixed(5)}, {pendingStop.lng.toFixed(5)}
+                    📍 {pendingStopName ?? `${pendingStop.lat.toFixed(5)}, ${pendingStop.lng.toFixed(5)}`}
                     <p className="mt-1 font-medium text-blue-800">
                       {pendingStop.insertAfterLabel
                         ? `Will be inserted right after "${pendingStop.insertAfterLabel}"`

@@ -136,6 +136,63 @@ class StopViewSet(ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+    def destroy(self, request, *args, **kwargs):
+        # RouteStop.stop is on_delete=PROTECT -- deleting a stop still linked
+        # to a route used to raise an uncaught ProtectedError, surfacing to
+        # the user as a raw 500 "Server error". Now it actually detaches the
+        # stop from every route it's a mid-route stop on (recomputing
+        # start_stop/end_stop after, same as RouteViewSet.remove_stop) --
+        # except a route's current start/end point, which stays undeletable
+        # this way no matter what, so a route never loses its starting or
+        # ending point out from under it.
+        instance = self.get_object()
+
+        diversion_count = RouteDiversion.objects.filter(
+            Q(start_stop=instance) | Q(end_stop=instance)
+        ).count()
+        if diversion_count:
+            return api_response(
+                success=False,
+                message=(
+                    f"Cannot delete '{instance.name_en}' -- it's referenced by "
+                    f"{diversion_count} route diversion(s)."
+                ),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        route_stops = list(instance.route_stops.select_related("route").all())
+        # A route's current start/end point is never deletable this way --
+        # regardless of endpoints_locked (a pinned Route Start/End pick is
+        # the obvious case, but even an unlocked route's first/last stop is
+        # still its starting/ending point right now, not an arbitrary
+        # mid-route stop). Change the route's endpoints, or remove it from
+        # the route via remove_stop, before a start/end point can be deleted.
+        endpoint_conflicts = [
+            rs for rs in route_stops
+            if instance.id in (rs.route.start_stop_id, rs.route.end_stop_id)
+        ]
+        if endpoint_conflicts:
+            codes = ", ".join(sorted({rs.route.route_code for rs in endpoint_conflicts}))
+            return api_response(
+                success=False,
+                message=(
+                    f"Cannot delete '{instance.name_en}' -- it's the starting/ending point of "
+                    f"route(s) {codes}. Change those routes' start/end first."
+                ),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        affected_routes = {rs.route_id: rs.route for rs in route_stops}
+        for rs in route_stops:
+            rs.delete()
+        for route in affected_routes.values():
+            remaining = RouteStop.objects.filter(route=route).order_by("sequence_no")
+            route.start_stop = remaining.first().stop if remaining.exists() else None
+            route.end_stop = remaining.last().stop if remaining.exists() else None
+            route.save(update_fields=["start_stop", "end_stop", "updated_at"])
+
+        return super().destroy(request, *args, **kwargs)
+
     @action(detail=True, methods=["get"])
     def analytics(self, request, pk=None):
         stop = self.get_object()
