@@ -11,13 +11,14 @@ from django.db.models import Q
 from .models import (
     Stop, StopAnalytics, Route, RouteStop, RouteAssignment, RouteDiversion,
     TicketType, FareMatrix, SmartCard, CardTransaction, CardRecharge, FarePolicy,
-    AdminNotification,
+    AdminNotification, SuggestedStop,
 )
 from .serializers import (
     StopSerializer, StopAnalyticsSerializer, RouteSerializer, RouteStopSerializer,
     RouteAssignmentSerializer, RouteDiversionSerializer, TicketTypeSerializer,
     FareMatrixSerializer, SmartCardSerializer, CardTransactionSerializer,
     CardRechargeSerializer, FarePolicySerializer, AdminNotificationSerializer,
+    SuggestedStopSerializer,
 )
 from backend.apps.users.permissions import (
     IsSuperAdmin, IsPlatformRole, IsTransportAuthority, CanManageRoutes, CanViewFares,
@@ -52,6 +53,62 @@ def _shift_route_stops_up(route, from_sequence_no):
     for rs in stops:
         rs.sequence_no += 1
         rs.save(update_fields=["sequence_no"])
+
+
+def _generate_suggested_stops(route, spacing_km=0.8, edge_buffer_km=0.3, max_suggestions=12):
+    """Samples the route's road-snapped path at roughly even spacing and
+    stages each sample as a SuggestedStop -- so the operator gets a
+    ready-to-review list on the Stops page instead of having to re-click
+    every stop location by hand on the same road they just drew. A fixed
+    heuristic, not real stop data: it can suggest a spot mid-bridge and miss
+    a market just off the sampled point, which is why every suggestion still
+    needs an explicit Apply/Reject rather than being created outright."""
+    import json
+    import math
+
+    if not route.geojson_path:
+        return
+    try:
+        coords = json.loads(route.geojson_path)["geometry"]["coordinates"]  # [[lng, lat], ...]
+    except (ValueError, KeyError, TypeError):
+        return
+    if len(coords) < 3:
+        return
+
+    points = [(lat, lng) for lng, lat in coords]
+
+    def haversine_km(a, b):
+        lat1, lon1 = a
+        lat2, lon2 = b
+        r = 6371.0
+        phi1, phi2 = math.radians(lat1), math.radians(lat2)
+        dphi = math.radians(lat2 - lat1)
+        dlambda = math.radians(lon2 - lon1)
+        h = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+        return 2 * r * math.asin(math.sqrt(h))
+
+    cumulative = [0.0]
+    for i in range(1, len(points)):
+        cumulative.append(cumulative[-1] + haversine_km(points[i - 1], points[i]))
+    total_km = cumulative[-1]
+    if total_km <= 0:
+        return
+
+    suggestions = []
+    next_target = spacing_km
+    for i in range(1, len(points)):
+        if cumulative[i] < edge_buffer_km or cumulative[i] > total_km - edge_buffer_km:
+            continue
+        if cumulative[i] >= next_target:
+            suggestions.append(points[i])
+            next_target += spacing_km
+        if len(suggestions) >= max_suggestions:
+            break
+
+    SuggestedStop.objects.bulk_create([
+        SuggestedStop(route=route, latitude=lat, longitude=lng, order=idx)
+        for idx, (lat, lng) in enumerate(suggestions)
+    ])
 
 
 def _round_to_nearest_5(value: Decimal) -> Decimal:
@@ -189,6 +246,11 @@ class RouteViewSet(ModelViewSet):
             route.end_stop = end_stop
             route.endpoints_locked = True
             route.save(update_fields=["start_stop", "end_stop", "endpoints_locked", "updated_at"])
+
+        # Stage candidate stops sampled along the freshly-drawn path -- see
+        # _generate_suggested_stops. Only on creation, so this never retroactively
+        # generates suggestions for routes that already existed before this feature.
+        _generate_suggested_stops(route)
 
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
@@ -351,6 +413,41 @@ class RouteViewSet(ModelViewSet):
             message=f"Stop '{stop.name_en}' added to route {route.route_code}.",
             status_code=status.HTTP_201_CREATED,
         )
+
+    @action(detail=True, methods=["get"], url_path="suggested-stops")
+    def suggested_stops(self, request, pk=None):
+        """
+        GET /platform/routes/{id}/suggested-stops/
+        Candidate stops auto-sampled along this route's path when it was
+        created (see _generate_suggested_stops) -- the Stops page shows these
+        for the operator to Apply (turns it into a real stop, via the normal
+        add-stop flow) or Reject (dismiss-suggested-stop).
+        """
+        route = self.get_object()
+        qs = route.suggested_stops.order_by("order")
+        return api_response(data=SuggestedStopSerializer(qs, many=True).data)
+
+    @action(detail=True, methods=["post"], url_path="dismiss-suggested-stop")
+    def dismiss_suggested_stop(self, request, pk=None):
+        """
+        POST /platform/routes/{id}/dismiss-suggested-stop/
+        Body: { suggested_stop_id }
+        Removes one candidate from the suggested list -- called on an
+        explicit Reject, and again after a successful Apply (the frontend
+        creates the real stop via add-stop first, then clears the
+        suggestion so it doesn't linger as a duplicate).
+        """
+        from django.shortcuts import get_object_or_404
+
+        route = self.get_object()
+        suggested_stop_id = request.data.get("suggested_stop_id")
+        if not suggested_stop_id:
+            return api_response(
+                success=False, message="suggested_stop_id is required.", status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        suggestion = get_object_or_404(SuggestedStop, id=suggested_stop_id, route=route)
+        suggestion.delete()
+        return api_response(message="Suggestion dismissed.")
 
     @action(detail=True, methods=["post"], url_path="approve-stop")
     def approve_stop(self, request, pk=None):

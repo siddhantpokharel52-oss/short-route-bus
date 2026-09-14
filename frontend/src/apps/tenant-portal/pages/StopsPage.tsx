@@ -4,7 +4,7 @@
  */
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, MapPin, X, Navigation, Eye, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Search, MapPin, X, Navigation, Eye, Pencil, Trash2, Check, Sparkles } from 'lucide-react'
 import Map, { Marker, Popup, Source, Layer, NavigationControl, useMap } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { BAATO_STYLE_URL } from '@/config/baato'
@@ -18,6 +18,7 @@ import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { suggestNepaliName } from '@utils/nepaliKeyboard'
+import { getCachedPlaceName } from '@utils/placeNameCache'
 
 const KATHMANDU: [number, number] = [27.7172, 85.3240]
 
@@ -93,6 +94,17 @@ interface StopRoute {
   name_en: string
 }
 
+// A candidate stop auto-sampled along the route's path when it was created
+// (see backend RouteViewSet._generate_suggested_stops) -- shown so the
+// operator can Apply (create it as a real stop) or Reject (dismiss) instead
+// of re-clicking every stop location by hand.
+interface SuggestedStopItem {
+  id: string
+  latitude: number
+  longitude: number
+  order: number
+}
+
 interface Stop {
   id: string
   stop_code: string
@@ -132,7 +144,116 @@ interface StopForm {
 type PopupInfo =
   | { kind: 'existing'; lat: number; lng: number; seq: number; name: string; routeStopId: string }
   | { kind: 'saved'; lat: number; lng: number; seq: number; name: string }
+  | { kind: 'suggested'; lat: number; lng: number; suggestionId: string }
   | null
+
+// Lazily resolves a suggested stop's real place name once its popup opens
+// (not the whole list eagerly -- a route can have a dozen suggestions and
+// this only ever geocodes the one being looked at). Cache-first via
+// @utils/placeNameCache, same helper the route builder's waypoints use.
+function useSuggestedStopName(lat: number | null, lng: number | null): string | null {
+  const [name, setName] = useState<string | null>(null)
+  useEffect(() => {
+    if (lat === null || lng === null) {
+      setName(null)
+      return
+    }
+    setName(null)
+    let cancelled = false
+    getCachedPlaceName(lat, lng).then((resolved) => {
+      if (!cancelled) setName(resolved)
+    })
+    return () => { cancelled = true }
+  }, [lat, lng])
+  return name
+}
+
+// Popup for a recommended (suggested) stop -- shows its resolved place name
+// (falling back to raw coordinates while the lookup is in flight) with
+// Apply/Reject actions.
+function SuggestedStopPopup({
+  lat, lng, onClose, onApply, onReject, rejecting,
+}: {
+  lat: number
+  lng: number
+  onClose: () => void
+  onApply: () => void
+  onReject: () => void
+  rejecting: boolean
+}) {
+  const name = useSuggestedStopName(lat, lng)
+  return (
+    <Popup latitude={lat} longitude={lng} onClose={onClose} closeButton>
+      <div className="text-sm min-w-[180px]">
+        <p className="mb-0.5 flex items-center gap-1 font-semibold text-violet-700">
+          <Sparkles className="h-3 w-3" /> {name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`}
+        </p>
+        <p className="mb-2 text-xs text-gray-400">Recommended stop -- not yet on the route</p>
+        <div className="flex gap-1.5">
+          <button
+            onClick={onApply}
+            style={{
+              background: '#ecfdf5', color: '#047857', border: 'none',
+              borderRadius: '6px', padding: '3px 8px', fontSize: '11px',
+              fontWeight: 600, cursor: 'pointer', flex: 1,
+            }}
+          >
+            ✓ Apply
+          </button>
+          <button
+            onClick={onReject}
+            disabled={rejecting}
+            style={{
+              background: '#fee2e2', color: '#b91c1c', border: 'none',
+              borderRadius: '6px', padding: '3px 8px', fontSize: '11px',
+              fontWeight: 600, cursor: 'pointer', flex: 1,
+            }}
+          >
+            {rejecting ? '...' : '✕ Reject'}
+          </button>
+        </div>
+      </div>
+    </Popup>
+  )
+}
+
+// One row in the sidebar's "Recommended stops" list -- same lazy name
+// resolution as the map popup.
+function SuggestedStopRow({
+  s, onApply, onReject, applying, rejecting,
+}: {
+  s: SuggestedStopItem
+  onApply: () => void
+  onReject: () => void
+  applying: boolean
+  rejecting: boolean
+}) {
+  const name = useSuggestedStopName(s.latitude, s.longitude)
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-violet-700">
+      <Sparkles className="h-3 w-3 shrink-0" />
+      <span className="truncate flex-1">
+        {name ?? `${s.latitude.toFixed(5)}, ${s.longitude.toFixed(5)}`}
+      </span>
+      <button
+        onClick={onApply}
+        disabled={applying || rejecting}
+        title="Apply -- add as a real stop"
+        className="rounded p-0.5 text-emerald-500 hover:bg-emerald-100 hover:text-emerald-700 transition-colors disabled:opacity-40 shrink-0"
+      >
+        <Check className="h-3.5 w-3.5" />
+      </button>
+      <button
+        onClick={onReject}
+        disabled={applying || rejecting}
+        title="Reject -- dismiss this suggestion"
+        className="rounded p-0.5 text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
+}
 
 // ── Helper: build a Stop object from StopDetail for modals ───────────────────
 function buildStop(detail: StopDetail, allRoutes: Route[]): Stop {
@@ -162,6 +283,9 @@ export default function StopsPage() {
   const [stopNameNeEdited, setStopNameNeEdited] = useState(false)
   const [savedStops, setSavedStops] = useState<SavedStop[]>([])
   const [openPopup, setOpenPopup] = useState<PopupInfo>(null)
+  // Set while a suggested stop's Apply is in progress -- once the real stop
+  // is created (addStopMutation succeeds), this suggestion is dismissed too.
+  const [applyingSuggestionId, setApplyingSuggestionId] = useState<string | null>(null)
 
   const [viewTarget, setViewTarget] = useState<Stop | null>(null)
   const [editTarget, setEditTarget] = useState<Stop | null>(null)
@@ -188,6 +312,17 @@ export default function StopsPage() {
       return Array.isArray(data.data) ? data.data : (data.data?.results ?? [])
     },
     staleTime: 2 * 60 * 1000,
+  })
+
+  // Candidate stops auto-sampled along this route's path when it was created
+  // -- only fetched once a route is actually selected in the Add Stop modal.
+  const { data: suggestedStops = [] } = useQuery<SuggestedStopItem[]>({
+    queryKey: ['suggested-stops', selectedRouteId],
+    queryFn: async () => {
+      const { data } = await apiClient.get(`/platform/routes/${selectedRouteId}/suggested-stops/`)
+      return (Array.isArray(data.data) ? data.data : []) as SuggestedStopItem[]
+    },
+    enabled: !!selectedRouteId,
   })
 
   const assignedStopIds = useMemo(
@@ -326,6 +461,12 @@ export default function StopsPage() {
       // *next* click in the same session no longer needs to rely solely on
       // that workaround staying in sync.
       qc.invalidateQueries({ queryKey: ['routes-dropdown'] })
+      // If this stop came from an applied suggestion, clear it from the
+      // Recommended list now that the real stop exists.
+      if (applyingSuggestionId) {
+        dismissSuggestionMutation.mutate(applyingSuggestionId)
+        setApplyingSuggestionId(null)
+      }
     },
     onError: (err: unknown) => {
       const e = err as { response?: { status?: number; data?: { message?: string; errors?: Record<string, unknown> } } }
@@ -340,6 +481,44 @@ export default function StopsPage() {
       }
     },
   })
+
+  // Removes one candidate from the Recommended list -- used both for an
+  // explicit Reject, and to clean up after a suggestion is successfully
+  // Applied (see addStopMutation.onSuccess).
+  const dismissSuggestionMutation = useMutation({
+    mutationFn: (suggestionId: string) =>
+      apiClient.post(`/platform/routes/${selectedRouteId}/dismiss-suggested-stop/`, {
+        suggested_stop_id: suggestionId,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['suggested-stops', selectedRouteId] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || 'Failed to dismiss suggestion')
+    },
+  })
+
+  // Applying a suggestion reuses the exact same click-to-add flow as a
+  // manual map click (snap to path, compute correct sequence_no relative to
+  // existing stops) -- the only difference is the name field gets
+  // pre-filled from the suggestion's reverse-geocoded place name.
+  const handleApplySuggestion = useCallback((s: SuggestedStopItem) => {
+    if (pendingStop) return
+    setApplyingSuggestionId(s.id)
+    handleMapClick(s.latitude, s.longitude)
+    getCachedPlaceName(s.latitude, s.longitude).then((resolved) => {
+      if (resolved) {
+        setValue('name_en', resolved)
+        if (!stopNameNeEdited) setValue('name_ne', suggestNepaliName(resolved))
+      }
+    })
+  }, [pendingStop, handleMapClick, setValue, stopNameNeEdited])
+
+  const handleRejectSuggestion = useCallback((s: SuggestedStopItem) => {
+    setOpenPopup(null)
+    dismissSuggestionMutation.mutate(s.id)
+  }, [dismissSuggestionMutation])
 
   const removeStopFromRouteMutation = useMutation({
     mutationFn: ({ routeStopId }: { routeStopId: string; sessionStopId?: string }) =>
@@ -405,6 +584,7 @@ export default function StopsPage() {
     setSavedStops([])
     setSelectedRouteId('')
     setOpenPopup(null)
+    setApplyingSuggestionId(null)
     reset()
   }
 
@@ -709,6 +889,7 @@ export default function StopsPage() {
                     setPendingStop(null)
                     setSavedStops([])
                     setOpenPopup(null)
+                    setApplyingSuggestionId(null)
                     reset()
                   }}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
@@ -827,6 +1008,29 @@ export default function StopsPage() {
                   </Marker>
                 ))}
 
+                {/* Recommended stops -- auto-sampled along the route path at
+                    creation time, awaiting Apply/Reject (see suggestedStops query) */}
+                {suggestedStops.map((s) => (
+                  <Marker key={s.id} latitude={s.latitude} longitude={s.longitude} anchor="center">
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setOpenPopup({ kind: 'suggested', lat: s.latitude, lng: s.longitude, suggestionId: s.id })
+                      }}
+                      style={{
+                        background: '#f5f3ff', color: '#7c3aed',
+                        borderRadius: '50%', width: 22, height: 22, display: 'flex',
+                        alignItems: 'center', justifyContent: 'center',
+                        boxShadow: '0 2px 6px rgba(0,0,0,.3)',
+                        border: '2px dashed #7c3aed', cursor: 'pointer',
+                      }}
+                      title="Recommended stop"
+                    >
+                      <Sparkles size={11} />
+                    </div>
+                  </Marker>
+                ))}
+
                 {/* Pending stop pin */}
                 {pendingStop && (
                   <Marker latitude={pendingStop.lat} longitude={pendingStop.lng} anchor="center">
@@ -873,6 +1077,23 @@ export default function StopsPage() {
                     <p className="text-xs text-gray-400">{t('stops.justAdded')}</p>
                   </Popup>
                 )}
+                {openPopup?.kind === 'suggested' && (
+                  <SuggestedStopPopup
+                    lat={openPopup.lat}
+                    lng={openPopup.lng}
+                    onClose={() => setOpenPopup(null)}
+                    onApply={() => {
+                      const s = suggestedStops.find((x) => x.id === openPopup.suggestionId)
+                      if (s) handleApplySuggestion(s)
+                      setOpenPopup(null)
+                    }}
+                    onReject={() => {
+                      const s = suggestedStops.find((x) => x.id === openPopup.suggestionId)
+                      if (s) handleRejectSuggestion(s)
+                    }}
+                    rejecting={dismissSuggestionMutation.isPending}
+                  />
+                )}
                 <NavigationControl position="top-right" showCompass={false} />
               </Map>
 
@@ -903,6 +1124,29 @@ export default function StopsPage() {
                       {selectedRouteId ? t('stops.fillStopDetails') : t('stops.mapShowsRoute')}
                     </p>
                   </div>
+
+                  {suggestedStops.length > 0 && (
+                    <div className="mt-4 w-full rounded-xl border border-violet-200 bg-violet-50 p-3">
+                      <p className="mb-2 flex items-center gap-1 text-xs font-semibold text-violet-700">
+                        <Sparkles className="h-3.5 w-3.5" /> Recommended stops ({suggestedStops.length})
+                      </p>
+                      <p className="mb-2 text-[11px] text-violet-500">
+                        Auto-suggested along this route's path -- review each one.
+                      </p>
+                      <div className="space-y-1.5">
+                        {suggestedStops.map((s) => (
+                          <SuggestedStopRow
+                            key={s.id}
+                            s={s}
+                            applying={applyingSuggestionId === s.id}
+                            rejecting={dismissSuggestionMutation.isPending}
+                            onApply={() => handleApplySuggestion(s)}
+                            onReject={() => handleRejectSuggestion(s)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {savedStops.length > 0 && (
                     <div className="mt-4 w-full rounded-xl border border-green-200 bg-green-50 p-3">
@@ -940,7 +1184,7 @@ export default function StopsPage() {
                     <p className="text-sm font-semibold text-gray-800">{t('stops.newStop')}</p>
                     <button
                       type="button"
-                      onClick={() => { setPendingStop(null); setStopNameNeEdited(false); reset() }}
+                      onClick={() => { setPendingStop(null); setStopNameNeEdited(false); setApplyingSuggestionId(null); reset() }}
                       className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"
                     >
                       <X className="h-4 w-4" />
@@ -1004,7 +1248,7 @@ export default function StopsPage() {
                         type="button"
                         variant="secondary"
                         className="w-full"
-                        onClick={() => { setPendingStop(null); setStopNameNeEdited(false); reset() }}
+                        onClick={() => { setPendingStop(null); setStopNameNeEdited(false); setApplyingSuggestionId(null); reset() }}
                       >
                         {t('common.cancel')}
                       </Button>

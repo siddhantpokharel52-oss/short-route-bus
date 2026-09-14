@@ -7,7 +7,8 @@ import { Plus, Search, MapPin, Ruler, Trash2, Undo2, Map as MapIcon, CheckCircle
 import Map, { Marker, Popup, Source, Layer, NavigationControl, useMap } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { BAATO_STYLE_URL } from '@/config/baato'
-import { getDirections, reverseGeocode, BaatoPlace, BaatoDirectionsResult } from '@services/baatoService'
+import { getDirections, BaatoPlace, BaatoDirectionsResult } from '@services/baatoService'
+import { getCachedPlaceName } from '@utils/placeNameCache'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
 import { NepaliInput } from '@components/shared/NepaliInput'
@@ -99,28 +100,12 @@ function MapFlyTo({ target }: { target: [number, number] | null }) {
   return null
 }
 
-// Module-level (not per-render) so a place name looked up once stays cached
-// for the rest of the session, even across reopening the same popup or
-// switching between the create/edit flows.
-// globalThis.Map -- the default `Map` import above is this file's react-map-gl
-// map component, which shadows the built-in Map class at module scope.
-const placeNameCache = new globalThis.Map<string, string | null>()
-
 // Names whichever waypoint popup is currently open with the real place
 // nearest it (e.g. "Bhaktapur International Clinic"), falling back to the
 // generic "Point N" label while the lookup is in flight or if it fails --
 // a route can have thousands of waypoints, so this only ever geocodes the
 // one the user actually clicked, never the whole list eagerly.
-// Cache-first lookup, only hitting the network on a cache miss.
-async function getCachedPlaceName(lat: number, lon: number): Promise<string | null> {
-  const key = `${lat.toFixed(5)},${lon.toFixed(5)}`
-  const cached = placeNameCache.get(key)
-  if (cached !== undefined) return cached
-  const result = await reverseGeocode(lat, lon)
-  placeNameCache.set(key, result?.name ?? null)
-  return result?.name ?? null
-}
-
+// Cache-first lookup (see @utils/placeNameCache), only hitting the network on a cache miss.
 function useWaypointPlaceName(openIdx: number | null, points: [number, number][]): string | null {
   const [name, setName] = useState<string | null>(null)
 

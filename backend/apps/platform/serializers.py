@@ -3,7 +3,7 @@ from .models import (
     Stop, StopAmenity, StopAnalytics, Route, RouteStop, RouteAssignment,
     RouteVersion, RouteDiversion, TicketType, FareMatrix, SmartCard,
     CardTransaction, CardRecharge, FarePolicy, ZoneFare, DistanceFare,
-    PeakFareSurcharge, DiscountRule, AdminNotification,
+    PeakFareSurcharge, DiscountRule, AdminNotification, SuggestedStop,
 )
 
 
@@ -53,6 +53,13 @@ class RouteStopSerializer(serializers.ModelSerializer):
     class Meta:
         model = RouteStop
         fields = ["id", "stop", "stop_detail", "sequence_no", "estimated_time_from_start", "status"]
+
+
+class SuggestedStopSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SuggestedStop
+        fields = ["id", "route", "latitude", "longitude", "order", "created_at"]
+        read_only_fields = fields
 
 
 class AdminNotificationSerializer(serializers.ModelSerializer):

@@ -158,6 +158,24 @@ class RouteStop(models.Model):
         ordering = ["route", "sequence_no"]
 
 
+class SuggestedStop(models.Model):
+    """An auto-generated candidate stop, sampled along a newly-drawn route's
+    path at creation time (see RouteViewSet.perform_create /
+    _generate_suggested_stops) so the operator isn't forced to re-click every
+    stop location by hand on the Stops page after already drawing the road.
+    Purely a staging row -- applying one creates a real Stop/RouteStop via the
+    normal add_stop flow and this row is deleted; rejecting just deletes it."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    route = models.ForeignKey(Route, on_delete=models.CASCADE, related_name="suggested_stops")
+    latitude = models.DecimalField(max_digits=10, decimal_places=7)
+    longitude = models.DecimalField(max_digits=10, decimal_places=7)
+    order = models.PositiveSmallIntegerField(help_text="Position along the route path, start to end")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["route", "order"]
+
+
 class AdminNotification(models.Model):
     """In-app alert for Super Admin about something a tenant did that needs
     review -- a new route or a new stop added to an already-approved route.
