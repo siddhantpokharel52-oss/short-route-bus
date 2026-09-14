@@ -229,17 +229,18 @@ function SuggestedStopRow({
   rejecting: boolean
 }) {
   const name = useSuggestedStopName(s.latitude, s.longitude)
+  const label = name ?? `${s.latitude.toFixed(5)}, ${s.longitude.toFixed(5)}`
   return (
-    <div className="flex items-center gap-1.5 text-xs text-violet-700">
-      <Sparkles className="h-3 w-3 shrink-0" />
-      <span className="truncate flex-1">
-        {name ?? `${s.latitude.toFixed(5)}, ${s.longitude.toFixed(5)}`}
+    <div className="flex items-start gap-1.5 text-xs text-violet-700">
+      <Sparkles className="mt-0.5 h-3 w-3 shrink-0" />
+      <span className="flex-1 break-words" title={label}>
+        {label}
       </span>
       <button
         onClick={onApply}
         disabled={applying || rejecting}
         title="Apply -- add as a real stop"
-        className="rounded p-0.5 text-emerald-500 hover:bg-emerald-100 hover:text-emerald-700 transition-colors disabled:opacity-40 shrink-0"
+        className="mt-0.5 rounded p-0.5 text-emerald-500 hover:bg-emerald-100 hover:text-emerald-700 transition-colors disabled:opacity-40 shrink-0"
       >
         <Check className="h-3.5 w-3.5" />
       </button>
@@ -247,11 +248,38 @@ function SuggestedStopRow({
         onClick={onReject}
         disabled={applying || rejecting}
         title="Reject -- dismiss this suggestion"
-        className="rounded p-0.5 text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0"
+        className="mt-0.5 rounded p-0.5 text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0"
       >
         <X className="h-3.5 w-3.5" />
       </button>
     </div>
+  )
+}
+
+// Map marker for a recommended stop -- resolves its own hover title lazily,
+// same lazy pattern as the sidebar row and popup, so hovering shows the real
+// place name instead of a generic "Recommended stop" label.
+function SuggestedStopMarker({ s, onClick }: { s: SuggestedStopItem; onClick: () => void }) {
+  const name = useSuggestedStopName(s.latitude, s.longitude)
+  return (
+    <Marker latitude={s.latitude} longitude={s.longitude} anchor="center">
+      <div
+        onClick={(e) => {
+          e.stopPropagation()
+          onClick()
+        }}
+        style={{
+          background: '#f5f3ff', color: '#7c3aed',
+          borderRadius: '50%', width: 22, height: 22, display: 'flex',
+          alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 2px 6px rgba(0,0,0,.3)',
+          border: '2px dashed #7c3aed', cursor: 'pointer',
+        }}
+        title={name ? `Recommended stop: ${name}` : 'Recommended stop'}
+      >
+        <Sparkles size={11} />
+      </div>
+    </Marker>
   )
 }
 
@@ -885,7 +913,7 @@ export default function StopsPage() {
 
           {/* Route selector strip */}
           <div className="shrink-0 border-b border-gray-100 bg-gray-50 px-6 py-3">
-            <div className="flex items-center gap-4">
+            <div className="flex items-end gap-4">
               <div className="w-80">
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
                   {t('stops.selectRoute')} *
@@ -1019,24 +1047,11 @@ export default function StopsPage() {
                 {/* Recommended stops -- auto-sampled along the route path at
                     creation time, awaiting Apply/Reject (see suggestedStops query) */}
                 {suggestedStops.map((s) => (
-                  <Marker key={s.id} latitude={s.latitude} longitude={s.longitude} anchor="center">
-                    <div
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setOpenPopup({ kind: 'suggested', lat: s.latitude, lng: s.longitude, suggestionId: s.id })
-                      }}
-                      style={{
-                        background: '#f5f3ff', color: '#7c3aed',
-                        borderRadius: '50%', width: 22, height: 22, display: 'flex',
-                        alignItems: 'center', justifyContent: 'center',
-                        boxShadow: '0 2px 6px rgba(0,0,0,.3)',
-                        border: '2px dashed #7c3aed', cursor: 'pointer',
-                      }}
-                      title="Recommended stop"
-                    >
-                      <Sparkles size={11} />
-                    </div>
-                  </Marker>
+                  <SuggestedStopMarker
+                    key={s.id}
+                    s={s}
+                    onClick={() => setOpenPopup({ kind: 'suggested', lat: s.latitude, lng: s.longitude, suggestionId: s.id })}
+                  />
                 ))}
 
                 {/* Pending stop pin */}
@@ -1118,7 +1133,7 @@ export default function StopsPage() {
             </div>
 
             {/* Right: Stop detail form */}
-            <div className="flex w-72 shrink-0 flex-col border-l border-gray-100 bg-white p-5">
+            <div className="flex w-96 shrink-0 flex-col border-l border-gray-100 bg-white p-5">
               {!pendingStop ? (
                 <div className="flex flex-1 flex-col items-center justify-center text-center gap-3">
                   <div className="rounded-full bg-gray-100 p-4">
