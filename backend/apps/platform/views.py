@@ -11,12 +11,13 @@ from django.db.models import Q
 from .models import (
     Stop, StopAnalytics, Route, RouteStop, RouteAssignment, RouteDiversion,
     TicketType, FareMatrix, SmartCard, CardTransaction, CardRecharge, FarePolicy,
+    AdminNotification,
 )
 from .serializers import (
     StopSerializer, StopAnalyticsSerializer, RouteSerializer, RouteStopSerializer,
     RouteAssignmentSerializer, RouteDiversionSerializer, TicketTypeSerializer,
     FareMatrixSerializer, SmartCardSerializer, CardTransactionSerializer,
-    CardRechargeSerializer, FarePolicySerializer,
+    CardRechargeSerializer, FarePolicySerializer, AdminNotificationSerializer,
 )
 from backend.apps.users.permissions import (
     IsSuperAdmin, IsPlatformRole, IsTransportAuthority, CanManageRoutes, CanViewFares,
@@ -104,7 +105,10 @@ class RouteViewSet(ModelViewSet):
         # tenant-internal readiness flag -- a tenant operator can create and
         # manage their own routes via CanManageRoutes, but approving one is
         # reserved for Super Admin specifically, not the tenant that created it.
-        if self.action == "approve":
+        # Same reasoning for approve_stop -- a stop added to an already-live
+        # route is a change to something already reviewed, not a tenant's own
+        # call to make.
+        if self.action in ["approve", "approve_stop"]:
             return [IsSuperAdmin()]
         return [CanManageRoutes()]
 
@@ -123,6 +127,13 @@ class RouteViewSet(ModelViewSet):
                 RouteAssignment.objects.create(
                     route=route, tenant=tenant, status=RouteAssignment.Status.ACTIVE,
                     start_date=timezone.now().date(), approved_by=user,
+                )
+                AdminNotification.objects.create(
+                    event_type=AdminNotification.EventType.ROUTE_SUBMITTED,
+                    title=f"New route submitted: {route.route_code}",
+                    message=f"{tenant.name} submitted route {route.route_code} ({route.name_en}) for approval.",
+                    route=route,
+                    tenant=tenant,
                 )
 
         # Optional route_start / route_end (e.g. a Baato place search pick on
@@ -190,6 +201,9 @@ class RouteViewSet(ModelViewSet):
         route = self.get_object()
         qs = (
             route.route_stops
+            # A stop still Pending Approval isn't usable for ticket sales yet
+            # -- see RouteStop.status.
+            .filter(status=RouteStop.Status.APPROVED)
             .select_related("stop")
             .order_by("sequence_no")
         )
@@ -235,6 +249,15 @@ class RouteViewSet(ModelViewSet):
 
         from django.db.models import F, Max
 
+        # A stop added while the route is still under its own first review
+        # rides along with that review (Approved by default). One added to a
+        # route that's already Approved is a change to something already
+        # live, so it needs its own review -- see RouteStop.status.
+        route_already_approved = route.status == Route.Status.APPROVED
+        new_stop_status = (
+            RouteStop.Status.PENDING_APPROVAL if route_already_approved else RouteStop.Status.APPROVED
+        )
+
         if route.endpoints_locked and route.end_stop_id:
             # Start/end are fixed anchors (see perform_create) -- every new
             # stop is an intermediate leg, so it goes right before the
@@ -252,6 +275,7 @@ class RouteViewSet(ModelViewSet):
                 stop=stop,
                 sequence_no=sequence_no,
                 estimated_time_from_start=request.data.get("estimated_time_from_start", 0),
+                status=new_stop_status,
             )
             # start_stop/end_stop stay pinned to the original picks -- do not touch them.
         else:
@@ -263,6 +287,7 @@ class RouteViewSet(ModelViewSet):
                 stop=stop,
                 sequence_no=sequence_no,
                 estimated_time_from_start=request.data.get("estimated_time_from_start", 0),
+                status=new_stop_status,
             )
 
             # Update start/end stop on route
@@ -271,15 +296,57 @@ class RouteViewSet(ModelViewSet):
             route.end_stop = stop
             route.save(update_fields=["start_stop", "end_stop", "updated_at"])
 
+        if route_already_approved:
+            tenant = route.assignments.filter(status=RouteAssignment.Status.ACTIVE).first()
+            AdminNotification.objects.create(
+                event_type=AdminNotification.EventType.STOP_SUBMITTED,
+                title=f"New stop submitted: {stop.name_en}",
+                message=(
+                    f"{tenant.tenant.name if tenant else 'A tenant'} added stop '{stop.name_en}' "
+                    f"to already-approved route {route.route_code}, awaiting approval."
+                ),
+                route=route,
+                route_stop=route_stop,
+                tenant=tenant.tenant if tenant else None,
+            )
+
         return api_response(
             data={
                 "stop": StopSerializer(stop).data,
                 "route_stop_id": str(route_stop.id),
                 "sequence_no": sequence_no,
+                "status": new_stop_status,
             },
             message=f"Stop '{stop.name_en}' added to route {route.route_code}.",
             status_code=status.HTTP_201_CREATED,
         )
+
+    @action(detail=True, methods=["post"], url_path="approve-stop")
+    def approve_stop(self, request, pk=None):
+        """
+        POST /platform/routes/{id}/approve-stop/
+        Body: { route_stop_id: <uuid> }
+        Approves a stop that was added to this already-Approved route (see
+        RouteStop.status) -- makes it appear in RouteViewSet.stops for
+        ticketing, and closes out its STOP_SUBMITTED notification.
+        """
+        from django.shortcuts import get_object_or_404
+
+        route = self.get_object()
+        route_stop_id = request.data.get("route_stop_id")
+        if not route_stop_id:
+            return api_response(
+                success=False, message="route_stop_id is required.", status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        route_stop = get_object_or_404(RouteStop, id=route_stop_id, route=route)
+        if route_stop.status == RouteStop.Status.APPROVED:
+            return api_response(
+                success=False, message="Stop is already approved.", status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        route_stop.status = RouteStop.Status.APPROVED
+        route_stop.save(update_fields=["status"])
+        AdminNotification.objects.filter(route_stop=route_stop, is_read=False).update(is_read=True)
+        return api_response(message=f"Stop '{route_stop.stop.name_en}' approved.")
 
     @action(detail=True, methods=["post"], url_path="remove-stop")
     def remove_stop(self, request, pk=None):
@@ -808,3 +875,33 @@ class PublicFareInquiryView(views.APIView):
         ).distinct()
         serializer = FareMatrixSerializer(fares, many=True)
         return api_response(data=serializer.data)
+
+
+class AdminNotificationViewSet(ModelViewSet):
+    """In-app alerts for Super Admin -- a new route, or a new stop added to
+    an already-approved route, both awaiting review. See AdminNotification."""
+    queryset = AdminNotification.objects.select_related("route", "route_stop", "tenant").all()
+    serializer_class = AdminNotificationSerializer
+    permission_classes = [IsSuperAdmin]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def list(self, request, *args, **kwargs):
+        qs = self.get_queryset()
+        unread_count = qs.filter(is_read=False).count()
+        page = qs[:50]
+        return api_response(data={
+            "results": AdminNotificationSerializer(page, many=True).data,
+            "unread_count": unread_count,
+        })
+
+    @action(detail=True, methods=["post"], url_path="mark-read")
+    def mark_read(self, request, pk=None):
+        notif = self.get_object()
+        notif.is_read = True
+        notif.save(update_fields=["is_read"])
+        return api_response(message="Marked as read.")
+
+    @action(detail=False, methods=["post"], url_path="mark-all-read")
+    def mark_all_read(self, request):
+        self.get_queryset().filter(is_read=False).update(is_read=True)
+        return api_response(message="All notifications marked as read.")

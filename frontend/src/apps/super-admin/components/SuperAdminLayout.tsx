@@ -3,13 +3,14 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   LayoutDashboard, Building2, CreditCard, Receipt, Wallet, Ticket, Route as RouteIcon,
-  Users, Settings, Menu, X, Bell, LogOut, Bus, Moon, Sun,
+  Users, Settings, Menu, X, LogOut, Bus, Moon, Sun,
 } from 'lucide-react'
 import { useAuthStore } from '@store/authStore'
 import { useUiStore } from '@store/uiStore'
 import { LanguageToggle } from '@components/shared/LanguageToggle'
 import { KeyboardToggle } from '@components/shared/KeyboardToggle'
 import { CalendarToggle } from '@components/shared/DateDisplay'
+import { NotificationBell } from './NotificationBell'
 import { cn } from '@utils/cn'
 import authService from '@services/authService'
 import toast from 'react-hot-toast'
@@ -134,10 +135,7 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
             {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           </button>
 
-          <button className="relative rounded-lg p-2 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
-            <Bell className="h-5 w-5" />
-            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
-          </button>
+          <NotificationBell />
         </header>
 
         {/* Page content -- min-w-0 lets a wide table's own overflow-x-auto

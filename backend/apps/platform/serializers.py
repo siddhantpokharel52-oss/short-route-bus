@@ -3,7 +3,7 @@ from .models import (
     Stop, StopAmenity, StopAnalytics, Route, RouteStop, RouteAssignment,
     RouteVersion, RouteDiversion, TicketType, FareMatrix, SmartCard,
     CardTransaction, CardRecharge, FarePolicy, ZoneFare, DistanceFare,
-    PeakFareSurcharge, DiscountRule,
+    PeakFareSurcharge, DiscountRule, AdminNotification,
 )
 
 
@@ -52,7 +52,21 @@ class RouteStopSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = RouteStop
-        fields = ["id", "stop", "stop_detail", "sequence_no", "estimated_time_from_start"]
+        fields = ["id", "stop", "stop_detail", "sequence_no", "estimated_time_from_start", "status"]
+
+
+class AdminNotificationSerializer(serializers.ModelSerializer):
+    route_code = serializers.CharField(source="route.route_code", read_only=True, default=None)
+    route_name = serializers.CharField(source="route.name_en", read_only=True, default=None)
+    tenant_name = serializers.CharField(source="tenant.name", read_only=True, default=None)
+
+    class Meta:
+        model = AdminNotification
+        fields = [
+            "id", "event_type", "title", "message", "route", "route_code",
+            "route_name", "route_stop", "tenant_name", "is_read", "created_at",
+        ]
+        read_only_fields = fields
 
 
 class RouteOperatorSerializer(serializers.ModelSerializer):

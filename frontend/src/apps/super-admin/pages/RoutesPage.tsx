@@ -9,11 +9,12 @@
  */
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { MapPin, Ruler, CheckCircle } from 'lucide-react'
+import { MapPin, Ruler, CheckCircle, Clock } from 'lucide-react'
 import { Input } from '@components/shared/Input'
 import { Button } from '@components/shared/Button'
 import { Table, Column, Pagination } from '@components/shared/Table'
 import { Badge, statusVariant } from '@components/shared/Badge'
+import { Modal } from '@components/shared/Modal'
 import { usePagination } from '@hooks/usePagination'
 import apiClient from '@services/api'
 import toast from 'react-hot-toast'
@@ -26,6 +27,12 @@ interface RouteOperator {
   share_percentage: string
 }
 
+interface RouteStopRow {
+  id: string
+  status: 'PENDING_APPROVAL' | 'APPROVED'
+  stop_detail: { name_en: string; name_ne: string }
+}
+
 interface RouteRow {
   id: string
   route_code: string
@@ -34,7 +41,7 @@ interface RouteRow {
   distance_km: string
   route_type: 'EXCLUSIVE' | 'SHARED'
   status: string
-  route_stops: unknown[]
+  route_stops: RouteStopRow[]
   operators: RouteOperator[]
 }
 
@@ -66,6 +73,22 @@ export default function RoutesPage() {
     },
   })
 
+  const [pendingStopsRoute, setPendingStopsRoute] = useState<RouteRow | null>(null)
+
+  const approveStopMutation = useMutation({
+    mutationFn: ({ routeId, routeStopId }: { routeId: string; routeStopId: string }) =>
+      apiClient.post(`/platform/routes/${routeId}/approve-stop/`, { route_stop_id: routeStopId }),
+    onSuccess: () => {
+      toast.success('Stop approved.')
+      qc.invalidateQueries({ queryKey: ['routes-oversight'] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || 'Failed to approve stop.')
+    },
+  })
+
+
   const { data: tenants } = useQuery({
     queryKey: ['tenants-for-routes-filter'],
     queryFn: async () => {
@@ -89,6 +112,12 @@ export default function RoutesPage() {
       return list as RouteRow[]
     },
   })
+
+  // Keep the modal's own list in sync as approvals land, rather than a
+  // stale snapshot of route_stops from when it was opened.
+  const pendingStopsRouteLive = pendingStopsRoute
+    ? routes?.find((r) => r.id === pendingStopsRoute.id) ?? pendingStopsRoute
+    : null
 
   const columns: Column<RouteRow>[] = [
     {
@@ -134,12 +163,25 @@ export default function RoutesPage() {
     },
     {
       key: 'route_stops', header: 'Stops',
-      render: (r) => (
-        <div className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-300">
-          <MapPin className="h-3.5 w-3.5 text-gray-400" />
-          {r.route_stops?.length ?? 0}
-        </div>
-      ),
+      render: (r) => {
+        const pending = r.route_stops?.filter((rs) => rs.status === 'PENDING_APPROVAL') ?? []
+        return (
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-300">
+              <MapPin className="h-3.5 w-3.5 text-gray-400" />
+              {r.route_stops?.length ?? 0}
+            </div>
+            {pending.length > 0 && (
+              <button
+                onClick={() => setPendingStopsRoute(r)}
+                className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400"
+              >
+                <Clock className="h-3 w-3" /> {pending.length} pending
+              </button>
+            )}
+          </div>
+        )
+      },
     },
     {
       key: 'distance_km', header: 'Distance',
@@ -219,6 +261,52 @@ export default function RoutesPage() {
           onPageChange={pagination.setPage}
         />
       </div>
+
+      <Modal
+        open={!!pendingStopsRouteLive}
+        onClose={() => setPendingStopsRoute(null)}
+        title={pendingStopsRouteLive ? `Pending stops — ${pendingStopsRouteLive.route_code}` : ''}
+        size="sm"
+      >
+        {pendingStopsRouteLive && (
+          <div className="space-y-2 p-6">
+            <p className="text-xs text-gray-500">
+              Added after this route was already approved -- each needs its own review before
+              it's usable for ticketing.
+            </p>
+            {pendingStopsRouteLive.route_stops.filter((rs) => rs.status === 'PENDING_APPROVAL').length === 0 && (
+              <p className="py-6 text-center text-sm text-gray-400">All caught up — nothing pending.</p>
+            )}
+            {pendingStopsRouteLive.route_stops
+              .filter((rs) => rs.status === 'PENDING_APPROVAL')
+              .map((rs) => (
+                <div
+                  key={rs.id}
+                  className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900 dark:bg-amber-900/20"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      {rs.stop_detail.name_en}
+                    </p>
+                    {rs.stop_detail.name_ne && (
+                      <p className="text-xs text-gray-400">{rs.stop_detail.name_ne}</p>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    leftIcon={<CheckCircle className="h-3.5 w-3.5" />}
+                    loading={approveStopMutation.isPending}
+                    onClick={() =>
+                      approveStopMutation.mutate({ routeId: pendingStopsRouteLive.id, routeStopId: rs.id })
+                    }
+                  >
+                    Approve
+                  </Button>
+                </div>
+              ))}
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

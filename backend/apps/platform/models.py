@@ -136,15 +136,50 @@ class Route(models.Model):
 
 
 class RouteStop(models.Model):
+    class Status(models.TextChoices):
+        PENDING_APPROVAL = "PENDING_APPROVAL", "Pending Approval"
+        APPROVED = "APPROVED", "Approved"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     route = models.ForeignKey(Route, on_delete=models.CASCADE, related_name="route_stops")
     stop = models.ForeignKey(Stop, on_delete=models.PROTECT, related_name="route_stops")
     sequence_no = models.PositiveSmallIntegerField()
     estimated_time_from_start = models.PositiveIntegerField(help_text="Minutes from route start")
+    # A stop added while its route is still Draft/pending its own first review
+    # rides along with that same review -- default Approved. One added to a
+    # route that's *already* Approved is a change to something already live,
+    # so it starts Pending Approval and is excluded from ticketing/public
+    # stop lists (see RouteViewSet.stops) until a Super Admin approves it
+    # specifically, via RouteViewSet.add_stop / approve_stop.
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.APPROVED)
 
     class Meta:
         unique_together = [["route", "sequence_no"], ["route", "stop"]]
         ordering = ["route", "sequence_no"]
+
+
+class AdminNotification(models.Model):
+    """In-app alert for Super Admin about something a tenant did that needs
+    review -- a new route or a new stop added to an already-approved route.
+    Separate from apps.notifications (that app is for outbound SMS/email/push
+    to end users via a template+channel, not an in-app admin inbox)."""
+    class EventType(models.TextChoices):
+        ROUTE_SUBMITTED = "ROUTE_SUBMITTED", "Route Submitted"
+        STOP_SUBMITTED = "STOP_SUBMITTED", "Stop Submitted"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    event_type = models.CharField(max_length=30, choices=EventType.choices)
+    title = models.CharField(max_length=255)
+    message = models.TextField()
+    route = models.ForeignKey(Route, null=True, blank=True, on_delete=models.CASCADE, related_name="notifications")
+    route_stop = models.ForeignKey(RouteStop, null=True, blank=True, on_delete=models.CASCADE, related_name="notifications")
+    tenant = models.ForeignKey("tenants.Tenant", null=True, blank=True, on_delete=models.SET_NULL)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["is_read", "-created_at"])]
 
 
 class RouteAssignment(models.Model):

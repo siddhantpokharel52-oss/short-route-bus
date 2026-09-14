@@ -8,6 +8,7 @@ router.register("routes", views.RouteViewSet, basename="route")
 router.register("ticket-types", views.TicketTypeViewSet, basename="ticket-type")
 router.register("fare-matrix", views.FareMatrixViewSet, basename="fare-matrix")
 router.register("smart-cards", views.SmartCardViewSet, basename="smart-card")
+router.register("notifications", views.AdminNotificationViewSet, basename="admin-notification")
 
 urlpatterns = [
     path("", include(router.urls)),
