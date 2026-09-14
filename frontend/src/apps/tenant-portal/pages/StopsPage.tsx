@@ -1138,9 +1138,6 @@ export default function StopsPage() {
                       <p className="mb-2 flex items-center gap-1 text-xs font-semibold text-violet-700">
                         <Sparkles className="h-3.5 w-3.5" /> Recommended stops ({suggestedStops.length})
                       </p>
-                      <p className="mb-2 text-[11px] text-violet-500">
-                        Auto-suggested along this route's path -- review each one.
-                      </p>
                       <div className="space-y-1.5">
                         {suggestedStops.map((s) => (
                           <SuggestedStopRow
