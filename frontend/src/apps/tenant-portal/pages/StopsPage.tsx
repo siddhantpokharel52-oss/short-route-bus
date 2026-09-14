@@ -5,7 +5,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, MapPin, X, Navigation, Eye, Pencil, Trash2 } from 'lucide-react'
-import Map, { Marker, Popup, Source, Layer, useMap } from 'react-map-gl/maplibre'
+import Map, { Marker, Popup, Source, Layer, NavigationControl, useMap } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { BAATO_STYLE_URL } from '@/config/baato'
 import { Button } from '@components/shared/Button'
@@ -615,8 +615,8 @@ export default function StopsPage() {
       )}
 
       {/* ── Add Stop Modal ──────────────────────────────────────────────────── */}
-      <Modal open={showCreate} onClose={handleCloseModal} title={t('stops.addBusStop')} size="xl">
-        <div className="flex h-[620px] flex-col">
+      <Modal open={showCreate} onClose={handleCloseModal} title={t('stops.addBusStop')} size="screen">
+        <div className="flex h-full flex-col">
 
           {/* Route selector strip */}
           <div className="shrink-0 border-b border-gray-100 bg-gray-50 px-6 py-3">
@@ -796,6 +796,7 @@ export default function StopsPage() {
                     <p className="text-xs text-gray-400">{t('stops.justAdded')}</p>
                   </Popup>
                 )}
+                <NavigationControl position="top-right" showCompass={false} />
               </Map>
 
               {/* No route selected overlay */}
