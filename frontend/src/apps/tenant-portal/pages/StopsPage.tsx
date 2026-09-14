@@ -320,7 +320,15 @@ export default function StopsPage() {
     queryKey: ['suggested-stops', selectedRouteId],
     queryFn: async () => {
       const { data } = await apiClient.get(`/platform/routes/${selectedRouteId}/suggested-stops/`)
-      return (Array.isArray(data.data) ? data.data : []) as SuggestedStopItem[]
+      const list = Array.isArray(data.data) ? data.data : []
+      // DRF serializes DecimalField as a string -- coerce once here so
+      // every consumer (map markers, sidebar rows, sequence math) can just
+      // treat these as real numbers, same as routePath's coordinates.
+      return list.map((s: SuggestedStopItem) => ({
+        ...s,
+        latitude: Number(s.latitude),
+        longitude: Number(s.longitude),
+      }))
     },
     enabled: !!selectedRouteId,
   })
