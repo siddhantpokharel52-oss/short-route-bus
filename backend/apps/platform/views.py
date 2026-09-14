@@ -242,7 +242,7 @@ class RouteViewSet(ModelViewSet):
         # Same reasoning for approve_stop -- a stop added to an already-live
         # route is a change to something already reviewed, not a tenant's own
         # call to make.
-        if self.action in ["approve", "approve_stop", "approve_all_stops"]:
+        if self.action in ["approve", "approve_stop", "approve_all_stops", "reject_stop"]:
             return [IsSuperAdmin()]
         return [CanManageRoutes()]
 
@@ -532,6 +532,48 @@ class RouteViewSet(ModelViewSet):
         route_stop.save(update_fields=["status"])
         AdminNotification.objects.filter(route_stop=route_stop, is_read=False).update(is_read=True)
         return api_response(message=f"Stop '{route_stop.stop.name_en}' approved.")
+
+    @action(detail=True, methods=["post"], url_path="reject-stop")
+    def reject_stop(self, request, pk=None):
+        """
+        POST /platform/routes/{id}/reject-stop/
+        Body: { route_stop_id: <uuid> }
+        Rejects a stop still awaiting its own review (see RouteStop.status)
+        -- unlinks it from the route (same effect as remove_stop) and closes
+        out its STOP_SUBMITTED notification. Only for stops that are still
+        PENDING_APPROVAL; an already-approved stop is a live part of the
+        route by now and should go through remove_stop instead, not a
+        rejection.
+        """
+        from django.shortcuts import get_object_or_404
+
+        route = self.get_object()
+        route_stop_id = request.data.get("route_stop_id")
+        if not route_stop_id:
+            return api_response(
+                success=False, message="route_stop_id is required.", status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        route_stop = get_object_or_404(RouteStop, id=route_stop_id, route=route)
+        if route_stop.status != RouteStop.Status.PENDING_APPROVAL:
+            return api_response(
+                success=False, message="Only a stop still pending approval can be rejected.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        stop_name = route_stop.stop.name_en
+        AdminNotification.objects.filter(route_stop=route_stop, is_read=False).update(is_read=True)
+        route_stop.delete()
+
+        # Recompute start_stop / end_stop -- a rejected stop can have been the
+        # route's provisional new end (see add_stop's is_append branch) if it
+        # was appended while the route was already approved.
+        if not route.endpoints_locked:
+            remaining = RouteStop.objects.filter(route=route).order_by("sequence_no")
+            route.start_stop = remaining.first().stop if remaining.exists() else None
+            route.end_stop = remaining.last().stop if remaining.exists() else None
+            route.save(update_fields=["start_stop", "end_stop", "updated_at"])
+
+        return api_response(message=f"Stop '{stop_name}' rejected.")
 
     @action(detail=True, methods=["post"], url_path="approve-all-stops")
     def approve_all_stops(self, request, pk=None):
