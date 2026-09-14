@@ -77,6 +77,12 @@ interface StopDetail {
 interface RouteStopItem {
   id: string
   sequence_no: number
+  // Distinct from stop_detail.status (whether the stop itself is
+  // operational) -- this is whether Super Admin has approved *this route's*
+  // use of it yet. A stop added to an already-approved route starts
+  // PENDING_APPROVAL and isn't usable for ticketing until reviewed --
+  // see backend RouteStop.status / the Stop Approvals page.
+  status: 'PENDING_APPROVAL' | 'APPROVED'
   stop_detail: StopDetail
 }
 
@@ -287,22 +293,40 @@ function SuggestedStopMarker({ s, onClick }: { s: SuggestedStopItem; onClick: ()
 // resolves and shows the real place name right on the map (eagerly, not on
 // hover, since this is the one point the operator is actively looking at),
 // falling back to coordinates while the lookup is in flight or if it fails.
-function PendingStopMarker({ lat, lng, name }: { lat: number; lng: number; name: string | null }) {
+function PendingStopMarker({
+  lat, lng, name, onDrag,
+}: {
+  lat: number
+  lng: number
+  name: string | null
+  onDrag: (lat: number, lng: number) => void
+}) {
   return (
-    <Marker latitude={lat} longitude={lng} anchor="bottom">
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none' }}>
+    <Marker
+      latitude={lat}
+      longitude={lng}
+      anchor="bottom"
+      draggable
+      onDragEnd={(e) => onDrag(e.lngLat.lat, e.lngLat.lng)}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <div style={{
           background: '#fff', color: '#92400e', fontSize: 11, fontWeight: 600,
           padding: '3px 7px', borderRadius: 6, boxShadow: '0 2px 6px rgba(0,0,0,.25)',
           marginBottom: 4, whiteSpace: 'nowrap', border: '1px solid #f59e0b',
+          pointerEvents: 'none',
         }}>
           {name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`}
         </div>
-        <div style={{
-          width: 16, height: 16, borderRadius: '50%',
-          background: '#f59e0b', border: '3px solid #fff',
-          boxShadow: '0 2px 6px rgba(0,0,0,.4)',
-        }} />
+        <div
+          title="Drag to move this stop along the route"
+          style={{
+            width: 16, height: 16, borderRadius: '50%',
+            background: '#f59e0b', border: '3px solid #fff',
+            boxShadow: '0 2px 6px rgba(0,0,0,.4)',
+            cursor: 'grab',
+          }}
+        />
       </div>
     </Marker>
   )
@@ -438,13 +462,13 @@ export default function StopsPage() {
   // backs both the map label and the sidebar's coordinate line.
   const pendingStopName = usePlaceName(pendingStop?.lat ?? null, pendingStop?.lng ?? null)
 
-  const handleMapClick = useCallback((lat: number, lng: number) => {
-    if (pendingStop) return
-
-    // Snap onto the route's actual road-drawn path (routePath, densely
-    // sampled) instead of leaving the stop wherever the cursor happened to
-    // land, and use that same path to figure out where in the existing stop
-    // order this click falls -- see nearestPathIndex.
+  // Snaps a point onto the route's actual road-drawn path (routePath,
+  // densely sampled) instead of leaving it wherever it landed, and uses that
+  // same path to figure out where in the existing stop order it falls --
+  // see nearestPathIndex. Shared by the initial map click and by dragging
+  // the pending-stop pin afterward (see PendingStopMarker/handlePendingStopDrag),
+  // so both land on the same rules.
+  const computeSnappedPosition = useCallback((lat: number, lng: number) => {
     let snappedLat = lat
     let snappedLng = lng
     let sequence_no: number | undefined
@@ -482,13 +506,27 @@ export default function StopsPage() {
       }
     }
 
+    return { snappedLat, snappedLng, sequence_no, insertAfterLabel }
+  }, [routePath, selectedRoute, savedStops])
+
+  const handleMapClick = useCallback((lat: number, lng: number) => {
+    if (pendingStop) return
+    const { snappedLat, snappedLng, sequence_no, insertAfterLabel } = computeSnappedPosition(lat, lng)
     setPendingStop({
       lat: snappedLat, lng: snappedLng, name_en: '', name_ne: '', is_terminal: false,
       sequence_no, insertAfterLabel,
     })
     setOpenPopup(null)
     setStopNameNeEdited(false)
-  }, [pendingStop, routePath, selectedRoute, savedStops])
+  }, [pendingStop, computeSnappedPosition])
+
+  // Re-snaps and re-sequences the pending stop after the operator drags its
+  // pin to a different point along the route, instead of only being able to
+  // fix a wrong click by cancelling and clicking again.
+  const handlePendingStopDrag = useCallback((lat: number, lng: number) => {
+    const { snappedLat, snappedLng, sequence_no, insertAfterLabel } = computeSnappedPosition(lat, lng)
+    setPendingStop((prev) => prev && { ...prev, lat: snappedLat, lng: snappedLng, sequence_no, insertAfterLabel })
+  }, [computeSnappedPosition])
 
   const addStopMutation = useMutation({
     mutationFn: async (form: StopForm) => {
@@ -748,6 +786,9 @@ export default function StopsPage() {
                             {Number(rs.stop_detail.latitude).toFixed(4)}, {Number(rs.stop_detail.longitude).toFixed(4)}
                           </p>
                         </div>
+                        {rs.status === 'PENDING_APPROVAL' && (
+                          <Badge variant="warning" dot className="shrink-0">Pending Approval</Badge>
+                        )}
                         <Badge variant={rs.stop_detail.status === 'ACTIVE' ? 'success' : 'neutral'} dot className="shrink-0">
                           {t(`stops.status.${rs.stop_detail.status}`, { defaultValue: rs.stop_detail.status ?? 'ACTIVE' })}
                         </Badge>
@@ -1068,7 +1109,14 @@ export default function StopsPage() {
                 ))}
 
                 {/* Pending stop pin */}
-                {pendingStop && <PendingStopMarker lat={pendingStop.lat} lng={pendingStop.lng} name={pendingStopName} />}
+                {pendingStop && (
+                  <PendingStopMarker
+                    lat={pendingStop.lat}
+                    lng={pendingStop.lng}
+                    name={pendingStopName}
+                    onDrag={handlePendingStopDrag}
+                  />
+                )}
 
                 {/* Popups */}
                 {openPopup?.kind === 'existing' && (
@@ -1225,6 +1273,7 @@ export default function StopsPage() {
                           ? 'Will be inserted as the first stop'
                           : 'Will be added as the last stop'}
                     </p>
+                    <p className="mt-1 text-[11px] text-blue-500">Drag the pin on the map to fine-tune its position.</p>
                   </div>
 
                   <form
