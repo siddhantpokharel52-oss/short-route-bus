@@ -677,113 +677,94 @@ export default function StopsPage() {
         className="max-w-sm"
       />
 
-      {/* ── Grouped table ─────────────────────────────────────────────────────── */}
-      <div className="card p-0 overflow-hidden">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-16 text-sm text-gray-400">{t('stops.loading')}</div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="w-40 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{t('stops.route')}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{t('stops.stopName')}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{t('stops.coordinates')}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{t('common.status')}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{t('common.actions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRoutes.flatMap((route) => {
-                const sortedStops = [...(route.route_stops ?? [])].sort(
-                  (a, b) => a.sequence_no - b.sequence_no
-                )
-                if (sortedStops.length === 0) return []
-                return sortedStops.map((rs, idx) => {
-                  const stop = buildStop(rs.stop_detail, routes)
-                  return (
-                    <tr key={rs.id} className="border-b border-gray-100 hover:bg-gray-50/70 transition-colors">
-                      {idx === 0 && (
-                        <td rowSpan={sortedStops.length} className="border-r border-gray-100 bg-gray-50/50 px-4 py-3 align-top">
-                          <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-200">
-                            {route.route_code}
-                          </span>
-                          <p className="mt-1 max-w-[130px] text-xs leading-tight text-gray-400">{route.name_en}</p>
-                        </td>
-                      )}
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-600">
-                            {rs.sequence_no}
-                          </span>
-                          <div>
-                            <p className="font-medium text-gray-900">{rs.stop_detail.name_en}</p>
-                            {rs.stop_detail.name_ne && <p className="text-xs text-gray-400">{rs.stop_detail.name_ne}</p>}
-                            <code className="text-[10px] text-gray-400">{rs.stop_detail.stop_code}</code>
-                          </div>
+      {/* ── Stops, grouped by route ──────────────────────────────────────────── */}
+      {isLoading ? (
+        <div className="card flex items-center justify-center py-16 text-sm text-gray-400">{t('stops.loading')}</div>
+      ) : filteredRoutes.every((r) => (r.route_stops?.length ?? 0) === 0) && unassignedStops.length === 0 ? (
+        <div className="card py-16 text-center text-sm text-gray-400">
+          {search ? t('stops.noMatch', { query: search }) : t('stops.noStopsFound')}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {filteredRoutes.map((route) => {
+            const sortedStops = [...(route.route_stops ?? [])].sort((a, b) => a.sequence_no - b.sequence_no)
+            if (sortedStops.length === 0) return null
+            return (
+              <div key={route.id} className="card overflow-hidden p-0">
+                <div className="flex items-center justify-between gap-3 border-b border-gray-100 bg-gray-50 px-4 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-200">
+                      {route.route_code}
+                    </span>
+                    <span className="text-sm font-medium text-gray-700">{route.name_en}</span>
+                  </div>
+                  <span className="text-xs text-gray-400">{t('stops.stopCount', { count: sortedStops.length, defaultValue: `${sortedStops.length} stops` })}</span>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {sortedStops.map((rs) => {
+                    const stop = buildStop(rs.stop_detail, routes)
+                    return (
+                      <div key={rs.id} className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-gray-50/70">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-100 text-[11px] font-bold text-red-600">
+                          {rs.sequence_no}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-gray-900">
+                            {rs.stop_detail.name_en}
+                            {rs.stop_detail.name_ne && <span className="ml-1.5 font-normal text-gray-400">{rs.stop_detail.name_ne}</span>}
+                          </p>
+                          <p className="truncate text-xs text-gray-400">
+                            <span className="font-mono">{rs.stop_detail.stop_code}</span>
+                            {' · '}
+                            {Number(rs.stop_detail.latitude).toFixed(4)}, {Number(rs.stop_detail.longitude).toFixed(4)}
+                          </p>
                         </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <code className="text-xs text-gray-600">
-                          {Number(rs.stop_detail.latitude).toFixed(5)},{' '}
-                          {Number(rs.stop_detail.longitude).toFixed(5)}
-                        </code>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge variant={rs.stop_detail.status === 'ACTIVE' ? 'success' : 'neutral'} dot>
+                        <Badge variant={rs.stop_detail.status === 'ACTIVE' ? 'success' : 'neutral'} dot className="shrink-0">
                           {t(`stops.status.${rs.stop_detail.status}`, { defaultValue: rs.stop_detail.status ?? 'ACTIVE' })}
                         </Badge>
-                      </td>
-                      <td className="px-4 py-3">{stopActions(stop)}</td>
-                    </tr>
-                  )
-                })
-              })}
-
-              {unassignedStops.length > 0 &&
-                unassignedStops.map((s, idx) => (
-                  <tr key={s.id} className="border-b border-gray-100 hover:bg-gray-50/70 transition-colors">
-                    {idx === 0 && (
-                      <td rowSpan={unassignedStops.length} className="border-r border-gray-100 bg-gray-50/50 px-4 py-3 align-top">
-                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-500 ring-1 ring-inset ring-gray-200">
-                          {t('stops.unassigned')}
-                        </span>
-                      </td>
-                    )}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <MapPin className="h-4 w-4 shrink-0 text-gray-300" />
-                        <div>
-                          <p className="font-medium text-gray-700">{s.name_en}</p>
-                          {s.name_ne && <p className="text-xs text-gray-400">{s.name_ne}</p>}
-                          <code className="text-[10px] text-gray-400">{s.stop_code}</code>
-                        </div>
+                        <div className="shrink-0">{stopActions(stop)}</div>
                       </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <code className="text-xs text-gray-600">
-                        {Number(s.latitude).toFixed(5)}, {Number(s.longitude).toFixed(5)}
-                      </code>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant={s.status === 'ACTIVE' ? 'success' : 'neutral'} dot>
-                        {t(`stops.status.${s.status}`, { defaultValue: s.status })}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3">{stopActions(s)}</td>
-                  </tr>
-                ))}
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
 
-              {filteredRoutes.length === 0 && unassignedStops.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="py-16 text-center text-sm text-gray-400">
-                    {search ? t('stops.noMatch', { query: search }) : t('stops.noStopsFound')}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        )}
-      </div>
+          {unassignedStops.length > 0 && (
+            <div className="card overflow-hidden p-0">
+              <div className="flex items-center justify-between gap-3 border-b border-gray-100 bg-gray-50 px-4 py-2.5">
+                <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-500 ring-1 ring-inset ring-gray-200">
+                  {t('stops.unassigned')}
+                </span>
+                <span className="text-xs text-gray-400">{t('stops.stopCount', { count: unassignedStops.length, defaultValue: `${unassignedStops.length} stops` })}</span>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {unassignedStops.map((s) => (
+                  <div key={s.id} className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-gray-50/70">
+                    <MapPin className="h-4 w-4 shrink-0 text-gray-300" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-gray-700">
+                        {s.name_en}
+                        {s.name_ne && <span className="ml-1.5 font-normal text-gray-400">{s.name_ne}</span>}
+                      </p>
+                      <p className="truncate text-xs text-gray-400">
+                        <span className="font-mono">{s.stop_code}</span>
+                        {' · '}
+                        {Number(s.latitude).toFixed(4)}, {Number(s.longitude).toFixed(4)}
+                      </p>
+                    </div>
+                    <Badge variant={s.status === 'ACTIVE' ? 'success' : 'neutral'} dot className="shrink-0">
+                      {t(`stops.status.${s.status}`, { defaultValue: s.status })}
+                    </Badge>
+                    <div className="shrink-0">{stopActions(s)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── View Stop Modal ─────────────────────────────────────────────────── */}
       {viewTarget && (
