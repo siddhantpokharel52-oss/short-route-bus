@@ -3,6 +3,9 @@ import TenantLayout from './components/TenantLayout'
 import FleetPage from './pages/FleetPage'
 import VehicleCategoriesPage from './pages/VehicleCategoriesPage'
 import VehicleGroupsPage from './pages/VehicleGroupsPage'
+import RosterPeriodsPage from './pages/RosterPeriodsPage'
+import RosterGridPage from './pages/RosterGridPage'
+import DriverRosterPage from './pages/DriverRosterPage'
 import DriversPage from './pages/DriversPage'
 import ConductorsPage from './pages/ConductorsPage'
 import SchedulingPage from './pages/SchedulingPage'
@@ -31,6 +34,9 @@ export default function TenantApp() {
         <Route path="fleet" element={<FleetPage />} />
         <Route path="vehicle-categories" element={<VehicleCategoriesPage />} />
         <Route path="vehicle-groups" element={<VehicleGroupsPage />} />
+        <Route path="roster-periods" element={<RosterPeriodsPage />} />
+        <Route path="roster/:periodId/grid" element={<RosterGridPage />} />
+        <Route path="my-roster" element={<DriverRosterPage />} />
         <Route path="drivers" element={<DriversPage />} />
         <Route path="conductors" element={<ConductorsPage />} />
 

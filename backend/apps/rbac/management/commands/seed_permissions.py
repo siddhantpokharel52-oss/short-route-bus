@@ -42,6 +42,17 @@ MODULES = [
         ],
     },
     {
+        'module': 'Roster',
+        'module_key': 'roster',
+        'actions': [
+            ('view',    'View Roster',    'View roster periods and duty assignments',   1),
+            ('add',     'Add Duty',       'Create roster periods and surge duties',     2),
+            ('edit',    'Edit Duty',      'Assign, swap and substitute duties',         3),
+            ('delete',  'Delete Roster',  'Remove roster periods',                      4),
+            ('publish', 'Publish Roster', 'Publish a roster period to crew',            5),
+        ],
+    },
+    {
         'module': 'Drivers',
         'module_key': 'drivers',
         'actions': [

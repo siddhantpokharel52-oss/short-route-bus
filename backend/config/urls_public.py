@@ -17,6 +17,7 @@ urlpatterns = [
     # Tenant-schema endpoints — schema switching handled by TenantSchemaMiddleware
     path("api/v1/operator/", include("backend.apps.staff.urls")),
     path("api/v1/fleet/", include("backend.apps.fleet.urls")),
+    path("api/v1/roster/", include("backend.apps.roster.urls")),
     path("api/v1/scheduling/", include("backend.apps.scheduling.urls")),
     path("api/v1/dispatch/", include("backend.apps.dispatch.urls")),
     path("api/v1/ticketing/", include("backend.apps.ticketing.urls")),

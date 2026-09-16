@@ -14,6 +14,7 @@ vehicles_router.register("documents", views.VehicleDocumentViewSet, basename="ve
 
 groups_router = NestedDefaultRouter(router, "groups", lookup="group")
 groups_router.register("members", views.GroupMemberViewSet, basename="group-member")
+groups_router.register("drivers", views.GroupDriverAssignmentViewSet, basename="group-driver")
 
 urlpatterns = [
     path("", include(router.urls)),

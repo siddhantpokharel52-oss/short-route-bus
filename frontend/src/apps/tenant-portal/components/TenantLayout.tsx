@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Bus, Users, Ticket,
   Wrench, UserCheck, BarChart3, Settings, Menu, X,
   Bell, LogOut, Route, MapPin, BookOpen,
-  Zap, Activity, ShieldCheck, Wallet, Layers, Users2,
+  Zap, Activity, ShieldCheck, Wallet, Layers, Users2, CalendarRange, CalendarDays,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -51,6 +51,9 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
     { to: '/tenant/fleet', icon: Bus, label: t('nav.fleetManagement') },
     { to: '/tenant/vehicle-categories', icon: Layers, label: t('nav.vehicleCategories', { defaultValue: 'Vehicle Categories' }) },
     { to: '/tenant/vehicle-groups', icon: Users2, label: t('nav.vehicleGroups', { defaultValue: 'Vehicle Groups' }) },
+    ...(user?.role === 'DRIVER'
+      ? [{ to: '/tenant/my-roster', icon: CalendarDays, label: t('nav.myRoster', { defaultValue: 'My Roster' }) }]
+      : [{ to: '/tenant/roster-periods', icon: CalendarRange, label: t('nav.rosterPeriods', { defaultValue: 'Roster Periods' }) }]),
     { to: '/tenant/drivers', icon: UserCheck, label: t('nav.drivers') },
     { to: '/tenant/conductors', icon: Users, label: t('nav.collectors') },
     { to: '/tenant/ticketing', icon: Ticket, label: t('nav.ticketing') },

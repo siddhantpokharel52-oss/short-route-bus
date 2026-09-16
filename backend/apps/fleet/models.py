@@ -394,3 +394,36 @@ class GroupMember(models.Model):
         group = self.group
         super().delete(*args, **kwargs)
         group.recompute_capability()
+
+
+class GroupDriverAssignment(models.Model):
+    """A driver's standing crew binding to a group (Route/Group Rotation doc
+    section 5.3 notes crew binding "shares the same group structure" but
+    doesn't name a table for it -- this mirrors GroupMember's time-ranged
+    shape since it's the same concept applied to a driver instead of a
+    vehicle). Lets the driver view (doc section 15) resolve "this driver's
+    group" without depending on any per-day dispatch record. driver_user_id
+    is a bare UUID, not an FK, since User lives in the shared schema."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    group = models.ForeignKey(VehicleGroup, on_delete=models.CASCADE, related_name="driver_assignments")
+    driver_user_id = models.UUIDField()
+    valid_from = models.DateField(auto_now_add=True)
+    valid_to = models.DateField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-valid_from"]
+        indexes = [models.Index(fields=["group", "valid_to"]), models.Index(fields=["driver_user_id", "valid_to"])]
+
+    def __str__(self):
+        return f"Driver {self.driver_user_id} in {self.group.code}"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.valid_to is not None:
+            return
+
+        if GroupDriverAssignment.objects.filter(
+            driver_user_id=self.driver_user_id, valid_to__isnull=True
+        ).exclude(pk=self.pk).exists():
+            raise ValidationError("This driver is already assigned to a group.")

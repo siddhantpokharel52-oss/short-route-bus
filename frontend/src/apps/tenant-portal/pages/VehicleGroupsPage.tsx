@@ -7,7 +7,7 @@
  */
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Users2, Snowflake, X, CheckCircle2, XCircle, Gauge } from 'lucide-react'
+import { Plus, Users2, Snowflake, X, CheckCircle2, XCircle, Gauge, UserCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
@@ -18,6 +18,8 @@ import vehicleGroupService, { VehicleGroup } from '@services/vehicleGroupService
 import { Vehicle } from '@services/fleetService'
 import toast from 'react-hot-toast'
 import { useForm, Controller } from 'react-hook-form'
+
+interface DriverOption { id: string; user_id: string | null; full_name_en: string }
 
 function SelectField({
   label, required, children, error, ...props
@@ -53,6 +55,7 @@ export default function VehicleGroupsPage() {
   const [manageTarget, setManageTarget] = useState<VehicleGroup | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<VehicleGroup | null>(null)
   const [pickerVehicleId, setPickerVehicleId] = useState('')
+  const [pickerDriverUserId, setPickerDriverUserId] = useState('')
   const [dayType, setDayType] = useState('WEEKDAY')
 
   const { data: groups = [], isLoading } = useQuery({
@@ -74,7 +77,22 @@ export default function VehicleGroupsPage() {
     queryFn: () => vehicleGroupService.balance(dayType),
   })
 
+  const { data: drivers = [] } = useQuery<DriverOption[]>({
+    queryKey: ['drivers-for-groups'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/operator/drivers/', { params: { page_size: 500 } })
+      return data.data?.results ?? data.data ?? []
+    },
+    staleTime: 60_000,
+  })
+
   const liveManageTarget = manageTarget ? groups.find((g) => g.id === manageTarget.id) ?? manageTarget : null
+
+  const { data: groupDrivers = [] } = useQuery({
+    queryKey: ['group-drivers', liveManageTarget?.id],
+    queryFn: () => vehicleGroupService.listDrivers(liveManageTarget!.id),
+    enabled: !!liveManageTarget,
+  })
 
   const { data: eligibility } = useQuery({
     queryKey: ['group-eligibility', liveManageTarget?.id, liveManageTarget?.members.length],
@@ -140,8 +158,37 @@ export default function VehicleGroupsPage() {
     },
   })
 
+  const addDriverMutation = useMutation({
+    mutationFn: ({ groupId, driverUserId }: { groupId: string; driverUserId: string }) =>
+      vehicleGroupService.addDriver(groupId, driverUserId),
+    onSuccess: () => {
+      toast.success('Driver assigned to group.')
+      qc.invalidateQueries({ queryKey: ['group-drivers', liveManageTarget?.id] })
+      setPickerDriverUserId('')
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { errors?: { driver_user_id?: string[] }; message?: string } } }
+      toast.error(e?.response?.data?.errors?.driver_user_id?.[0] || e?.response?.data?.message || 'Failed to assign driver.')
+    },
+  })
+
+  const removeDriverMutation = useMutation({
+    mutationFn: ({ groupId, assignmentId }: { groupId: string; assignmentId: string }) =>
+      vehicleGroupService.removeDriver(groupId, assignmentId),
+    onSuccess: () => {
+      toast.success('Driver removed from group.')
+      qc.invalidateQueries({ queryKey: ['group-drivers', liveManageTarget?.id] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || 'Failed to remove driver.')
+    },
+  })
+
   const groupedVehicleIds = new Set(groups.flatMap((g) => g.members.filter((m) => !m.valid_to).map((m) => m.vehicle)))
   const availableVehicles = vehicles.filter((v) => !groupedVehicleIds.has(v.id))
+  const assignedDriverUserIds = new Set(groupDrivers.filter((d) => !d.valid_to).map((d) => d.driver_user_id))
+  const availableDrivers = drivers.filter((d) => d.user_id && !assignedDriverUserIds.has(d.user_id))
 
   return (
     <div className="space-y-6">
@@ -319,6 +366,46 @@ export default function VehicleGroupsPage() {
                   AC: {liveManageTarget.capability_ac_count}/{liveManageTarget.members.filter((m) => !m.valid_to).length}
                   {liveManageTarget.capability_permit_classes.length > 0 && ` · Permit: ${liveManageTarget.capability_permit_classes.join(', ')}`}
                 </p>
+              </div>
+
+              <div>
+                <label className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <UserCheck className="h-3.5 w-3.5" /> Drivers
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={pickerDriverUserId} onChange={(e) => setPickerDriverUserId(e.target.value)}
+                    className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="">— Select driver —</option>
+                    {availableDrivers.map((d) => <option key={d.id} value={d.user_id!}>{d.full_name_en}</option>)}
+                  </select>
+                  <Button
+                    size="sm" disabled={!pickerDriverUserId} loading={addDriverMutation.isPending}
+                    onClick={() => addDriverMutation.mutate({ groupId: liveManageTarget.id, driverUserId: pickerDriverUserId })}
+                  >
+                    Add
+                  </Button>
+                </div>
+                <div className="mt-1.5 space-y-1.5">
+                  {groupDrivers.filter((d) => !d.valid_to).map((d) => {
+                    const driver = drivers.find((dr) => dr.user_id === d.driver_user_id)
+                    return (
+                      <div key={d.id} className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 text-sm">
+                        <span>{driver?.full_name_en ?? d.driver_user_id}</span>
+                        <button
+                          onClick={() => removeDriverMutation.mutate({ groupId: liveManageTarget.id, assignmentId: d.id })}
+                          className="rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )
+                  })}
+                  {groupDrivers.filter((d) => !d.valid_to).length === 0 && (
+                    <p className="py-2 text-center text-xs text-gray-400">No driver assigned yet.</p>
+                  )}
+                </div>
               </div>
             </div>
 

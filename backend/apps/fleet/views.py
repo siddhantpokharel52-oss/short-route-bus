@@ -7,12 +7,13 @@ from datetime import timedelta
 from .models import (
     Vehicle, VehicleDocument, VehicleInsurance, VehicleGPS,
     VehicleCategory, VehicleGroup, GroupMember, GroupCompositionRule,
+    GroupDriverAssignment,
 )
 from .serializers import (
     VehicleSerializer, VehicleDocumentSerializer,
     VehicleInsuranceSerializer, VehicleGPSSerializer, VehicleExpiryAlertSerializer,
     VehicleCategorySerializer, VehicleGroupSerializer, GroupMemberSerializer,
-    GroupCompositionRuleSerializer,
+    GroupCompositionRuleSerializer, GroupDriverAssignmentSerializer,
 )
 from backend.apps.users.permissions import IsFleetRole, IsOperationsRole, CanViewVehicles
 
@@ -156,7 +157,8 @@ class VehicleGroupViewSet(ModelViewSet):
         """
         group = self.get_object()
         from django_tenants.utils import schema_context
-        from backend.apps.platform.models import Route, RouteRequirement
+        from backend.apps.platform.models import Route
+        from .services import check_group_route_eligibility
 
         eligible = []
         not_eligible = []
@@ -170,59 +172,12 @@ class VehicleGroupViewSet(ModelViewSet):
             )
 
         for route in routes:
-            reasons = []
-            req = getattr(route, "requirement", None)
-
-            if group.kind == VehicleGroup.Kind.RESERVE:
-                reasons.append("Reserve groups only appear on surge slots, not the regular rotation.")
-
-            if req is not None:
-                # Permit class is checked regardless of mode -- doc section
-                # 4.9-4.11's worked examples test it in both per-vehicle and
-                # group-level routes, unlike min_seats/require_ac/
-                # allowed_categories vs. min_total_seats/min_ac_count/
-                # category_bounds, which really are mode-specific.
-                if req.permit_class and group.capability_permit_classes != [req.permit_class]:
-                    reasons.append(f"Route requires permit class {req.permit_class} on every bus.")
-
-                if req.mode == RouteRequirement.Mode.PER_VEHICLE:
-                    if req.min_seats and group.capability_min_seats < req.min_seats:
-                        reasons.append(
-                            f"Route requires at least {req.min_seats} seats on every bus; "
-                            f"this group's smallest member has {group.capability_min_seats}."
-                        )
-                    if req.require_ac and not group.capability_all_ac:
-                        reasons.append("Route requires every bus to be air conditioned.")
-                    if req.allowed_categories:
-                        offending = sorted(set(group.capability_categories) - set(req.allowed_categories))
-                        if offending:
-                            reasons.append(
-                                f"Route only allows categories {', '.join(req.allowed_categories)}; "
-                                f"this group includes {', '.join(offending)}."
-                            )
-                else:  # GROUP_LEVEL
-                    if req.min_total_seats and group.capability_total_seats < req.min_total_seats:
-                        reasons.append(
-                            f"Route requires at least {req.min_total_seats} total seats; "
-                            f"this group offers {group.capability_total_seats}."
-                        )
-                    if req.min_ac_count and group.capability_ac_count < req.min_ac_count:
-                        reasons.append(
-                            f"Route requires at least {req.min_ac_count} AC buses; "
-                            f"this group has {group.capability_ac_count}."
-                        )
-                    for code, bounds in (req.category_bounds or {}).items():
-                        count = group.capability_categories.get(code, 0)
-                        if bounds.get("max") is not None and count > bounds["max"]:
-                            reasons.append(f"Route allows at most {bounds['max']} of {code}; this group has {count}.")
-                        if bounds.get("min") is not None and count < bounds["min"]:
-                            reasons.append(f"Route requires at least {bounds['min']} of {code}; this group has {count}.")
-
+            ok, reasons = check_group_route_eligibility(group, route)
             entry = {"route_id": str(route.id), "route_code": route.route_code, "route_name": route.name_en}
-            if reasons:
-                not_eligible.append({**entry, "reasons": reasons})
-            else:
+            if ok:
                 eligible.append(entry)
+            else:
+                not_eligible.append({**entry, "reasons": reasons})
 
         return api_response(data={"eligible": eligible, "not_eligible": not_eligible})
 
@@ -241,7 +196,8 @@ class VehicleGroupViewSet(ModelViewSet):
         has to be a /fleet/* route like eligibility() above.
         """
         from django_tenants.utils import schema_context
-        from backend.apps.platform.models import RouteRequirement, RouteDemand
+        from backend.apps.platform.models import RouteDemand
+        from .services import check_group_route_eligibility
 
         day_type = request.query_params.get("day_type", "WEEKDAY")
         with schema_context("public"):
@@ -254,29 +210,15 @@ class VehicleGroupViewSet(ModelViewSet):
         total_groups = len(rotating_groups)
 
         def group_passes(group, req):
+            # Reuses the eligibility rules verbatim, keyed off a synthetic
+            # route stand-in since check_group_route_eligibility() only reads
+            # route.requirement -- the RESERVE-kind reason doesn't apply here
+            # since rotating_groups is already filtered to ROTATING.
             if req is None:
                 return True
-            if req.permit_class and group.capability_permit_classes != [req.permit_class]:
-                return False
-            if req.mode == RouteRequirement.Mode.PER_VEHICLE:
-                if req.min_seats and group.capability_min_seats < req.min_seats:
-                    return False
-                if req.require_ac and not group.capability_all_ac:
-                    return False
-                if req.allowed_categories and set(group.capability_categories) - set(req.allowed_categories):
-                    return False
-            else:
-                if req.min_total_seats and group.capability_total_seats < req.min_total_seats:
-                    return False
-                if req.min_ac_count and group.capability_ac_count < req.min_ac_count:
-                    return False
-                for code, bounds in (req.category_bounds or {}).items():
-                    count = group.capability_categories.get(code, 0)
-                    if bounds.get("max") is not None and count > bounds["max"]:
-                        return False
-                    if bounds.get("min") is not None and count < bounds["min"]:
-                        return False
-            return True
+            route_stub = type("RouteStub", (), {"requirement": req})()
+            ok, _ = check_group_route_eligibility(group, route_stub)
+            return ok
 
         # Bucket demand by requirement "signature" so routes sharing an
         # identical requirement share one row, matching the doc's example
@@ -366,3 +308,25 @@ class GroupCompositionRuleViewSet(ModelViewSet):
 
     def get_queryset(self):
         return GroupCompositionRule.objects.all()
+
+
+class GroupDriverAssignmentViewSet(ModelViewSet):
+    serializer_class = GroupDriverAssignmentSerializer
+    permission_classes = [IsFleetRole]
+    http_method_names = ["get", "post", "delete", "head", "options"]
+
+    def get_queryset(self):
+        return GroupDriverAssignment.objects.filter(group_id=self.kwargs["group_pk"], valid_to__isnull=True)
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["group"] = VehicleGroup.objects.get(pk=self.kwargs["group_pk"])
+        return context
+
+    def perform_create(self, serializer):
+        group = VehicleGroup.objects.get(pk=self.kwargs["group_pk"])
+        serializer.save(group=group)
+
+    def perform_destroy(self, instance):
+        instance.valid_to = timezone.now().date()
+        instance.save(update_fields=["valid_to"])
