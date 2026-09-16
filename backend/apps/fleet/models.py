@@ -239,6 +239,13 @@ class VehicleGroup(models.Model):
     composition_mode = models.CharField(max_length=10, choices=CompositionMode.choices, default=CompositionMode.UNIFORM)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
 
+    # Stable position on the P1 auto-rotation's slot ring (doc section 7.2),
+    # assigned lazily on first rotation and never reassigned afterwards --
+    # doc section 16: "Group added or removed mid-cycle -- stable ring
+    # positions; the new group takes the vacant position without
+    # reshuffling everyone."
+    ring_position = models.PositiveIntegerField(null=True, blank=True)
+
     # ── Derived capability profile (section 4.6) -- recomputed by
     # GroupMember, never written directly elsewhere. ──────────────────────
     capability_min_seats = models.PositiveSmallIntegerField(default=0)

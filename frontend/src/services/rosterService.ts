@@ -10,7 +10,7 @@ export interface Duty {
   slot_index: number
   group: string | null
   group_code: string | null
-  source: 'MANUAL' | 'OVERRIDE' | 'RESERVE_FILL'
+  source: 'MANUAL' | 'GENERATED' | 'OVERRIDE' | 'RESERVE_FILL'
   locked: boolean
   overrides: DutyOverride[]
   substitutions: VehicleSubstitution[]
@@ -52,6 +52,18 @@ export interface Conflict {
   duty_id: string
   severity: 'hard' | 'soft'
   message: string
+}
+
+export interface RotationPolicy {
+  id: string
+  ring_step: number
+  week_pattern: 'KEEP_ROTATING' | 'REPEAT_WEEK' | 'ROTATING_REPEAT'
+  week_step: number
+  epoch_date: string
+  same_weekday_lookback_weeks: number
+  route_cooldown_days: number
+  created_at: string
+  updated_at: string
 }
 
 const unwrapList = (data: unknown): unknown[] => {
@@ -129,6 +141,23 @@ const rosterService = {
 
   myDuties: async (): Promise<Duty[]> => {
     const { data } = await apiClient.get<ApiResponse<Duty[]>>('/roster/my-duties/')
+    return data.data
+  },
+
+  getPolicy: async (): Promise<RotationPolicy> => {
+    const { data } = await apiClient.get<ApiResponse<RotationPolicy>>('/roster/policy/')
+    return data.data
+  },
+
+  savePolicy: async (payload: Partial<RotationPolicy>): Promise<RotationPolicy> => {
+    const { data } = await apiClient.put<ApiResponse<RotationPolicy>>('/roster/policy/', payload)
+    return data.data
+  },
+
+  rotate: async (periodId: string): Promise<{ updated: number; conflicts: Conflict[] }> => {
+    const { data } = await apiClient.post<ApiResponse<{ updated: number; conflicts: Conflict[] }>>(
+      `/roster/periods/${periodId}/rotate/`
+    )
     return data.data
   },
 }

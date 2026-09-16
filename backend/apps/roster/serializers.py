@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import RosterPeriod, Duty, DutyOverride, VehicleSubstitution
+from .models import RosterPeriod, Duty, DutyOverride, VehicleSubstitution, RotationPolicy
 
 
 class RosterPeriodSerializer(serializers.ModelSerializer):
@@ -7,6 +7,16 @@ class RosterPeriodSerializer(serializers.ModelSerializer):
         model = RosterPeriod
         fields = ["id", "start_date", "end_date", "status", "version", "created_at", "updated_at"]
         read_only_fields = ["id", "status", "version", "created_at", "updated_at"]
+
+
+class RotationPolicySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RotationPolicy
+        fields = [
+            "id", "ring_step", "week_pattern", "week_step", "epoch_date",
+            "same_weekday_lookback_weeks", "route_cooldown_days", "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class DutyOverrideSerializer(serializers.ModelSerializer):

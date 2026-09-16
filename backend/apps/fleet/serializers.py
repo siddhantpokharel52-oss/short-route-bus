@@ -237,13 +237,13 @@ class VehicleGroupSerializer(serializers.ModelSerializer):
     class Meta:
         model = VehicleGroup
         fields = [
-            "id", "code", "kind", "composition_mode", "status",
+            "id", "code", "kind", "composition_mode", "status", "ring_position",
             "capability_min_seats", "capability_total_seats", "capability_all_ac",
             "capability_ac_count", "capability_categories", "capability_permit_classes",
             "capability_computed_at", "members", "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "capability_min_seats", "capability_total_seats", "capability_all_ac",
+            "id", "ring_position", "capability_min_seats", "capability_total_seats", "capability_all_ac",
             "capability_ac_count", "capability_categories", "capability_permit_classes",
             "capability_computed_at", "created_at", "updated_at",
         ]

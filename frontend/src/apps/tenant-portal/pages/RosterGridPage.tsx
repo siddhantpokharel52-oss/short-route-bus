@@ -7,15 +7,15 @@
  * doc's own closing line, so filled cells, unassigned slots and conflicts
  * are all visible on one screen rather than split across tabs.
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ArrowLeft, Lock, Unlock, Send, Zap, Wrench } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Lock, Unlock, Send, Zap, Wrench, RotateCw, Sliders } from 'lucide-react'
 import { Button } from '@components/shared/Button'
 import { Badge } from '@components/shared/Badge'
 import { Modal } from '@components/shared/Modal'
 import apiClient from '@services/api'
-import rosterService, { Duty } from '@services/rosterService'
+import rosterService, { Duty, RotationPolicy } from '@services/rosterService'
 import vehicleGroupService, { VehicleGroup } from '@services/vehicleGroupService'
 import { Vehicle } from '@services/fleetService'
 import toast from 'react-hot-toast'
@@ -35,6 +35,7 @@ export default function RosterGridPage() {
   const [dutyTarget, setDutyTarget] = useState<Duty | null>(null)
   const [surgeDate, setSurgeDate] = useState('')
   const [surgeRoute, setSurgeRoute] = useState('')
+  const [showPolicy, setShowPolicy] = useState(false)
 
   const { data: period } = useQuery({
     queryKey: ['roster-period', periodId],
@@ -74,6 +75,11 @@ export default function RosterGridPage() {
       const { data } = await apiClient.get('/platform/routes/', { params: { page_size: 200 } })
       return data.data?.results ?? data.data ?? []
     },
+  })
+
+  const { data: policy } = useQuery({
+    queryKey: ['rotation-policy'],
+    queryFn: () => rosterService.getPolicy(),
   })
 
   const invalidate = () => {
@@ -123,6 +129,22 @@ export default function RosterGridPage() {
     onError: (err: unknown) => toast.error(errMsg(err, 'No reserve group qualifies.')),
   })
 
+  const rotateMutation = useMutation({
+    mutationFn: () => rosterService.rotate(periodId),
+    onSuccess: (result) => {
+      const hard = result.conflicts.filter((c) => c.severity === 'hard').length
+      toast.success(`${result.updated} duty(ies) auto-assigned.${hard ? ` ${hard} conflict(s) need a manual fix.` : ''}`)
+      invalidate()
+    },
+    onError: (err: unknown) => toast.error(errMsg(err, 'Rotation failed.')),
+  })
+
+  const savePolicyMutation = useMutation({
+    mutationFn: (payload: Partial<RotationPolicy>) => rosterService.savePolicy(payload),
+    onSuccess: () => { toast.success('Rotation policy saved.'); qc.invalidateQueries({ queryKey: ['rotation-policy'] }) },
+    onError: (err: unknown) => toast.error(errMsg(err, 'Failed to save policy.')),
+  })
+
   const dates = useMemo(
     () => Array.from(new Set(duties.map((d) => d.service_date))).sort(),
     [duties]
@@ -162,13 +184,24 @@ export default function RosterGridPage() {
           </p>
         </div>
         {period.status !== 'CLOSED' && (
-          <Button
-            leftIcon={<Send className="h-4 w-4" />} loading={publishMutation.isPending}
-            disabled={hardConflicts.length > 0}
-            onClick={() => publishMutation.mutate()}
-          >
-            {period.status === 'PUBLISHED' ? 'Republish' : 'Publish'}
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" leftIcon={<Sliders className="h-3.5 w-3.5" />} onClick={() => setShowPolicy(true)}>
+              Rotation Policy
+            </Button>
+            <Button
+              variant="secondary" leftIcon={<RotateCw className="h-4 w-4" />} loading={rotateMutation.isPending}
+              onClick={() => rotateMutation.mutate()}
+            >
+              Auto-Rotate
+            </Button>
+            <Button
+              leftIcon={<Send className="h-4 w-4" />} loading={publishMutation.isPending}
+              disabled={hardConflicts.length > 0}
+              onClick={() => publishMutation.mutate()}
+            >
+              {period.status === 'PUBLISHED' ? 'Republish' : 'Publish'}
+            </Button>
+          </div>
         )}
       </div>
 
@@ -232,7 +265,9 @@ export default function RosterGridPage() {
                         <button
                           onClick={() => setDutyTarget(duty)}
                           className={`flex items-center gap-1 rounded-lg px-2 py-1 ${
-                            duty.source === 'OVERRIDE' ? 'bg-violet-50 text-violet-700' : 'bg-emerald-50 text-emerald-700'
+                            duty.source === 'OVERRIDE' ? 'bg-violet-50 text-violet-700'
+                              : duty.source === 'GENERATED' ? 'bg-sky-50 text-sky-700'
+                              : 'bg-emerald-50 text-emerald-700'
                           } hover:opacity-80`}
                         >
                           {duty.locked && <Lock className="h-3 w-3" />}
@@ -301,6 +336,17 @@ export default function RosterGridPage() {
               substituteMutation.mutate({ dutyId: dutyTarget.id, outVehicle, inVehicle, reason })}
             assigning={assignMutation.isPending}
             substituting={substituteMutation.isPending}
+          />
+        )}
+      </Modal>
+
+      {/* Rotation policy settings */}
+      <Modal open={showPolicy} onClose={() => setShowPolicy(false)} title="Rotation Policy" size="sm">
+        {policy && (
+          <RotationPolicyForm
+            policy={policy}
+            saving={savePolicyMutation.isPending}
+            onSave={(payload) => savePolicyMutation.mutate(payload)}
           />
         )}
       </Modal>
@@ -400,6 +446,88 @@ function DutyDetail({
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+function RotationPolicyForm({
+  policy, saving, onSave,
+}: {
+  policy: RotationPolicy
+  saving: boolean
+  onSave: (payload: Partial<RotationPolicy>) => void
+}) {
+  const [ringStep, setRingStep] = useState(policy.ring_step)
+  const [weekPattern, setWeekPattern] = useState(policy.week_pattern)
+  const [weekStep, setWeekStep] = useState(policy.week_step)
+  const [lookbackWeeks, setLookbackWeeks] = useState(policy.same_weekday_lookback_weeks)
+  const [cooldownDays, setCooldownDays] = useState(policy.route_cooldown_days)
+
+  useEffect(() => {
+    setRingStep(policy.ring_step)
+    setWeekPattern(policy.week_pattern)
+    setWeekStep(policy.week_step)
+    setLookbackWeeks(policy.same_weekday_lookback_weeks)
+    setCooldownDays(policy.route_cooldown_days)
+  }, [policy])
+
+  return (
+    <div className="space-y-4 p-6">
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-700">Ring step</label>
+        <input
+          type="number" min={1} value={ringStep} onChange={(e) => setRingStep(Number(e.target.value))}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        />
+        <p className="mt-1 text-xs text-gray-400">How many ring positions every group advances per day. Must be coprime with the day's ring length, or some slots go unreached.</p>
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-700">Week pattern</label>
+        <select
+          value={weekPattern} onChange={(e) => setWeekPattern(e.target.value as RotationPolicy['week_pattern'])}
+          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+        >
+          <option value="KEEP_ROTATING">Keep rotating -- never repeats</option>
+          <option value="REPEAT_WEEK">Repeat the week -- every week identical</option>
+          <option value="ROTATING_REPEAT">Rotating repeat -- same shape, nudges forward each week</option>
+        </select>
+      </div>
+      {weekPattern === 'ROTATING_REPEAT' && (
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-700">Week step</label>
+          <input
+            type="number" min={1} value={weekStep} onChange={(e) => setWeekStep(Number(e.target.value))}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          />
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-700">Same-weekday lookback (weeks)</label>
+          <input
+            type="number" min={1} value={lookbackWeeks} onChange={(e) => setLookbackWeeks(Number(e.target.value))}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-700">Route cooldown (days)</label>
+          <input
+            type="number" min={0} value={cooldownDays} onChange={(e) => setCooldownDays(Number(e.target.value))}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          />
+        </div>
+      </div>
+      <div className="flex justify-end border-t pt-4">
+        <Button
+          loading={saving}
+          onClick={() => onSave({
+            ring_step: ringStep, week_pattern: weekPattern, week_step: weekStep,
+            same_weekday_lookback_weeks: lookbackWeeks, route_cooldown_days: cooldownDays,
+          })}
+        >
+          Save Policy
+        </Button>
+      </div>
     </div>
   )
 }

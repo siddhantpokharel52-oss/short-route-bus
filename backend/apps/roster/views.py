@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import timedelta
 
-from django.db.models import Max
+from django.db.models import Max, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import views
@@ -10,10 +10,21 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from backend.apps.users.permissions import IsOperationsRole, CanViewVehicles, IsDriver
-from .models import RosterPeriod, Duty, DutyOverride, VehicleSubstitution
+from . import services
+from .models import RosterPeriod, Duty, DutyOverride, VehicleSubstitution, RotationPolicy
 from .serializers import (
-    RosterPeriodSerializer, DutySerializer, VehicleSubstitutionSerializer,
+    RosterPeriodSerializer, DutySerializer, VehicleSubstitutionSerializer, RotationPolicySerializer,
 )
+
+
+def _get_or_create_policy():
+    """A single operator-wide RotationPolicy row (doc section 8/9's P1
+    parameters) -- created with its field defaults on first use, same
+    fetch-or-create convention as fleet.GroupCompositionRule's default row."""
+    policy = RotationPolicy.objects.order_by("created_at").first()
+    if policy is None:
+        policy = RotationPolicy.objects.create()
+    return policy
 
 
 def api_response(data=None, message="Success", success=True, errors=None, status_code=200):
@@ -106,6 +117,48 @@ def _compute_conflicts(period):
                         ),
                     })
 
+    # Doc section 8's two P1 rotation rules -- checked across every period
+    # in the tenant, not just this one, since the constraint is about
+    # calendar weeks/days, not period boundaries.
+    policy = _get_or_create_policy()
+    assigned = [d for d in duties if d.group_id]
+    if assigned:
+        group_ids = {d.group_id for d in assigned}
+        route_ids_assigned = {d.route_id for d in assigned}
+        lookback_days = max(policy.same_weekday_lookback_weeks * 7, policy.route_cooldown_days)
+        lookback_start = min(d.service_date for d in assigned) - timedelta(days=lookback_days)
+
+        history = defaultdict(list)
+        for hd in Duty.objects.filter(
+            group_id__in=group_ids, route_id__in=route_ids_assigned,
+            service_date__gte=lookback_start, roster_period__is_deleted=False,
+        ).values("id", "group_id", "route_id", "service_date"):
+            history[(hd["group_id"], hd["route_id"])].append((hd["service_date"], hd["id"]))
+
+        for d in assigned:
+            route_code = getattr(routes_by_id.get(d.route_id), "route_code", d.route_id)
+            for other_date, other_id in history.get((d.group_id, d.route_id), []):
+                if other_id == d.id or other_date >= d.service_date:
+                    continue
+                gap_days = (d.service_date - other_date).days
+                if gap_days <= policy.same_weekday_lookback_weeks * 7 and other_date.weekday() == d.service_date.weekday():
+                    conflicts.append({
+                        "duty_id": str(d.id), "severity": "hard",
+                        "message": (
+                            f"{d.group.code} already ran {route_code} on {other_date} "
+                            f"({other_date.strftime('%A')}), {gap_days} day(s) before this duty -- "
+                            f"same weekday within {policy.same_weekday_lookback_weeks} week(s)."
+                        ),
+                    })
+                elif gap_days <= policy.route_cooldown_days:
+                    conflicts.append({
+                        "duty_id": str(d.id), "severity": "soft",
+                        "message": (
+                            f"{d.group.code} ran {route_code} on {other_date}, only {gap_days} day(s) "
+                            f"before this duty (cooldown is {policy.route_cooldown_days} days)."
+                        ),
+                    })
+
     return conflicts
 
 
@@ -119,6 +172,9 @@ class RosterPeriodViewSet(ModelViewSet):
 
     def get_queryset(self):
         return RosterPeriod.objects.filter(is_deleted=False)
+
+    def _day_type_for(self, date):
+        return "SATURDAY" if date.weekday() == 5 else "WEEKDAY"
 
     def perform_create(self, serializer):
         period = serializer.save(created_by_id=self.request.user.id)
@@ -144,7 +200,7 @@ class RosterPeriodViewSet(ModelViewSet):
         duties = []
         for i in range(num_days):
             date = period.start_date + timedelta(days=i)
-            day_type = "SATURDAY" if date.weekday() == 5 else "WEEKDAY"
+            day_type = self._day_type_for(date)
             for r in routes:
                 slot_count = demand_by_route_daytype.get((r.id, day_type), 0)
                 for slot_index in range(slot_count):
@@ -186,6 +242,113 @@ class RosterPeriodViewSet(ModelViewSet):
             period.version += 1
         period.save(update_fields=["status", "version"])
         return api_response(data=RosterPeriodSerializer(period).data, message="Roster period published.")
+
+    @action(detail=True, methods=["post"], url_path="rotate")
+    def rotate(self, request, pk=None):
+        """
+        POST /roster/periods/{id}/rotate/
+        P1's whole "generate" step (doc section 7.1-7.2): lay out each
+        day_type's slots on a ring, shift every rotating group's stable
+        ring position by the policy's step/week-pattern, and assign
+        whichever duty lands on each group's position that day. Never
+        touches a locked duty or one a planner already set by hand
+        (source MANUAL/OVERRIDE/RESERVE_FILL) -- only unassigned duties or
+        ones a previous rotate itself produced (source GENERATED). No
+        repair pass: this can and will produce same-weekday/cooldown
+        conflicts (doc section 7.3), surfaced via the conflicts action for
+        the planner to fix by hand -- P2 is what would fix them automatically.
+        """
+        period = self.get_object()
+        if period.status == RosterPeriod.Status.CLOSED:
+            return api_response(success=False, message="Closed periods can't be rotated.", status_code=400)
+
+        from backend.apps.fleet.models import VehicleGroup
+        from django_tenants.utils import schema_context
+        from backend.apps.platform.models import Route
+
+        policy = _get_or_create_policy()
+
+        editable_duties = list(period.duties.filter(locked=False).filter(
+            Q(group__isnull=True) | Q(source=Duty.Source.GENERATED)
+        ))
+        if not editable_duties:
+            return api_response(
+                data={"updated": 0, "conflicts": _compute_conflicts(period)},
+                message="Nothing to rotate -- every duty is locked or already manually assigned.",
+            )
+
+        # Stable ring positions (doc section 16): assign the lowest vacant
+        # integer to any ROTATING group that doesn't have one yet; groups
+        # that already have one keep it, so a regenerate never reshuffles
+        # existing groups when one is added or removed.
+        rotating_groups = list(
+            VehicleGroup.objects.filter(is_deleted=False, kind=VehicleGroup.Kind.ROTATING).order_by("code")
+        )
+        if not rotating_groups:
+            return api_response(success=False, message="No rotating groups exist yet.", status_code=400)
+        taken = {g.ring_position for g in rotating_groups if g.ring_position is not None}
+        next_pos = 0
+        for g in rotating_groups:
+            if g.ring_position is None:
+                while next_pos in taken:
+                    next_pos += 1
+                g.ring_position = next_pos
+                taken.add(next_pos)
+                g.save(update_fields=["ring_position"])
+
+        with schema_context("public"):
+            routes = Route.objects.filter(is_deleted=False, status=Route.Status.APPROVED)
+            demand_rows_by_daytype = defaultdict(list)
+            for r in routes:
+                for dem in r.demand_profiles.filter(effective_to__isnull=True):
+                    demand_rows_by_daytype[dem.day_type].append((r.id, dem.slot_count))
+
+        ring_cache = {}
+
+        def ring_for(day_type):
+            if day_type not in ring_cache:
+                ring_cache[day_type] = services.build_ring(demand_rows_by_daytype.get(day_type, []))
+            return ring_cache[day_type]
+
+        dates = sorted({d.service_date for d in editable_duties})
+        day_types_touched = {self._day_type_for(date) for date in dates}
+
+        # Coprimality check up front (doc section 7.2) -- reject before
+        # touching any duty, naming a valid alternative step.
+        for day_type in day_types_touched:
+            ring = ring_for(day_type)
+            if ring and not services.is_coprime_step(policy.ring_step, len(ring)):
+                suggestion = services.smallest_coprime_step(len(ring), policy.ring_step)
+                return api_response(
+                    success=False,
+                    message=(
+                        f"Ring step {policy.ring_step} isn't coprime with the {day_type.lower()} ring "
+                        f"(length {len(ring)}) -- some slots would never be reached. Try step {suggestion}."
+                    ),
+                    status_code=400,
+                )
+
+        target_by_key = {(d.service_date, d.route_id, d.slot_index): d for d in editable_duties}
+
+        updated = 0
+        for date in dates:
+            ring = ring_for(self._day_type_for(date))
+            if not ring:
+                continue
+            shift = services.shift_for_date(policy, date)
+            for g in rotating_groups:
+                slot = services.ring_slot_for_position(ring, g.ring_position + shift)
+                duty = target_by_key.get((date, slot[0], slot[1])) if slot else None
+                if duty is not None:
+                    duty.group = g
+                    duty.source = Duty.Source.GENERATED
+                    duty.save(update_fields=["group", "source", "updated_at"])
+                    updated += 1
+
+        return api_response(
+            data={"updated": updated, "conflicts": _compute_conflicts(period)},
+            message=f"{updated} duty(ies) auto-assigned.",
+        )
 
 
 class DutyViewSet(ModelViewSet):
@@ -279,8 +442,11 @@ class DutyViewSet(ModelViewSet):
 
         previous_group = duty.group
         duty.group = new_group
-        if was_published:
-            duty.source = Duty.Source.OVERRIDE
+        # Any human reassignment through this endpoint counts as MANUAL (or
+        # OVERRIDE once published) -- never left as GENERATED, or a later
+        # rotate() would treat it as fair game and silently overwrite the
+        # planner's choice (rotate only touches unassigned/GENERATED duties).
+        duty.source = Duty.Source.OVERRIDE if was_published else Duty.Source.MANUAL
         duty.save(update_fields=["group", "source", "updated_at"])
 
         if was_published:
@@ -435,3 +601,26 @@ class MyDutiesView(views.APIView):
             service_date__range=[today, today + timedelta(days=6)],
         ).select_related("roster_period").order_by("service_date")
         return api_response(data=DutySerializer(duties, many=True).data)
+
+
+class RotationPolicyView(views.APIView):
+    """GET/PUT /roster/policy/ -- the single operator-wide RotationPolicy
+    row (doc section 8/9's P1 parameters: ring step, week pattern,
+    same-weekday lookback, cooldown days). Not a full ModelViewSet since
+    there's exactly one row to manage, same "singleton settings" shape as
+    a plain APIView elsewhere in this codebase (e.g. MyDutiesView above)."""
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [CanViewVehicles()]
+        return [IsOperationsRole()]
+
+    def get(self, request):
+        return api_response(data=RotationPolicySerializer(_get_or_create_policy()).data)
+
+    def put(self, request):
+        policy = _get_or_create_policy()
+        serializer = RotationPolicySerializer(policy, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return api_response(data=serializer.data, message="Rotation policy updated.")

@@ -13,4 +13,5 @@ urlpatterns = [
     path("", include(router.urls)),
     path("", include(periods_router.urls)),
     path("my-duties/", views.MyDutiesView.as_view(), name="my-duties"),
+    path("policy/", views.RotationPolicyView.as_view(), name="rotation-policy"),
 ]

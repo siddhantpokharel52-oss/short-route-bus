@@ -1,5 +1,32 @@
 import uuid
+from datetime import date as date_cls
+
 from django.db import models
+
+
+class RotationPolicy(models.Model):
+    """The parameters driving the P1 auto-rotation (doc section 7.1-7.2, 9,
+    16). A single operator-wide row for now -- per-route/per-group scoping
+    (doc's policy_scope) and the full weighted rule engine are P2 ("turns
+    preferences into configuration rather than code"); P1's two rules stay
+    in code with configurable parameters only."""
+    class WeekPattern(models.TextChoices):
+        KEEP_ROTATING = "KEEP_ROTATING", "Keep rotating"
+        REPEAT_WEEK = "REPEAT_WEEK", "Repeat the week"
+        ROTATING_REPEAT = "ROTATING_REPEAT", "Rotating repeat"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    ring_step = models.PositiveSmallIntegerField(default=1)
+    week_pattern = models.CharField(max_length=20, choices=WeekPattern.choices, default=WeekPattern.KEEP_ROTATING)
+    week_step = models.PositiveSmallIntegerField(default=1, help_text="Extra shift applied once per week -- ROTATING_REPEAT only")
+    epoch_date = models.DateField(default=date_cls.today, help_text="Fixed reference date all shift arithmetic counts from")
+    same_weekday_lookback_weeks = models.PositiveSmallIntegerField(default=1, help_text="no_same_route_same_weekday, HARD")
+    route_cooldown_days = models.PositiveSmallIntegerField(default=3, help_text="route_cooldown_days, SOFT")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Rotation policy (step={self.ring_step}, {self.week_pattern})"
 
 
 class RosterPeriod(models.Model):
@@ -38,6 +65,7 @@ class Duty(models.Model):
     group=None means the slot is still unassigned/open."""
     class Source(models.TextChoices):
         MANUAL = "MANUAL", "Manual"
+        GENERATED = "GENERATED", "Generated"
         OVERRIDE = "OVERRIDE", "Override"
         RESERVE_FILL = "RESERVE_FILL", "Reserve Fill"
 
