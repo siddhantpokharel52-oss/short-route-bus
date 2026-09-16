@@ -22,6 +22,18 @@ class RotationPolicy(models.Model):
     epoch_date = models.DateField(default=date_cls.today, help_text="Fixed reference date all shift arithmetic counts from")
     same_weekday_lookback_weeks = models.PositiveSmallIntegerField(default=1, help_text="no_same_route_same_weekday, HARD")
     route_cooldown_days = models.PositiveSmallIntegerField(default=3, help_text="route_cooldown_days, SOFT")
+
+    # P2 (doc section 7.4/8): weighted soft-rule terms feeding the cost
+    # model. A weight of 0 turns that rule off -- "there is no separate code
+    # path for each operator preference," per the doc.
+    rotation_preference_weight = models.PositiveSmallIntegerField(
+        default=3, help_text="Cost of deviating from the ring's predicted slot"
+    )
+    route_cooldown_weight = models.PositiveSmallIntegerField(default=1)
+    max_consecutive_days_same_route = models.PositiveSmallIntegerField(default=2)
+    consecutive_weight = models.PositiveSmallIntegerField(default=2)
+    fair_share_weight = models.PositiveSmallIntegerField(default=1)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -79,6 +91,10 @@ class Duty(models.Model):
     )
     source = models.CharField(max_length=15, choices=Source.choices, default=Source.MANUAL)
     locked = models.BooleanField(default=False, help_text="Protects this cell from reassignment via the grid")
+    cost_breakdown = models.JSONField(
+        default=dict, blank=True,
+        help_text="P2: the weighted cost components that produced this assignment (GENERATED duties only), for the explain endpoint",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -62,3 +62,178 @@ def smallest_coprime_step(ring_length, preferred=1):
     while math.gcd(step, ring_length) != 1:
         step += 1
     return step
+
+
+# P2: cost model + matching (doc sections 7.4-7.6)
+
+INFEASIBLE_COST = 10 ** 7  # sentinel, not float('inf'), to keep the solver's arithmetic well-defined
+
+
+def hungarian_min_cost_matching(cost_matrix):
+    """Minimum-cost bipartite matching via the classic O(n^3) Hungarian
+    algorithm (doc section 7.5: "solved exactly rather than approximated"
+    -- no library needed at these sizes, tens of groups/slots per day).
+    cost_matrix is rows x cols and needn't be square -- the shorter side is
+    padded with zero-cost dummy entries internally so a short side's
+    rows/cols are simply left unmatched rather than forced into a real
+    pairing. Returns a list the length of the original row count: match[i]
+    is the matched column index, or None if row i matched only a padding
+    dummy (i.e. went unmatched)."""
+    n = len(cost_matrix)
+    if n == 0:
+        return []
+    m = len(cost_matrix[0]) if cost_matrix[0] else 0
+    if m == 0:
+        return [None] * n
+
+    size = max(n, m)
+    INF = float("inf")
+    padded = [[cost_matrix[i][j] if i < n and j < m else 0 for j in range(size)] for i in range(size)]
+
+    u = [0] * (size + 1)
+    v = [0] * (size + 1)
+    p = [0] * (size + 1)  # p[j] = row (1-indexed) matched to column j
+    way = [0] * (size + 1)
+
+    for i in range(1, size + 1):
+        p[0] = i
+        j0 = 0
+        minv = [INF] * (size + 1)
+        used = [False] * (size + 1)
+        while True:
+            used[j0] = True
+            i0 = p[j0]
+            delta = INF
+            j1 = -1
+            for j in range(1, size + 1):
+                if not used[j]:
+                    cur = padded[i0 - 1][j - 1] - u[i0] - v[j]
+                    if cur < minv[j]:
+                        minv[j] = cur
+                        way[j] = j0
+                    if minv[j] < delta:
+                        delta = minv[j]
+                        j1 = j
+            for j in range(size + 1):
+                if used[j]:
+                    u[p[j]] += delta
+                    v[j] -= delta
+                else:
+                    minv[j] -= delta
+            j0 = j1
+            if p[j0] == 0:
+                break
+        while j0:
+            j1 = way[j0]
+            p[j0] = p[j1]
+            j0 = j1
+
+    col_for_row = [None] * n
+    for j in range(1, size + 1):
+        row, col = p[j] - 1, j - 1
+        if 0 <= row < n and col < m:
+            col_for_row[row] = col
+    return col_for_row
+
+
+def solve_day_assignment(date, groups, ring, shift, routes_by_id, history, policy):
+    """
+    One day of doc section 7.4-7.5: build the cost matrix (group x ring
+    position), solve it exactly, commit the result into `history` (mutated
+    in place so the next call in the date sequence sees it), and return
+    {(route_id, slot_index): (group, cost_breakdown)} for every ring slot
+    that matched.
+
+    `history` holds three dicts, keyed by (group_id, route_id):
+    "last_run" -> most recent service_date that pair ran (for cooldown/
+    same-weekday), "streak" -> consecutive-day run length ending at
+    last_run, and "count" keyed by group_id -> total duties assigned to
+    that group so far in this solve (for fair_share). The caller seeds
+    this from existing Duty rows before the first date and this function
+    updates it after every day, so same-weekday is enforced as a genuine
+    forbidden pairing during the sequential solve rather than left to a
+    later repair pass.
+    """
+    from backend.apps.fleet.services import check_group_route_eligibility
+
+    if not groups or not ring:
+        return {}
+
+    ring_len = len(ring)
+    last_run = history.setdefault("last_run", {})
+    streak = history.setdefault("streak", {})
+    count = history.setdefault("count", {})
+
+    avg_count = sum(count.get(g.id, 0) for g in groups) / len(groups)
+
+    cost_matrix = []
+    breakdowns = []
+    for group in groups:
+        predicted_pos = (group.ring_position + shift) % ring_len
+        row_costs, row_breakdowns = [], []
+        for pos, (route_id, slot_index) in enumerate(ring):
+            route = routes_by_id.get(route_id)
+            key = (group.id, route_id)
+            last = last_run.get(key)
+            gap = (date - last).days if last else None
+
+            infeasible, reasons = False, []
+            if route is None:
+                infeasible = True
+            else:
+                ok, elig_reasons = check_group_route_eligibility(group, route, allow_reserve=False)
+                if not ok:
+                    infeasible, reasons = True, elig_reasons
+
+            if not infeasible and gap is not None and gap <= policy.same_weekday_lookback_weeks * 7 and last.weekday() == date.weekday():
+                infeasible = True
+                reasons = [f"would repeat this route on the same weekday within {policy.same_weekday_lookback_weeks} week(s)"]
+
+            if infeasible:
+                row_costs.append(INFEASIBLE_COST)
+                row_breakdowns.append({"infeasible": True, "reasons": reasons})
+                continue
+
+            components = {"rotation_preference": 0 if pos == predicted_pos else policy.rotation_preference_weight}
+
+            cooldown_cost = 0
+            if policy.route_cooldown_weight and gap is not None and gap < policy.route_cooldown_days:
+                cooldown_cost = policy.route_cooldown_weight * (policy.route_cooldown_days - gap)
+            components["route_cooldown"] = cooldown_cost
+
+            new_streak = streak.get(key, 0) + 1 if gap == 1 else 1
+            consecutive_cost = 0
+            if policy.consecutive_weight and new_streak > policy.max_consecutive_days_same_route:
+                consecutive_cost = policy.consecutive_weight * (new_streak - policy.max_consecutive_days_same_route)
+            components["consecutive_days"] = consecutive_cost
+
+            fair_share_cost = 0
+            if policy.fair_share_weight:
+                imbalance = count.get(group.id, 0) - avg_count
+                if imbalance > 0:
+                    fair_share_cost = round(policy.fair_share_weight * imbalance, 2)
+            components["fair_share"] = fair_share_cost
+
+            total = sum(components.values())
+            row_costs.append(total)
+            row_breakdowns.append({"infeasible": False, "components": components, "total": total, "new_streak": new_streak})
+        cost_matrix.append(row_costs)
+        breakdowns.append(row_breakdowns)
+
+    match = hungarian_min_cost_matching(cost_matrix)
+
+    result = {}
+    for gi, pos in enumerate(match):
+        if pos is None or cost_matrix[gi][pos] >= INFEASIBLE_COST:
+            continue
+        group = groups[gi]
+        route_id, slot_index = ring[pos]
+        bd = breakdowns[gi][pos]
+        result[(route_id, slot_index)] = (group, bd)
+
+        key = (group.id, route_id)
+        last_run[key] = date
+        streak[key] = bd["new_streak"]
+        count[group.id] = count.get(group.id, 0) + 1
+
+    return result

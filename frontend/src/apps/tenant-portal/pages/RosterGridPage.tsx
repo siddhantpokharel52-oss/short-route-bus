@@ -133,7 +133,10 @@ export default function RosterGridPage() {
     mutationFn: () => rosterService.rotate(periodId),
     onSuccess: (result) => {
       const hard = result.conflicts.filter((c) => c.severity === 'hard').length
-      toast.success(`${result.updated} duty(ies) auto-assigned.${hard ? ` ${hard} conflict(s) need a manual fix.` : ''}`)
+      const parts = [`${result.updated} duty(ies) auto-assigned.`]
+      if (result.repaired) parts.push(`${result.repaired} conflict(s) repaired.`)
+      if (hard) parts.push(`${hard} conflict(s) need a manual fix.`)
+      toast.success(parts.join(' '))
       invalidate()
     },
     onError: (err: unknown) => toast.error(errMsg(err, 'Rotation failed.')),
@@ -325,6 +328,7 @@ export default function RosterGridPage() {
       >
         {dutyTarget && (
           <DutyDetail
+            periodId={periodId}
             duty={dutyTarget}
             groups={assignableGroups}
             members={currentMembers}
@@ -355,8 +359,9 @@ export default function RosterGridPage() {
 }
 
 function DutyDetail({
-  duty, groups, members, vehicles, published, onAssign, onLock, onSubstitute, assigning, substituting,
+  periodId, duty, groups, members, vehicles, published, onAssign, onLock, onSubstitute, assigning, substituting,
 }: {
+  periodId: string
   duty: Duty
   groups: VehicleGroup[]
   members: { vehicle: string; vehicle_detail: { registration_no: string } }[]
@@ -374,11 +379,30 @@ function DutyDetail({
   const [inVehicle, setInVehicle] = useState('')
   const [subReason, setSubReason] = useState('')
 
+  const { data: explanation } = useQuery({
+    queryKey: ['duty-explain', periodId, duty.id],
+    queryFn: () => rosterService.explainDuty(periodId, duty.id),
+    enabled: duty.source === 'GENERATED',
+  })
+
   return (
     <div className="space-y-5 p-6">
       {duty.overrides.length > 0 && (
         <div className="rounded-lg bg-violet-50 p-3 text-xs text-violet-700">
           {duty.overrides.length} override(s) recorded on this duty since it was published.
+        </div>
+      )}
+
+      {explanation?.generated && explanation.components && (
+        <div className="rounded-lg bg-sky-50 p-3 text-xs text-sky-800">
+          <p className="mb-1.5 font-semibold">Why this assignment?</p>
+          <ul className="space-y-0.5">
+            <li>Rotation preference: {explanation.components.rotation_preference}</li>
+            <li>Route cooldown: {explanation.components.route_cooldown}</li>
+            <li>Consecutive days: {explanation.components.consecutive_days}</li>
+            <li>Fair share: {explanation.components.fair_share}</li>
+          </ul>
+          <p className="mt-1.5 text-sky-600">Total cost: {explanation.total} (lower is preferred; 0 means a perfect fit)</p>
         </div>
       )}
 
@@ -462,6 +486,11 @@ function RotationPolicyForm({
   const [weekStep, setWeekStep] = useState(policy.week_step)
   const [lookbackWeeks, setLookbackWeeks] = useState(policy.same_weekday_lookback_weeks)
   const [cooldownDays, setCooldownDays] = useState(policy.route_cooldown_days)
+  const [rotationPreferenceWeight, setRotationPreferenceWeight] = useState(policy.rotation_preference_weight)
+  const [cooldownWeight, setCooldownWeight] = useState(policy.route_cooldown_weight)
+  const [maxConsecutiveDays, setMaxConsecutiveDays] = useState(policy.max_consecutive_days_same_route)
+  const [consecutiveWeight, setConsecutiveWeight] = useState(policy.consecutive_weight)
+  const [fairShareWeight, setFairShareWeight] = useState(policy.fair_share_weight)
 
   useEffect(() => {
     setRingStep(policy.ring_step)
@@ -469,6 +498,11 @@ function RotationPolicyForm({
     setWeekStep(policy.week_step)
     setLookbackWeeks(policy.same_weekday_lookback_weeks)
     setCooldownDays(policy.route_cooldown_days)
+    setRotationPreferenceWeight(policy.rotation_preference_weight)
+    setCooldownWeight(policy.route_cooldown_weight)
+    setMaxConsecutiveDays(policy.max_consecutive_days_same_route)
+    setConsecutiveWeight(policy.consecutive_weight)
+    setFairShareWeight(policy.fair_share_weight)
   }, [policy])
 
   return (
@@ -517,12 +551,58 @@ function RotationPolicyForm({
           />
         </div>
       </div>
+      <div className="border-t pt-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Cost weights -- 0 turns a rule off
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Rotation preference</label>
+            <input
+              type="number" min={0} value={rotationPreferenceWeight}
+              onChange={(e) => setRotationPreferenceWeight(Number(e.target.value))}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Cooldown weight</label>
+            <input
+              type="number" min={0} value={cooldownWeight} onChange={(e) => setCooldownWeight(Number(e.target.value))}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Max consecutive days</label>
+            <input
+              type="number" min={1} value={maxConsecutiveDays} onChange={(e) => setMaxConsecutiveDays(Number(e.target.value))}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Consecutive weight</label>
+            <input
+              type="number" min={0} value={consecutiveWeight} onChange={(e) => setConsecutiveWeight(Number(e.target.value))}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Fair-share weight</label>
+            <input
+              type="number" min={0} value={fairShareWeight} onChange={(e) => setFairShareWeight(Number(e.target.value))}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+      </div>
       <div className="flex justify-end border-t pt-4">
         <Button
           loading={saving}
           onClick={() => onSave({
             ring_step: ringStep, week_pattern: weekPattern, week_step: weekStep,
             same_weekday_lookback_weeks: lookbackWeeks, route_cooldown_days: cooldownDays,
+            rotation_preference_weight: rotationPreferenceWeight, route_cooldown_weight: cooldownWeight,
+            max_consecutive_days_same_route: maxConsecutiveDays, consecutive_weight: consecutiveWeight,
+            fair_share_weight: fairShareWeight,
           })}
         >
           Save Policy

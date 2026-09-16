@@ -27,6 +27,41 @@ def _get_or_create_policy():
     return policy
 
 
+def _seed_history(groups, route_ids, before_date, lookback_days=14):
+    """Primes services.solve_day_assignment's running history from
+    already-committed Duty rows (any period) before the sequential solve
+    starts, so day 1 of a new rotate() already knows a group's most recent
+    run of each route -- without this, cooldown/same-weekday could only
+    ever be enforced against duties created *during* this same rotate()
+    call. `streak` is reconstructed by walking backward from each pair's
+    most recent date while consecutive prior days are also present."""
+    group_ids = [g.id for g in groups]
+    if not group_ids or not route_ids:
+        return {"last_run": {}, "streak": {}, "count": {}}
+
+    rows = Duty.objects.filter(
+        group_id__in=group_ids, route_id__in=route_ids,
+        service_date__lt=before_date, service_date__gte=before_date - timedelta(days=lookback_days),
+        roster_period__is_deleted=False,
+    ).values("group_id", "route_id", "service_date")
+
+    dates_by_pair = defaultdict(set)
+    for r in rows:
+        dates_by_pair[(r["group_id"], r["route_id"])].add(r["service_date"])
+
+    last_run, streak = {}, {}
+    for key, date_set in dates_by_pair.items():
+        last = max(date_set)
+        last_run[key] = last
+        run_len, cursor = 1, last
+        while (cursor - timedelta(days=1)) in date_set:
+            cursor -= timedelta(days=1)
+            run_len += 1
+        streak[key] = run_len
+
+    return {"last_run": last_run, "streak": streak, "count": {}}
+
+
 def api_response(data=None, message="Success", success=True, errors=None, status_code=200):
     return Response({
         "success": success,
@@ -247,16 +282,20 @@ class RosterPeriodViewSet(ModelViewSet):
     def rotate(self, request, pk=None):
         """
         POST /roster/periods/{id}/rotate/
-        P1's whole "generate" step (doc section 7.1-7.2): lay out each
-        day_type's slots on a ring, shift every rotating group's stable
-        ring position by the policy's step/week-pattern, and assign
-        whichever duty lands on each group's position that day. Never
-        touches a locked duty or one a planner already set by hand
-        (source MANUAL/OVERRIDE/RESERVE_FILL) -- only unassigned duties or
-        ones a previous rotate itself produced (source GENERATED). No
-        repair pass: this can and will produce same-weekday/cooldown
-        conflicts (doc section 7.3), surfaced via the conflicts action for
-        the planner to fix by hand -- P2 is what would fix them automatically.
+        Doc section 7.1-7.6's full generation pipeline: lay out each
+        day_type's slots on a ring (section 7.1), then for each date in
+        order solve that day's group<->slot assignment as a genuine
+        minimum-cost bipartite match (section 7.4-7.5) -- the ring/shift
+        prediction is just one weighted term (`rotation_preference`) in
+        that cost, not a separate mechanism, so P1's stable ring positions
+        keep doing real work. Same-weekday is enforced as a forbidden
+        pairing *during* the sequential solve (by the time day N is
+        solved, every earlier day this run and every other period's
+        committed duties are known), then a bounded repair pass
+        (section 7.6) mops up whatever a single day's view still couldn't
+        see. Never touches a locked duty or one a planner already set by
+        hand (source MANUAL/OVERRIDE/RESERVE_FILL) -- only unassigned
+        duties or ones a previous rotate itself produced (GENERATED).
         """
         period = self.get_object()
         if period.status == RosterPeriod.Status.CLOSED:
@@ -297,9 +336,10 @@ class RosterPeriodViewSet(ModelViewSet):
                 g.save(update_fields=["ring_position"])
 
         with schema_context("public"):
-            routes = Route.objects.filter(is_deleted=False, status=Route.Status.APPROVED)
+            routes_qs = list(Route.objects.filter(is_deleted=False, status=Route.Status.APPROVED).select_related("requirement"))
+            routes_by_id = {r.id: r for r in routes_qs}
             demand_rows_by_daytype = defaultdict(list)
-            for r in routes:
+            for r in routes_qs:
                 for dem in r.demand_profiles.filter(effective_to__isnull=True):
                     demand_rows_by_daytype[dem.day_type].append((r.id, dem.slot_count))
 
@@ -329,6 +369,8 @@ class RosterPeriodViewSet(ModelViewSet):
                 )
 
         target_by_key = {(d.service_date, d.route_id, d.slot_index): d for d in editable_duties}
+        route_ids_in_play = {rid for dt in day_types_touched for rid, _ in demand_rows_by_daytype.get(dt, [])}
+        history = _seed_history(rotating_groups, route_ids_in_play, dates[0])
 
         updated = 0
         for date in dates:
@@ -336,19 +378,153 @@ class RosterPeriodViewSet(ModelViewSet):
             if not ring:
                 continue
             shift = services.shift_for_date(policy, date)
-            for g in rotating_groups:
-                slot = services.ring_slot_for_position(ring, g.ring_position + shift)
-                duty = target_by_key.get((date, slot[0], slot[1])) if slot else None
-                if duty is not None:
-                    duty.group = g
-                    duty.source = Duty.Source.GENERATED
-                    duty.save(update_fields=["group", "source", "updated_at"])
-                    updated += 1
+            day_result = services.solve_day_assignment(date, rotating_groups, ring, shift, routes_by_id, history, policy)
+            for (route_id, slot_index), (group, breakdown) in day_result.items():
+                duty = target_by_key.get((date, route_id, slot_index))
+                if duty is None:
+                    continue
+                duty.group = group
+                duty.source = Duty.Source.GENERATED
+                duty.cost_breakdown = breakdown
+                duty.save(update_fields=["group", "source", "cost_breakdown", "updated_at"])
+                updated += 1
+
+        repaired = self._repair_period(period, policy)
 
         return api_response(
-            data={"updated": updated, "conflicts": _compute_conflicts(period)},
-            message=f"{updated} duty(ies) auto-assigned.",
+            data={"updated": updated, "repaired": repaired, "conflicts": _compute_conflicts(period)},
+            message=f"{updated} duty(ies) auto-assigned." + (f" {repaired} conflict(s) repaired." if repaired else ""),
         )
+
+    def _repair_period(self, period, policy):
+        """
+        Doc section 7.6: matching optimises one day at a time, but a few
+        rules span days -- after the daily solve, validate the period as a
+        whole and repair what's found via pairwise swaps: find a
+        violation, find the swap that removes it, apply it, revalidate.
+        The loop ends when no hard violations remain or no improving swap
+        exists, "at which point the remaining conflicts are reported to
+        the admin rather than hidden." Only ever swaps GENERATED duties
+        against each other -- a locked or manually-set duty is exactly as
+        the planner left it.
+
+        The search runs entirely in memory against a working copy of
+        {duty_id: group_id/route_id/service_date} plus one upfront query
+        for cross-period history -- calling the full `_compute_conflicts`
+        (cross-schema route lookups, document checks, the works) for every
+        candidate swap was measured to make this pathologically slow, since
+        a single repair pass can try hundreds of candidate swaps. Same-
+        weekday is the rule being fixed; double-booking is the one a swap
+        between two *different* dates can just as easily introduce (moving
+        a group onto a date it's already got another duty on), so every
+        candidate is screened against `by_group_date` before it's even
+        tried -- never just measured after the fact. The final conflict
+        list returned to the caller still comes from the real, full
+        `_compute_conflicts`.
+        """
+        rows = list(period.duties.filter(group__isnull=False).values("id", "group_id", "route_id", "service_date"))
+        if not rows:
+            return 0
+
+        lookback_days = policy.same_weekday_lookback_weeks * 7
+        earliest = min(r["service_date"] for r in rows) - timedelta(days=lookback_days)
+        latest = max(r["service_date"] for r in rows)
+        group_ids = {r["group_id"] for r in rows}
+        route_ids = {r["route_id"] for r in rows}
+
+        cross_history = defaultdict(list)
+        for r in Duty.objects.filter(
+            group_id__in=group_ids, route_id__in=route_ids,
+            service_date__gte=earliest, service_date__lte=latest,
+            roster_period__is_deleted=False,
+        ).exclude(roster_period=period).values("group_id", "route_id", "service_date"):
+            cross_history[(r["group_id"], r["route_id"])].append(r["service_date"])
+
+        assignments = {r["id"]: {"group_id": r["group_id"], "route_id": r["route_id"], "service_date": r["service_date"]} for r in rows}
+        generated_ids = set(
+            period.duties.filter(source=Duty.Source.GENERATED, group__isnull=False).values_list("id", flat=True)
+        )
+
+        def violating_ids():
+            by_pair = defaultdict(list)
+            for did, a in assignments.items():
+                by_pair[(a["group_id"], a["route_id"])].append((a["service_date"], did))
+            bad = set()
+            for key, entries in by_pair.items():
+                other_dates = cross_history.get(key, [])
+                all_dates = sorted(other_dates + [e[0] for e in entries])
+                for entry_date, did in entries:
+                    for other in all_dates:
+                        if other == entry_date:
+                            continue
+                        if abs((entry_date - other).days) <= lookback_days and other.weekday() == entry_date.weekday():
+                            bad.add(did)
+                            break
+            return bad
+
+        by_group_date = defaultdict(set)
+        for a in assignments.values():
+            by_group_date[a["group_id"]].add(a["service_date"])
+
+        def swap_is_safe(duty_a_id, duty_b_id):
+            a, b = assignments[duty_a_id], assignments[duty_b_id]
+            if a["service_date"] == b["service_date"]:
+                return True  # same-day permutation -- can never double-book
+            if a["service_date"] in (by_group_date[b["group_id"]] - {b["service_date"]}):
+                return False
+            if b["service_date"] in (by_group_date[a["group_id"]] - {a["service_date"]}):
+                return False
+            return True
+
+        hard_ids = violating_ids() & generated_ids
+        if not hard_ids:
+            return 0
+
+        max_iterations = max(len(hard_ids) * 3, 10)
+        candidate_window_days = 14
+        candidate_cap = 30
+        repaired = 0
+
+        for _ in range(max_iterations):
+            hard_ids = violating_ids() & generated_ids
+            if not hard_ids:
+                break
+
+            duty_a_id = next(iter(hard_ids))
+            a = assignments[duty_a_id]
+            nearby_ids = [
+                did for did in generated_ids
+                if did != duty_a_id and did in assignments and assignments[did]["group_id"] != a["group_id"]
+                and abs((assignments[did]["service_date"] - a["service_date"]).days) <= candidate_window_days
+                and swap_is_safe(duty_a_id, did)
+            ][:candidate_cap]
+
+            current_count = len(hard_ids)
+            best_id, best_count = None, current_count
+            for duty_b_id in nearby_ids:
+                b = assignments[duty_b_id]
+                a["group_id"], b["group_id"] = b["group_id"], a["group_id"]
+                trial_count = len(violating_ids() & generated_ids)
+                a["group_id"], b["group_id"] = b["group_id"], a["group_id"]  # revert
+                if trial_count < best_count:
+                    best_id, best_count = duty_b_id, trial_count
+
+            if best_id is None:
+                break
+
+            b = assignments[best_id]
+            by_group_date[a["group_id"]].discard(a["service_date"])
+            by_group_date[b["group_id"]].discard(b["service_date"])
+            a["group_id"], b["group_id"] = b["group_id"], a["group_id"]
+            by_group_date[a["group_id"]].add(a["service_date"])
+            by_group_date[b["group_id"]].add(b["service_date"])
+            repaired += 1
+
+        if repaired:
+            for did, a in assignments.items():
+                Duty.objects.filter(pk=did).update(group_id=a["group_id"])
+
+        return repaired
 
 
 class DutyViewSet(ModelViewSet):
@@ -356,7 +532,7 @@ class DutyViewSet(ModelViewSet):
     http_method_names = ["get", "patch", "head", "options", "post"]
 
     def get_permissions(self):
-        if self.action in ("list", "retrieve"):
+        if self.action in ("list", "retrieve", "explain"):
             return [CanViewVehicles()]
         return [IsOperationsRole()]
 
@@ -577,6 +753,62 @@ class DutyViewSet(ModelViewSet):
             slot_index=next_slot, group=chosen, source=Duty.Source.RESERVE_FILL,
         )
         return api_response(data=DutySerializer(duty).data, message=f"Surge slot filled by {chosen.code}.")
+
+    @action(detail=True, methods=["get"], url_path="explain")
+    def explain(self, request, pk=None, **kwargs):
+        """
+        GET /roster/periods/{period_pk}/duties/{id}/explain/
+        Doc section 7.6/15's per-cell explanation: for a duty the auto-
+        rotation produced, show which weighted cost terms drove the
+        assignment (captured at rotate() time on Duty.cost_breakdown --
+        no recomputation, so this always reflects the actual decision made,
+        not a fresh guess at it). Anything else was a human's call.
+        """
+        duty = self.get_object()
+        if duty.source != Duty.Source.GENERATED or not duty.cost_breakdown:
+            return api_response(data={
+                "generated": False,
+                "message": "This duty was set manually, not by the auto-rotation.",
+            })
+        return api_response(data={"generated": True, **duty.cost_breakdown})
+
+
+class FairShareReportView(views.APIView):
+    """
+    GET /roster/reports/fair-share/?period_id=<id>
+    Doc section 12/15: "the override log plus the fair-share report is the
+    evidence that settles an argument about who got the good routes." A
+    factual per-group, per-route duty-count table over the period -- the
+    doc never defines a "premium route" weighting, so this stays the
+    honest, implementable version: raw exposure, not a subjective score.
+    """
+    permission_classes = [CanViewVehicles]
+
+    def get(self, request):
+        period_id = request.query_params.get("period_id")
+        if not period_id:
+            return api_response(success=False, message="period_id is required.", status_code=400)
+        period = get_object_or_404(RosterPeriod, pk=period_id, is_deleted=False)
+
+        from django_tenants.utils import schema_context
+        from backend.apps.platform.models import Route
+
+        duties = list(period.duties.filter(group__isnull=False).select_related("group"))
+        route_ids = {d.route_id for d in duties}
+        with schema_context("public"):
+            routes_by_id = {r.id: r for r in Route.objects.filter(id__in=route_ids)}
+
+        counts = defaultdict(lambda: defaultdict(int))
+        totals = defaultdict(int)
+        for d in duties:
+            counts[d.group.code][getattr(routes_by_id.get(d.route_id), "route_code", str(d.route_id))] += 1
+            totals[d.group.code] += 1
+
+        rows = [
+            {"group_code": code, "total_duties": totals[code], "by_route": dict(routes)}
+            for code, routes in sorted(counts.items())
+        ]
+        return api_response(data=rows)
 
 
 class MyDutiesView(views.APIView):

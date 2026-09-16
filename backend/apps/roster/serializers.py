@@ -14,7 +14,10 @@ class RotationPolicySerializer(serializers.ModelSerializer):
         model = RotationPolicy
         fields = [
             "id", "ring_step", "week_pattern", "week_step", "epoch_date",
-            "same_weekday_lookback_weeks", "route_cooldown_days", "created_at", "updated_at",
+            "same_weekday_lookback_weeks", "route_cooldown_days",
+            "rotation_preference_weight", "route_cooldown_weight",
+            "max_consecutive_days_same_route", "consecutive_weight", "fair_share_weight",
+            "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 

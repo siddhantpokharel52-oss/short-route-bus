@@ -7,13 +7,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, CalendarRange, Send } from 'lucide-react'
+import { Plus, CalendarRange, Send, Scale } from 'lucide-react'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
 import { Badge } from '@components/shared/Badge'
 import { Modal } from '@components/shared/Modal'
 import { Table, Column } from '@components/shared/Table'
-import rosterService, { RosterPeriod } from '@services/rosterService'
+import rosterService, { RosterPeriod, FairShareRow } from '@services/rosterService'
 import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
 
@@ -30,6 +30,13 @@ export default function RosterPeriodsPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [showCreate, setShowCreate] = useState(false)
+  const [fairShareTarget, setFairShareTarget] = useState<RosterPeriod | null>(null)
+
+  const { data: fairShare = [] } = useQuery({
+    queryKey: ['fair-share', fairShareTarget?.id],
+    queryFn: () => rosterService.fairShareReport(fairShareTarget!.id),
+    enabled: !!fairShareTarget,
+  })
 
   const { data: periods = [], isLoading } = useQuery({
     queryKey: ['roster-periods'],
@@ -79,6 +86,9 @@ export default function RosterPeriodsPage() {
       key: 'actions', header: '', render: (p) => (
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={() => navigate(`/tenant/roster/${p.id}/grid`)}>Open Grid</Button>
+          <Button size="sm" variant="outline" leftIcon={<Scale className="h-3.5 w-3.5" />} onClick={() => setFairShareTarget(p)}>
+            Fair Share
+          </Button>
           {p.status !== 'CLOSED' && (
             <Button
               size="sm" leftIcon={<Send className="h-3.5 w-3.5" />}
@@ -130,6 +140,45 @@ export default function RosterPeriodsPage() {
           </div>
         </form>
       </Modal>
+
+      <Modal open={!!fairShareTarget} onClose={() => setFairShareTarget(null)} title="Fair Share" size="md">
+        <div className="p-6">
+          <p className="mb-3 text-xs text-gray-400">
+            Route exposure per group over this period -- the evidence for settling an argument about who got the good routes.
+          </p>
+          {fairShare.length === 0 ? (
+            <p className="py-8 text-center text-xs text-gray-400">No assigned duties yet for this period.</p>
+          ) : (
+            <FairShareTable rows={fairShare} />
+          )}
+        </div>
+      </Modal>
+    </div>
+  )
+}
+
+function FairShareTable({ rows }: { rows: FairShareRow[] }) {
+  const routeCodes = Array.from(new Set(rows.flatMap((r) => Object.keys(r.by_route)))).sort()
+  return (
+    <div className="overflow-x-auto rounded-lg border border-gray-100">
+      <table className="w-full text-xs">
+        <thead className="bg-gray-50 text-gray-500">
+          <tr>
+            <th className="px-3 py-2 text-left">Group</th>
+            {routeCodes.map((rc) => <th key={rc} className="px-3 py-2 text-left">{rc}</th>)}
+            <th className="px-3 py-2 text-left">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.group_code} className="border-t border-gray-100">
+              <td className="px-3 py-2 font-mono font-medium text-primary-700">{r.group_code}</td>
+              {routeCodes.map((rc) => <td key={rc} className="px-3 py-2">{r.by_route[rc] ?? 0}</td>)}
+              <td className="px-3 py-2 font-semibold">{r.total_duties}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

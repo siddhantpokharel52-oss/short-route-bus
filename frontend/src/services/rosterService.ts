@@ -62,8 +62,35 @@ export interface RotationPolicy {
   epoch_date: string
   same_weekday_lookback_weeks: number
   route_cooldown_days: number
+  rotation_preference_weight: number
+  route_cooldown_weight: number
+  max_consecutive_days_same_route: number
+  consecutive_weight: number
+  fair_share_weight: number
   created_at: string
   updated_at: string
+}
+
+export interface CostComponents {
+  rotation_preference: number
+  route_cooldown: number
+  consecutive_days: number
+  fair_share: number
+}
+
+export interface DutyExplanation {
+  generated: boolean
+  message?: string
+  infeasible?: boolean
+  components?: CostComponents
+  total?: number
+  new_streak?: number
+}
+
+export interface FairShareRow {
+  group_code: string
+  total_duties: number
+  by_route: Record<string, number>
 }
 
 const unwrapList = (data: unknown): unknown[] => {
@@ -154,10 +181,24 @@ const rosterService = {
     return data.data
   },
 
-  rotate: async (periodId: string): Promise<{ updated: number; conflicts: Conflict[] }> => {
-    const { data } = await apiClient.post<ApiResponse<{ updated: number; conflicts: Conflict[] }>>(
+  rotate: async (periodId: string): Promise<{ updated: number; repaired: number; conflicts: Conflict[] }> => {
+    const { data } = await apiClient.post<ApiResponse<{ updated: number; repaired: number; conflicts: Conflict[] }>>(
       `/roster/periods/${periodId}/rotate/`
     )
+    return data.data
+  },
+
+  explainDuty: async (periodId: string, dutyId: string): Promise<DutyExplanation> => {
+    const { data } = await apiClient.get<ApiResponse<DutyExplanation>>(
+      `/roster/periods/${periodId}/duties/${dutyId}/explain/`
+    )
+    return data.data
+  },
+
+  fairShareReport: async (periodId: string): Promise<FairShareRow[]> => {
+    const { data } = await apiClient.get<ApiResponse<FairShareRow[]>>('/roster/reports/fair-share/', {
+      params: { period_id: periodId },
+    })
     return data.data
   },
 }
