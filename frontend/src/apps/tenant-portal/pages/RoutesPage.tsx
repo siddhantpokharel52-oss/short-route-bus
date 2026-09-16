@@ -3,7 +3,7 @@
  */
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, MapPin, Ruler, Trash2, Undo2, Map as MapIcon, CheckCircle, Clock, Eye, Pencil } from 'lucide-react'
+import { Plus, Search, MapPin, Ruler, Trash2, Undo2, Map as MapIcon, CheckCircle, Clock, Eye, Pencil, ShieldCheck } from 'lucide-react'
 import Map, { Marker, Popup, Source, Layer, NavigationControl, useMap } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { BAATO_STYLE_URL } from '@/config/baato'
@@ -215,6 +215,24 @@ function WaypointListRow({
 }
 
 // ── Route interface ──────────────────────────────────────────────────────────
+interface RouteRequirement {
+  id: string
+  mode: 'PER_VEHICLE' | 'GROUP_LEVEL'
+  min_seats: number | null
+  require_ac: boolean
+  allowed_categories: string[]
+  permit_class: string
+  min_total_seats: number | null
+  min_ac_count: number | null
+  category_bounds: Record<string, { min?: number; max?: number }>
+}
+
+interface RouteDemandRow {
+  id: string
+  day_type: 'WEEKDAY' | 'SATURDAY' | 'SUNDAY' | 'HOLIDAY'
+  slot_count: number
+}
+
 interface Route {
   id: string
   route_code: string
@@ -224,6 +242,8 @@ interface Route {
   status: string
   geojson_path: string
   route_stops: { id: string; sequence_no: number; stop_detail: { name_en: string; latitude: string; longitude: string } }[]
+  requirement: RouteRequirement | null
+  demand_profiles: RouteDemandRow[]
 }
 
 // Parse a route's stored GeoJSON LineString back into [lat, lng][] waypoints
@@ -244,6 +264,126 @@ interface RouteForm {
   name_en: string
   name_ne: string
   base_fare: string
+}
+
+const DAY_TYPES: RouteDemandRow['day_type'][] = ['WEEKDAY', 'SATURDAY', 'SUNDAY', 'HOLIDAY']
+
+// Category requirement + per-day-type demand for one route -- Route/Group
+// Rotation doc section 4.7/6.1. A separate small modal rather than folding
+// into the (already large, map-heavy) edit-route modal above, since this is
+// a self-contained sub-resource with its own save action.
+function RequirementDemandModal({
+  route, onClose, onSaveRequirement, onSaveDemand, savingRequirement, savingDemand,
+}: {
+  route: Route
+  onClose: () => void
+  onSaveRequirement: (payload: Partial<RouteRequirement>) => void
+  onSaveDemand: (rows: { day_type: string; slot_count: number }[]) => void
+  savingRequirement: boolean
+  savingDemand: boolean
+}) {
+  const req = route.requirement
+  const [mode, setMode] = useState<RouteRequirement['mode']>(req?.mode ?? 'PER_VEHICLE')
+  const [minSeats, setMinSeats] = useState(req?.min_seats?.toString() ?? '')
+  const [requireAc, setRequireAc] = useState(req?.require_ac ?? false)
+  const [allowedCategories, setAllowedCategories] = useState((req?.allowed_categories ?? []).join(', '))
+  const [permitClass, setPermitClass] = useState(req?.permit_class ?? '')
+  const [minTotalSeats, setMinTotalSeats] = useState(req?.min_total_seats?.toString() ?? '')
+  const [minAcCount, setMinAcCount] = useState(req?.min_ac_count?.toString() ?? '')
+
+  const [demand, setDemand] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {}
+    for (const dt of DAY_TYPES) initial[dt] = ''
+    for (const row of route.demand_profiles ?? []) initial[row.day_type] = String(row.slot_count)
+    return initial
+  })
+
+  return (
+    <Modal open onClose={onClose} title={`Requirement & Demand — ${route.route_code}`} size="md">
+      <div className="space-y-6 p-6">
+        <div>
+          <h3 className="mb-3 text-sm font-semibold text-gray-700">Category Requirement</h3>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Mode</label>
+              <select
+                value={mode} onChange={(e) => setMode(e.target.value as RouteRequirement['mode'])}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="PER_VEHICLE">Per Vehicle -- every bus must match</option>
+                <option value="GROUP_LEVEL">Group Level -- the group's totals must match</option>
+              </select>
+            </div>
+
+            {mode === 'PER_VEHICLE' ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <Input label="Min Seats (per bus)" type="number" value={minSeats} onChange={(e) => setMinSeats(e.target.value)} />
+                  <div className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2.5 mt-6">
+                    <input type="checkbox" id="require_ac" checked={requireAc} onChange={(e) => setRequireAc(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary-600" />
+                    <label htmlFor="require_ac" className="text-sm text-gray-700 cursor-pointer">Require AC on every bus</label>
+                  </div>
+                </div>
+                <Input label="Allowed Categories (comma-separated codes)" placeholder="e.g. DLX-35, EV-30" value={allowedCategories} onChange={(e) => setAllowedCategories(e.target.value)} />
+              </>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Min Total Seats" type="number" value={minTotalSeats} onChange={(e) => setMinTotalSeats(e.target.value)} />
+                <Input label="Min AC Count" type="number" value={minAcCount} onChange={(e) => setMinAcCount(e.target.value)} />
+              </div>
+            )}
+            <Input label="Permit Class" placeholder="e.g. city-A" value={permitClass} onChange={(e) => setPermitClass(e.target.value)} />
+
+            <div className="flex justify-end">
+              <Button
+                size="sm" loading={savingRequirement}
+                onClick={() => onSaveRequirement({
+                  mode,
+                  min_seats: minSeats ? Number(minSeats) : null,
+                  require_ac: requireAc,
+                  allowed_categories: allowedCategories.split(',').map((s) => s.trim()).filter(Boolean),
+                  permit_class: permitClass,
+                  min_total_seats: minTotalSeats ? Number(minTotalSeats) : null,
+                  min_ac_count: minAcCount ? Number(minAcCount) : null,
+                })}
+              >
+                Save Requirement
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-gray-100 pt-5">
+          <h3 className="mb-3 text-sm font-semibold text-gray-700">Demand (slots needed per day type)</h3>
+          <div className="space-y-2">
+            {DAY_TYPES.map((dt) => (
+              <div key={dt} className="flex items-center gap-3">
+                <span className="w-24 text-sm text-gray-600">{dt.charAt(0) + dt.slice(1).toLowerCase()}</span>
+                <input
+                  type="number" min="0" value={demand[dt]}
+                  onChange={(e) => setDemand((prev) => ({ ...prev, [dt]: e.target.value }))}
+                  placeholder="0"
+                  className="w-28 rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
+                />
+                <span className="text-xs text-gray-400">slots</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex justify-end">
+            <Button
+              size="sm" loading={savingDemand}
+              onClick={() => onSaveDemand(
+                DAY_TYPES.filter((dt) => demand[dt] && Number(demand[dt]) > 0)
+                  .map((dt) => ({ day_type: dt, slot_count: Number(demand[dt]) }))
+              )}
+            >
+              Save Demand
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  )
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -285,6 +425,7 @@ export default function RoutesPage() {
   const [viewTarget, setViewTarget] = useState<Route | null>(null)
   const [editTarget, setEditTarget] = useState<Route | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Route | null>(null)
+  const [requirementTarget, setRequirementTarget] = useState<Route | null>(null)
   const [editCode, setEditCode] = useState('')
   const [editNameEn, setEditNameEn] = useState('')
   const [editNameNe, setEditNameNe] = useState('')
@@ -474,6 +615,35 @@ export default function RoutesPage() {
     },
   })
 
+  // Route/Group Rotation doc section 4.7/6.1 -- category requirement and
+  // per-day-type demand, both route sub-resources on the existing route
+  // editor rather than a separate screen.
+  const saveRequirementMutation = useMutation({
+    mutationFn: ({ routeId, payload }: { routeId: string; payload: Partial<RouteRequirement> }) =>
+      apiClient.put(`/platform/routes/${routeId}/requirement/`, payload),
+    onSuccess: () => {
+      toast.success('Route requirement saved.')
+      qc.invalidateQueries({ queryKey: ['routes'] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || 'Failed to save requirement.')
+    },
+  })
+
+  const saveDemandMutation = useMutation({
+    mutationFn: ({ routeId, rows }: { routeId: string; rows: { day_type: string; slot_count: number }[] }) =>
+      apiClient.put(`/platform/routes/${routeId}/demand/`, rows),
+    onSuccess: () => {
+      toast.success('Route demand saved.')
+      qc.invalidateQueries({ queryKey: ['routes'] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || 'Failed to save demand.')
+    },
+  })
+
   const handleMapClick = useCallback((lat: number, lng: number) => {
     setWaypoints((prev) => {
       const idx = insertionIndexFor([lat, lng], prev)
@@ -581,6 +751,13 @@ export default function RoutesPage() {
               className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors"
             >
               <Trash2 className="h-3 w-3" /> {t('common.delete')}
+            </button>
+            <button
+              onClick={() => setRequirementTarget(r)}
+              className="inline-flex items-center gap-1 rounded-lg bg-violet-50 px-2 py-1 text-xs font-medium text-violet-700 hover:bg-violet-100 transition-colors"
+              title="Set the category requirement and per-day-type demand this route needs"
+            >
+              <ShieldCheck className="h-3 w-3" /> Requirement
             </button>
           </div>
           {/* Approval is a Super Admin review gate, not something a tenant
@@ -939,6 +1116,18 @@ export default function RoutesPage() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* ── Route Requirement & Demand Modal ────────────────────────────────── */}
+      {requirementTarget && (
+        <RequirementDemandModal
+          route={requirementTarget}
+          onClose={() => setRequirementTarget(null)}
+          onSaveRequirement={(payload) => saveRequirementMutation.mutate({ routeId: requirementTarget.id, payload })}
+          onSaveDemand={(rows) => saveDemandMutation.mutate({ routeId: requirementTarget.id, rows })}
+          savingRequirement={saveRequirementMutation.isPending}
+          savingDemand={saveDemandMutation.isPending}
+        />
       )}
 
       {/* ── Add Route Modal — map draw ──────────────────────────────────────── */}

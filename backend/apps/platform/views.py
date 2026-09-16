@@ -11,14 +11,14 @@ from django.db.models import Q
 from .models import (
     Stop, StopAnalytics, Route, RouteStop, RouteAssignment, RouteDiversion,
     TicketType, FareMatrix, SmartCard, CardTransaction, CardRecharge, FarePolicy,
-    AdminNotification, SuggestedStop,
+    AdminNotification, SuggestedStop, RouteRequirement, RouteDemand,
 )
 from .serializers import (
     StopSerializer, StopAnalyticsSerializer, RouteSerializer, RouteStopSerializer,
     RouteAssignmentSerializer, RouteDiversionSerializer, TicketTypeSerializer,
     FareMatrixSerializer, SmartCardSerializer, CardTransactionSerializer,
     CardRechargeSerializer, FarePolicySerializer, AdminNotificationSerializer,
-    SuggestedStopSerializer,
+    SuggestedStopSerializer, RouteRequirementSerializer, RouteDemandSerializer,
 )
 from backend.apps.users.permissions import (
     IsSuperAdmin, IsPlatformRole, IsTransportAuthority, CanManageRoutes, CanViewFares,
@@ -228,7 +228,7 @@ class RouteViewSet(ModelViewSet):
                 assignments__tenant_id=tenant_id,
                 assignments__status=RouteAssignment.Status.ACTIVE,
             ).distinct()
-        return qs.prefetch_related("assignments__tenant", "route_stops__stop")
+        return qs.prefetch_related("assignments__tenant", "route_stops__stop", "demand_profiles").select_related("requirement")
 
     def get_permissions(self):
         # "stops" is a read-only lookup action — allow unauthenticated access
@@ -672,6 +672,40 @@ class RouteViewSet(ModelViewSet):
             status_code=status.HTTP_201_CREATED,
         )
 
+    @action(detail=True, methods=["put"])
+    def requirement(self, request, pk=None):
+        """
+        PUT /platform/routes/{id}/requirement/
+        Sets the category requirement and its mode -- doc section 4.7/5.4.
+        """
+        route = self.get_object()
+        instance = getattr(route, "requirement", None)
+        serializer = RouteRequirementSerializer(instance, data=request.data, partial=instance is not None)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(route=route)
+        return api_response(data=serializer.data, message="Route requirement saved.")
+
+    @action(detail=True, methods=["put"])
+    def demand(self, request, pk=None):
+        """
+        PUT /platform/routes/{id}/demand/
+        Body: [{day_type, slot_count}, ...] -- replaces this route's current
+        demand profile (doc section 6.1). Slice 1 keeps this a plain replace
+        rather than a dated history; the doc's own "policy changed mid-week"
+        edge case is roster-engine territory, deferred to Slice 2.
+        """
+        route = self.get_object()
+        rows = request.data if isinstance(request.data, list) else request.data.get("demand", [])
+        today = timezone.now().date()
+        route.demand_profiles.filter(effective_to__isnull=True).delete()
+        created = [
+            RouteDemand.objects.create(
+                route=route, day_type=row["day_type"], slot_count=row["slot_count"],
+                effective_from=row.get("effective_from") or today,
+            )
+            for row in rows
+        ]
+        return api_response(data=RouteDemandSerializer(created, many=True).data, message="Route demand saved.")
 
 class TicketTypeViewSet(ModelViewSet):
     queryset = TicketType.objects.filter(is_active=True)

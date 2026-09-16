@@ -24,6 +24,9 @@ export interface Vehicle {
   capacity_standing: number
   fuel_type: 'DIESEL' | 'PETROL' | 'CNG' | 'ELECTRIC' | 'HYBRID'
   engine_capacity_cc: number | null
+  category: string | null
+  category_code: string | null
+  category_name: string | null
   status: 'ACTIVE' | 'AVAILABLE' | 'ASSIGNED' | 'IN_SERVICE' | 'IN_MAINTENANCE' | 'INACTIVE' | 'RETIRED' | 'BREAKDOWN'
   assigned_route_id: string | null
   odometer_km: number

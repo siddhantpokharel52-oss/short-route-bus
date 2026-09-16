@@ -1,6 +1,8 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import TenantLayout from './components/TenantLayout'
 import FleetPage from './pages/FleetPage'
+import VehicleCategoriesPage from './pages/VehicleCategoriesPage'
+import VehicleGroupsPage from './pages/VehicleGroupsPage'
 import DriversPage from './pages/DriversPage'
 import ConductorsPage from './pages/ConductorsPage'
 import SchedulingPage from './pages/SchedulingPage'
@@ -27,6 +29,8 @@ export default function TenantApp() {
 
         {/* Fleet & Staff */}
         <Route path="fleet" element={<FleetPage />} />
+        <Route path="vehicle-categories" element={<VehicleCategoriesPage />} />
+        <Route path="vehicle-groups" element={<VehicleGroupsPage />} />
         <Route path="drivers" element={<DriversPage />} />
         <Route path="conductors" element={<ConductorsPage />} />
 

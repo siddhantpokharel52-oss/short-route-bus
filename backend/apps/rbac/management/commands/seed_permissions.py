@@ -22,6 +22,26 @@ MODULES = [
         ],
     },
     {
+        'module': 'Vehicle Categories',
+        'module_key': 'vehicle_categories',
+        'actions': [
+            ('view',   'View Categories',  'View vehicle categories',           1),
+            ('add',    'Add Category',     'Create new vehicle categories',     2),
+            ('edit',   'Edit Category',    'Update vehicle category details',   3),
+            ('delete', 'Delete Category',  'Remove vehicle categories',         4),
+        ],
+    },
+    {
+        'module': 'Vehicle Groups',
+        'module_key': 'vehicle_groups',
+        'actions': [
+            ('view',   'View Groups',   'View vehicle groups and membership',        1),
+            ('add',    'Add Group',     'Create new vehicle groups',                 2),
+            ('edit',   'Edit Group',    'Update group membership and composition',   3),
+            ('delete', 'Delete Group',  'Remove vehicle groups',                     4),
+        ],
+    },
+    {
         'module': 'Drivers',
         'module_key': 'drivers',
         'actions': [

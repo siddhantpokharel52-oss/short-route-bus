@@ -53,6 +53,14 @@ class Vehicle(models.Model):
     owner_name = models.CharField(max_length=255, blank=True)
     owner_phone = models.CharField(max_length=20, blank=True)
 
+    # ── Category ─────────────────────────────────────────────────
+    # Nullable so existing fleets keep working uncategorised until an admin
+    # assigns one -- see VehicleCategory below. A vehicle must have a
+    # category before it can join a VehicleGroup (GroupMember.clean()).
+    category = models.ForeignKey(
+        "VehicleCategory", null=True, blank=True, on_delete=models.PROTECT, related_name="vehicles"
+    )
+
     # ── Operational ──────────────────────────────────────────────
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
     assigned_route_id = models.UUIDField(null=True, blank=True)
@@ -166,3 +174,223 @@ class VehicleGPS(models.Model):
 
     def __str__(self):
         return f"GPS {self.device_id} - {self.vehicle.registration_no}"
+
+
+class VehicleCategory(models.Model):
+    """An operator-defined class of bus (e.g. "Deluxe AC 35-seat"), reused
+    across every vehicle and group of that class. Route/Driver -Sha-requirements/
+    route-group-rotation-documentation.docx section 4.2 -- the properties here
+    decide route eligibility, fare class and capacity planning, so a category
+    change is meant to be deliberate, not a casual tag edit."""
+    class BodyClass(models.TextChoices):
+        MICRO = "MICRO", "Micro"
+        MINI = "MINI", "Mini"
+        STANDARD = "STANDARD", "Standard"
+        DELUXE = "DELUXE", "Deluxe"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(max_length=20, unique=True, help_text="Short handle, e.g. DLX-35")
+    name_en = models.CharField(max_length=255)
+    name_ne = models.CharField(max_length=255, blank=True)
+    seating_capacity = models.PositiveSmallIntegerField()
+    body_class = models.CharField(max_length=10, choices=BodyClass.choices, default=BodyClass.STANDARD)
+    air_conditioned = models.BooleanField(default=False)
+    fuel_type = models.CharField(max_length=10, choices=Vehicle.FuelType.choices, default=Vehicle.FuelType.DIESEL)
+    permit_class = models.CharField(max_length=50, blank=True)
+    attributes = models.JSONField(default=dict, blank=True, help_text="Open extension: low floor, luggage rack, WiFi")
+    is_active = models.BooleanField(default=True)
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by_id = models.UUIDField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["code"]
+        verbose_name_plural = "vehicle categories"
+        indexes = [models.Index(fields=["is_deleted"])]
+
+    def __str__(self):
+        return f"{self.code} - {self.name_en}"
+
+
+class VehicleGroup(models.Model):
+    """A set of vehicles that move together, usually four -- the unit of
+    assignment to a route (Route/Group Rotation doc section 3.3). The
+    capability_* fields are a derived profile, never entered by hand -- see
+    GroupMember.save()/delete() below, which recompute them on every
+    membership change."""
+    class Kind(models.TextChoices):
+        ROTATING = "ROTATING", "Rotating"
+        FIXED = "FIXED", "Fixed"
+        RESERVE = "RESERVE", "Reserve"
+
+    class CompositionMode(models.TextChoices):
+        UNIFORM = "UNIFORM", "Uniform"
+        MIXED = "MIXED", "Mixed"
+
+    class Status(models.TextChoices):
+        ACTIVE = "ACTIVE", "Active"
+        INACTIVE = "INACTIVE", "Inactive"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(max_length=20, unique=True, help_text="Short handle, e.g. G-03")
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.ROTATING)
+    composition_mode = models.CharField(max_length=10, choices=CompositionMode.choices, default=CompositionMode.UNIFORM)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
+
+    # ── Derived capability profile (section 4.6) -- recomputed by
+    # GroupMember, never written directly elsewhere. ──────────────────────
+    capability_min_seats = models.PositiveSmallIntegerField(default=0)
+    capability_total_seats = models.PositiveIntegerField(default=0)
+    capability_all_ac = models.BooleanField(default=False)
+    capability_ac_count = models.PositiveSmallIntegerField(default=0)
+    capability_categories = models.JSONField(default=dict, blank=True, help_text="{category_code: member_count}")
+    capability_permit_classes = models.JSONField(default=list, blank=True)
+    capability_computed_at = models.DateTimeField(null=True, blank=True)
+
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by_id = models.UUIDField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["code"]
+        indexes = [models.Index(fields=["is_deleted"]), models.Index(fields=["kind"])]
+
+    def __str__(self):
+        return self.code
+
+    def recompute_capability(self):
+        """Rebuilds the derived profile from every currently-open
+        membership. Called by GroupMember.save()/delete() -- see there for
+        why an explicit call beats a signal here."""
+        members = self.members.filter(valid_to__isnull=True).select_related("vehicle", "vehicle__category")
+        categories = {}
+        permit_classes = set()
+        seats = []
+        ac_count = 0
+        for m in members:
+            cat = m.vehicle.category
+            if cat is None:
+                continue
+            categories[cat.code] = categories.get(cat.code, 0) + 1
+            if cat.permit_class:
+                permit_classes.add(cat.permit_class)
+            seats.append(cat.seating_capacity)
+            if cat.air_conditioned:
+                ac_count += 1
+
+        self.capability_min_seats = min(seats) if seats else 0
+        self.capability_total_seats = sum(seats)
+        self.capability_all_ac = bool(seats) and ac_count == len(seats)
+        self.capability_ac_count = ac_count
+        self.capability_categories = categories
+        self.capability_permit_classes = sorted(permit_classes)
+        self.capability_computed_at = timezone.now()
+        self.save(update_fields=[
+            "capability_min_seats", "capability_total_seats", "capability_all_ac",
+            "capability_ac_count", "capability_categories", "capability_permit_classes",
+            "capability_computed_at",
+        ])
+
+
+class GroupCompositionRule(models.Model):
+    """The rule set a group's membership is checked against, applied at
+    group creation and at every membership change (doc section 4.5). A row
+    with group=None is the operator-wide default; a row with group set
+    overrides it for that one group."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    group = models.OneToOneField(VehicleGroup, null=True, blank=True, on_delete=models.CASCADE, related_name="composition_rule")
+    allow_mixed = models.BooleanField(default=True)
+    group_size = models.PositiveSmallIntegerField(default=4)
+    max_categories_per_group = models.PositiveSmallIntegerField(default=2)
+    capacity_spread_limit = models.PositiveSmallIntegerField(default=15, help_text="Largest allowed seat gap between the biggest and smallest member")
+    permit_class_match = models.BooleanField(default=True)
+    required_composition = models.JSONField(null=True, blank=True, help_text="Optional template, e.g. {'DLX-35': 2, 'STD-40': 2}")
+    spares_allowed = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Composition rule for {self.group.code}" if self.group_id else "Operator-wide default"
+
+
+class GroupMember(models.Model):
+    """One vehicle's membership in a group, time-ranged (doc section 13) so
+    the system can always answer which buses were in a group on a given
+    date. valid_to=None means the membership is currently open."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    group = models.ForeignKey(VehicleGroup, on_delete=models.CASCADE, related_name="members")
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.PROTECT, related_name="group_memberships")
+    valid_from = models.DateField(auto_now_add=True)
+    valid_to = models.DateField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-valid_from"]
+        indexes = [models.Index(fields=["group", "valid_to"]), models.Index(fields=["vehicle", "valid_to"])]
+
+    def __str__(self):
+        return f"{self.vehicle.registration_no} in {self.group.code}"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.valid_to is not None:
+            return  # closing a membership never needs a composition check
+
+        if GroupMember.objects.filter(vehicle=self.vehicle, valid_to__isnull=True).exclude(pk=self.pk).exists():
+            raise ValidationError("This vehicle is already an open member of a group.")
+
+        if self.vehicle.category_id is None:
+            raise ValidationError("Vehicle has no category set -- assign one before adding it to a group.")
+
+        # Fall back to the doc's own default values (section 4.5's "Default"
+        # column) when no operator has configured a rule row yet -- an
+        # unconfigured operator should still get the safe defaults, not an
+        # unenforced free-for-all.
+        rule = getattr(self.group, "composition_rule", None) or GroupCompositionRule.objects.filter(group__isnull=True).first()
+        if rule is None:
+            rule = GroupCompositionRule(group=None)  # unsaved, doc defaults from the field definitions apply
+
+        existing = list(
+            GroupMember.objects.filter(group=self.group, valid_to__isnull=True)
+            .exclude(pk=self.pk)
+            .select_related("vehicle__category")
+        )
+        prospective_categories = {m.vehicle.category for m in existing if m.vehicle.category_id}
+        prospective_categories.add(self.vehicle.category)
+
+        if self.group.composition_mode == VehicleGroup.CompositionMode.UNIFORM and len(prospective_categories) > 1:
+            raise ValidationError("This group is uniform -- every member must share one category.")
+
+        if not rule.allow_mixed and len(prospective_categories) > 1:
+            raise ValidationError("Mixed-category groups are not allowed by the current composition rule.")
+
+        if len(prospective_categories) > rule.max_categories_per_group:
+            raise ValidationError(
+                f"Adding this vehicle would bring the group to {len(prospective_categories)} categories, "
+                f"more than the max of {rule.max_categories_per_group} allowed."
+            )
+
+        seats = [c.seating_capacity for c in prospective_categories]
+        spread = max(seats) - min(seats)
+        if spread > rule.capacity_spread_limit:
+            raise ValidationError(
+                f"Adding this vehicle would create a {spread}-seat spread between the largest and smallest "
+                f"member, more than the {rule.capacity_spread_limit}-seat limit."
+            )
+
+        if rule.permit_class_match:
+            permit_classes = {c.permit_class for c in prospective_categories if c.permit_class}
+            if len(permit_classes) > 1:
+                raise ValidationError("All members must share a permit class.")
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self.group.recompute_capability()
+
+    def delete(self, *args, **kwargs):
+        group = self.group
+        super().delete(*args, **kwargs)
+        group.recompute_capability()

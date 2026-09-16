@@ -231,6 +231,66 @@ class RouteAssignment(models.Model):
         return f"{self.route.route_code} → {self.tenant.name}"
 
 
+class RouteRequirement(models.Model):
+    """What kind of bus a route needs -- Route/Group Rotation doc section
+    4.7. allowed_categories/category_bounds hold VehicleCategory *codes*
+    (strings), not an FK: VehicleCategory lives in the tenant schema and
+    Route lives here in the shared schema, so this follows the same
+    bare-reference convention already used for Vehicle.assigned_route_id
+    rather than attempting a cross-schema FK."""
+    class Mode(models.TextChoices):
+        PER_VEHICLE = "PER_VEHICLE", "Per Vehicle"
+        GROUP_LEVEL = "GROUP_LEVEL", "Group Level"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    route = models.OneToOneField(Route, on_delete=models.CASCADE, related_name="requirement")
+    mode = models.CharField(max_length=15, choices=Mode.choices, default=Mode.PER_VEHICLE)
+
+    # Per-vehicle mode -- checked against every member of a group.
+    min_seats = models.PositiveSmallIntegerField(null=True, blank=True)
+    require_ac = models.BooleanField(default=False)
+    allowed_categories = models.JSONField(default=list, blank=True, help_text="List of VehicleCategory codes")
+    permit_class = models.CharField(max_length=50, blank=True)
+
+    # Group-level mode -- checked against the group's totals.
+    min_total_seats = models.PositiveIntegerField(null=True, blank=True)
+    min_ac_count = models.PositiveSmallIntegerField(null=True, blank=True)
+    category_bounds = models.JSONField(default=dict, blank=True, help_text='e.g. {"MICRO-18": {"max": 1}}')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Requirement for {self.route.route_code}"
+
+
+class RouteDemand(models.Model):
+    """How many slots a route needs, per day type -- doc section 6.1/6.2.
+    day_type reuses scheduling.Timetable's four values (WEEKDAY/SATURDAY/
+    SUNDAY/HOLIDAY) so the two apps agree on one day-type vocabulary rather
+    than each defining its own."""
+    class DayType(models.TextChoices):
+        WEEKDAY = "WEEKDAY", "Weekday"
+        SATURDAY = "SATURDAY", "Saturday"
+        SUNDAY = "SUNDAY", "Sunday"
+        HOLIDAY = "HOLIDAY", "Holiday"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    route = models.ForeignKey(Route, on_delete=models.CASCADE, related_name="demand_profiles")
+    day_type = models.CharField(max_length=10, choices=DayType.choices)
+    slot_count = models.PositiveSmallIntegerField()
+    effective_from = models.DateField()
+    effective_to = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [["route", "day_type", "effective_from"]]
+        ordering = ["route", "day_type", "-effective_from"]
+
+    def __str__(self):
+        return f"{self.route.route_code} · {self.day_type}: {self.slot_count} slots"
+
+
 class RouteVersion(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     route = models.ForeignKey(Route, on_delete=models.CASCADE, related_name="versions")

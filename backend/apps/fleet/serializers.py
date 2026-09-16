@@ -1,6 +1,10 @@
 from rest_framework import serializers
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
-from .models import Vehicle, VehicleDocument, VehicleInsurance, VehicleGPS
+from .models import (
+    Vehicle, VehicleDocument, VehicleInsurance, VehicleGPS,
+    VehicleCategory, VehicleGroup, GroupMember, GroupCompositionRule,
+)
 
 
 class VehicleDocumentSerializer(serializers.ModelSerializer):
@@ -30,6 +34,8 @@ class VehicleSerializer(serializers.ModelSerializer):
     documents = VehicleDocumentSerializer(many=True, read_only=True)
     gps_device = VehicleGPSSerializer(read_only=True)
     is_available_for_trip = serializers.ReadOnlyField()
+    category_code = serializers.CharField(source="category.code", read_only=True, default=None)
+    category_name = serializers.CharField(source="category.name_en", read_only=True, default=None)
 
     # ── Write-only: Insurance (creates VehicleInsurance on save) ──────────────
     insurance_policy_no = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -52,6 +58,8 @@ class VehicleSerializer(serializers.ModelSerializer):
             "chassis_no", "engine_no",
             # capacity & specs
             "capacity_seated", "capacity_standing", "fuel_type", "engine_capacity_cc",
+            # category
+            "category", "category_code", "category_name",
             # operational
             "status", "assigned_route_id", "current_driver_id", "current_conductor_id",
             "gps_device_id", "odometer_km",
@@ -172,3 +180,79 @@ class VehicleExpiryAlertSerializer(serializers.ModelSerializer):
             "id", "vehicle", "vehicle_registration", "doc_type",
             "doc_no", "expiry_date", "days_to_expiry",
         ]
+
+
+class VehicleCategorySerializer(serializers.ModelSerializer):
+    vehicle_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = VehicleCategory
+        fields = [
+            "id", "code", "name_en", "name_ne", "seating_capacity", "body_class",
+            "air_conditioned", "fuel_type", "permit_class", "attributes",
+            "is_active", "vehicle_count", "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_vehicle_count(self, obj):
+        return obj.vehicles.filter(is_deleted=False).count()
+
+
+class GroupMemberVehicleSerializer(serializers.Serializer):
+    """Slim read-only vehicle shape nested inside a group's member list --
+    a full VehicleSerializer would pull in documents/gps_device for every
+    member, which the group screens never need."""
+    id = serializers.UUIDField(read_only=True)
+    registration_no = serializers.CharField(read_only=True)
+    category_code = serializers.CharField(source="category.code", read_only=True, default=None)
+    category_name = serializers.CharField(source="category.name_en", read_only=True, default=None)
+
+
+class GroupMemberSerializer(serializers.ModelSerializer):
+    vehicle_detail = GroupMemberVehicleSerializer(source="vehicle", read_only=True)
+
+    class Meta:
+        model = GroupMember
+        fields = ["id", "group", "vehicle", "vehicle_detail", "valid_from", "valid_to"]
+        # group is injected server-side by GroupMemberViewSet.perform_create() from
+        # the URL's group_pk, same pattern as VehicleDocumentSerializer.vehicle.
+        read_only_fields = ["id", "group", "valid_from", "valid_to"]
+
+    def validate(self, attrs):
+        # Run full_clean() here (not just in the view) so DRF's is_valid()
+        # surfaces composition-rule violations as a normal field/non-field
+        # error instead of the view having to catch a raised ValidationError.
+        instance = GroupMember(group=self.context["group"], vehicle=attrs["vehicle"])
+        try:
+            instance.clean()
+        except DjangoValidationError as e:
+            raise serializers.ValidationError({"vehicle": e.messages})
+        return attrs
+
+
+class VehicleGroupSerializer(serializers.ModelSerializer):
+    members = GroupMemberSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = VehicleGroup
+        fields = [
+            "id", "code", "kind", "composition_mode", "status",
+            "capability_min_seats", "capability_total_seats", "capability_all_ac",
+            "capability_ac_count", "capability_categories", "capability_permit_classes",
+            "capability_computed_at", "members", "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "id", "capability_min_seats", "capability_total_seats", "capability_all_ac",
+            "capability_ac_count", "capability_categories", "capability_permit_classes",
+            "capability_computed_at", "created_at", "updated_at",
+        ]
+
+
+class GroupCompositionRuleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GroupCompositionRule
+        fields = [
+            "id", "group", "allow_mixed", "group_size", "max_categories_per_group",
+            "capacity_spread_limit", "permit_class_match", "required_composition", "spares_allowed",
+        ]
+        read_only_fields = ["id"]

@@ -4,6 +4,7 @@ from .models import (
     RouteVersion, RouteDiversion, TicketType, FareMatrix, SmartCard,
     CardTransaction, CardRecharge, FarePolicy, ZoneFare, DistanceFare,
     PeakFareSurcharge, DiscountRule, AdminNotification, SuggestedStop,
+    RouteRequirement, RouteDemand,
 )
 
 
@@ -88,6 +89,24 @@ class RouteOperatorSerializer(serializers.ModelSerializer):
         fields = ["tenant_id", "tenant_name", "schema_name", "status", "share_percentage"]
 
 
+class RouteRequirementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RouteRequirement
+        fields = [
+            "id", "route", "mode", "min_seats", "require_ac", "allowed_categories",
+            "permit_class", "min_total_seats", "min_ac_count", "category_bounds",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "route", "created_at", "updated_at"]
+
+
+class RouteDemandSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RouteDemand
+        fields = ["id", "route", "day_type", "slot_count", "effective_from", "effective_to", "created_at"]
+        read_only_fields = ["id", "route", "created_at"]
+
+
 class RouteSerializer(serializers.ModelSerializer):
     route_stops = RouteStopSerializer(many=True, read_only=True)
     start_stop = serializers.PrimaryKeyRelatedField(
@@ -99,13 +118,16 @@ class RouteSerializer(serializers.ModelSerializer):
     name_ne = serializers.CharField(required=False, allow_blank=True, default="")
     distance_km = serializers.DecimalField(max_digits=8, decimal_places=2, required=False, default=0)
     operators = RouteOperatorSerializer(source="assignments", many=True, read_only=True)
+    requirement = RouteRequirementSerializer(read_only=True)
+    demand_profiles = RouteDemandSerializer(many=True, read_only=True)
 
     class Meta:
         model = Route
         fields = [
             "id", "route_code", "name_en", "name_ne", "start_stop", "end_stop",
             "distance_km", "route_type", "status", "geojson_path",
-            "approved_by", "approved_at", "route_stops", "operators", "created_at", "updated_at",
+            "approved_by", "approved_at", "route_stops", "operators",
+            "requirement", "demand_profiles", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "approved_by", "approved_at", "created_at", "updated_at"]
 

@@ -7,6 +7,8 @@
     "busStops": "Bus Stops",
     "fares": "Fares",
     "fleetManagement": "Fleet Management",
+    "vehicleCategories": "Vehicle Categories",
+    "vehicleGroups": "Vehicle Groups",
     "drivers": "Drivers",
     "collectors": "Collectors",
     "ticketing": "Ticketing",
