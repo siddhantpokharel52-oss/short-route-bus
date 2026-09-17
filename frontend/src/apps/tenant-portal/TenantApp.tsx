@@ -17,6 +17,7 @@ import RoutesPage from './pages/RoutesPage'
 import StopsPage from './pages/StopsPage'
 import FaresPage from './pages/FaresPage'
 import AccountingPage from './pages/AccountingPage'
+import PaymentIntegrationPage from './pages/PaymentIntegrationPage'
 // ── New operations modules ────────────────────────────────────────────────────
 import LiveTrackingPage from './pages/LiveTrackingPage'
 import DispatchPage from './pages/DispatchPage'
@@ -58,6 +59,7 @@ export default function TenantApp() {
         <Route path="maintenance" element={<MaintenancePage />} />
         <Route path="analytics" element={<TenantAnalyticsPage />} />
         <Route path="accounting" element={<AccountingPage />} />
+        <Route path="payment-integration" element={<PaymentIntegrationPage />} />
         <Route path="settings" element={<TenantSettingsPage />} />
         <Route path="roles" element={<RolesPermissionsPage />} />
       </Routes>

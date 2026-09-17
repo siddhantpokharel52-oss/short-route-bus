@@ -110,6 +110,7 @@ def on_ticket_created(sender, instance, created, **kwargs):
         "KHALTI": "1120",
         "FONEPAY": "1120",
         "CONNECTIPS": "1120",
+        "NAMASTEPAY": "1120",
     }
     debit_code = payment_map.get(instance.payment_method, "1110")
 

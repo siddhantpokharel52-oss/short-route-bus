@@ -266,6 +266,13 @@ ESEWA_MERCHANT_ID = config("ESEWA_MERCHANT_ID", default="")
 KHALTI_SECRET_KEY = config("KHALTI_SECRET_KEY", default="")
 FONEPAY_MERCHANT_ID = config("FONEPAY_MERCHANT_ID", default="")
 
+# Fernet key backing django-encrypted-model-fields (ticketing.NamastePayConfig.client_secret,
+# and any future per-tenant secret). The default is a real, usable key so local dev works
+# out of the box -- production MUST override this via env var, same as SECRET_KEY.
+FIELD_ENCRYPTION_KEY = config(
+    "FIELD_ENCRYPTION_KEY", default="ZnSLHavPaFFULbibe9J_vJc2dBAQwgbeKIKhPGl5jok="
+)
+
 # AWS / Storage
 AWS_S3_BUCKET = config("AWS_S3_BUCKET", default="")
 AWS_ACCESS_KEY_ID = config("AWS_ACCESS_KEY_ID", default="")

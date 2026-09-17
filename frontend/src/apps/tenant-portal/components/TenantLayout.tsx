@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Bus, Users, Ticket,
   Wrench, UserCheck, BarChart3, Settings, Menu, X,
   Bell, LogOut, Route, MapPin, BookOpen,
-  Zap, Activity, ShieldCheck, Wallet, Layers, Users2, CalendarRange, CalendarDays,
+  Zap, Activity, ShieldCheck, Wallet, Layers, Users2, CalendarRange, CalendarDays, CreditCard,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -60,6 +60,7 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
     { to: '/tenant/maintenance', icon: Wrench, label: t('nav.maintenance') },
     { to: '/tenant/analytics', icon: BarChart3, label: t('nav.analytics') },
     { to: '/tenant/accounting', icon: BookOpen, label: t('nav.accounting') },
+    { to: '/tenant/payment-integration', icon: CreditCard, label: t('nav.paymentIntegration', { defaultValue: 'Payment Integration' }) },
     { to: '/tenant/roles', icon: ShieldCheck, label: t('nav.rolesPermissions') },
     { to: '/tenant/settings', icon: Settings, label: t('nav.settings') },
   ]

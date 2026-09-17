@@ -1,5 +1,6 @@
 import uuid
 from django.db import models
+from encrypted_model_fields.fields import EncryptedCharField
 
 
 class Ticket(models.Model):
@@ -10,6 +11,7 @@ class Ticket(models.Model):
         KHALTI = "KHALTI", "Khalti"
         FONEPAY = "FONEPAY", "Fonepay"
         CONNECTIPS = "CONNECTIPS", "ConnectIPS"
+        NAMASTEPAY = "NAMASTEPAY", "NamastePay"
 
     class Status(models.TextChoices):
         VALID = "VALID", "Valid"
@@ -76,6 +78,30 @@ class MonthlyPass(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["passenger_id", "month"])]
+
+
+class NamastePayConfig(models.Model):
+    """A tenant's own NamastePay merchant credentials -- every tenant hits
+    the same NamastePay API (shared base URLs, shared request/response
+    shapes), but authenticates with their own client_id/client_secret, so
+    this is a singleton-per-tenant row, same shape as staff.BusCompany.
+    client_secret is encrypted at rest (django-encrypted-model-fields,
+    already an installed dependency) since it's effectively a password
+    that can move the tenant's own revenue."""
+    class Environment(models.TextChoices):
+        TEST = "TEST", "Test"
+        LIVE = "LIVE", "Live"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    client_id = models.CharField(max_length=255, blank=True)
+    client_secret = EncryptedCharField(max_length=255, blank=True)
+    environment = models.CharField(max_length=4, choices=Environment.choices, default=Environment.TEST)
+    is_active = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"NamastePay config ({self.environment})"
 
 
 class StudentPass(models.Model):

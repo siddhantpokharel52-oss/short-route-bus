@@ -12,4 +12,6 @@ urlpatterns = [
     path("passes/daily/issue/", views.IssueDailyPassView.as_view(), name="issue-daily-pass"),
     path("passes/monthly/issue/", views.IssueMonthlyPassView.as_view(), name="issue-monthly-pass"),
     path("passes/student/issue/", views.IssueStudentPassView.as_view(), name="issue-student-pass"),
+    path("payment-gateway/", views.NamastePayConfigView.as_view(), name="namastepay-config"),
+    path("payment-gateway/test/", views.NamastePayTestConnectionView.as_view(), name="namastepay-test"),
 ]

@@ -17,6 +17,7 @@
     "maintenance": "Maintenance",
     "analytics": "Analytics",
     "accounting": "Accounting",
+    "paymentIntegration": "Payment Integration",
     "rolesPermissions": "Roles & Permissions",
     "settings": "Settings",
     "logoutSuccess": "Logged out successfully",

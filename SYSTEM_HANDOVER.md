@@ -2,7 +2,7 @@
 
 **Kathmandu Valley Bus Management System** — a multi-tenant SaaS for bus operators, with a public-facing site, a platform Super Admin portal, and a per-operator Tenant Portal. This document captures the state of the project after an extended work session so a future session can continue without re-deriving context.
 
-Written: 2026-07-06.
+Written: 2026-07-06. Updated: 2026-09-16 (see §10 for everything since the original write-up).
 
 ---
 
@@ -211,3 +211,81 @@ These `tsc --noEmit` errors existed before this session and are unrelated to any
 3. Convert `VerifyTicketView` to `POST` (Finding #4) — coordinate with the frontend call site.
 4. Consider rate limiting (Finding #6) if this is heading toward production traffic.
 5. Decide whether `inventory` becomes a real feature; if so, wire up both the backend URL and a frontend route/sidebar entry together.
+
+---
+
+## 10. Session update (2026-09-16) — Route/Group Rotation engine + NamastePay payment integration groundwork
+
+A later, separate work session. Sections 1–9 above are still accurate as architecture/history; this section covers everything built since.
+
+### Chronological summary
+
+1. **QA regression pass** — worked a spreadsheet of 10 failing test tickets; verified most were already fixed by commits predating this session, confirmed the rest live (created real data, tested through the actual UI rather than trusting commit messages). One (#4) stayed blocked pending reporter clarification — unrelated to this session's code.
+2. **Accounting data repair** — found 4 pre-existing `JournalEntry` rows on the `mayurbus` tenant with zero `JournalEntryLine`s (created before that tenant's Chart of Accounts existed). Backfilled locally and wrote a generalized, idempotent script for production: `backend/scripts/backfill_journal_lines.py` (commit `e2aceabf`). **Not yet run in production** — the exact command is in that commit's file header.
+3. **Route & Group Rotation subsystem** — a full new feature area, built against a client-supplied spec doc (`/home/aadarsha/Documents/Sha-requirements/route-group-rotation-documentation.docx`) in 4 slices matching the doc's own P0–P2 phase plan. See the dedicated subsection below.
+4. **NamastePay payment integration (credentials + gateway plumbing only)** — per-tenant encrypted payment-gateway credentials, a gateway client, and a settings page. See dedicated subsection below. Verified live against NamastePay's real TEST API (see below).
+
+### Route & Group Rotation — what it is and what's built
+
+A vehicle-group rostering system: operators define vehicle *categories* (e.g. "Deluxe AC 35-seat"), group vehicles into *groups* (the actual unit assigned to a route, not individual buses), configure which categories a route needs and how many slots per day-type, then generate/publish a dated roster of which group runs which route on which day.
+
+| Slice | Doc phase | What it adds | Commit | Status |
+|---|---|---|---|---|
+| 1 | Foundation | `VehicleCategory`, `VehicleGroup` (+ derived capability profile, composition rules), `RouteRequirement`/`RouteDemand`, eligibility check, balance check | `aafd71f0` | Deployed to prod: **no** |
+| 2 | P0 | New `roster` app: `RosterPeriod`/`Duty`/`DutyOverride`/`VehicleSubstitution`, manual roster grid, publish/override workflow, day-of vehicle substitution, reserve surge-fill, driver "my roster" view | `89db8321` | Deployed to prod: **no** |
+| 3 | P1 | Slot-ring + daily-shift auto-rotation, 3 week patterns (keep-rotating/repeat-week/rotating-repeat), same-weekday (hard) + cooldown (soft) validation feeding the conflict panel | `173d133f` | Deployed to prod: **no** |
+| 4 | P2 | Hand-written O(n³) Hungarian min-cost bipartite matching (no matching library exists in this stack), full weighted cost model, sequential day-by-day solve with proactive same-weekday prevention, bounded pairwise-swap repair pass, per-duty "explain" endpoint, fair-share report | `f0b887f7` | Deployed to prod: **yes** |
+| 5 | P3 (partial) | Depot proximity: `VehicleGroup.home_latitude/longitude`, `RotationPolicy.depot_proximity_weight` (default 0/off), haversine cost term dropped into the existing cost function, UI for both the group's depot coordinates and the new policy weight | pending | Deployed to prod: **no** |
+| — | P3 (rest) | Reserve automation beyond simple LRU, crew hours, shared/syndicate routes | — | **Not built** — crew-hours needs a policy decision that hasn't been made; shared/syndicate routes are explicitly out of scope per the doc's own v1 boundary. Surge-from-ticketing-data turns out **not** to be buildable yet either — `Ticket` has no `route_id` field at all (confirmed by reading the actual issuance code, not assumed), so there's no way today to count tickets sold per route/day. The one buildable piece (adding `route_id` to `Ticket` and having the POS form send it) is scoped and ready to build, but hasn't been started. |
+
+All 4 slices were built through a full plan→implement→verify cycle each (Django shell unit tests for the pure-math pieces, full API-level integration tests via Django's test `Client`, and real-browser click-through for the frontend). The complete design reasoning, scoping decisions, and verification steps for all 4 slices are preserved in `/home/aadarsha/.claude/plans/proud-wobbling-pike.md` — read that before extending this feature further, it explains *why* each slice is shaped the way it is (e.g. why the ring/shift math from P1 becomes just one weighted term in P2's cost function rather than being thrown away).
+
+**Two real bugs found and fixed during this work, worth knowing about if debugging nearby code:**
+- The repair pass in Slice 4 originally called the full `_compute_conflicts()` (several DB queries including a cross-schema route lookup) once per candidate swap — with up to ~30 candidates × ~30 iterations, this made `rotate()` take *minutes*. Rewritten to search entirely in memory against a working copy of the period's assignments, with only one DB read up front.
+- That same in-memory rewrite initially only screened candidate swaps against the same-weekday rule, and could silently introduce a *double-booking* (same group, two duties, one date) since it never checked that. Fixed by screening every candidate against a live `group_id → set of dates` index before it's ever tried, not just measuring the outcome after the fact.
+
+**New app**: `backend/apps/roster/` — a new `TENANT_APP`. Confirms this document's own §1 warning about the two URL configs independently: `roster`'s endpoints 404'd through the browser (while working fine via a direct Django test `Client`) until registered in **both** `backend/config/urls.py` and `backend/config/urls_public.py` — exactly the class of bug already flagged here for `rbac`/`inventory`. `roster` is correctly registered in both now; if a future app hits the same silent-404 symptom, check this first.
+
+**Where the rotation logic lives**: `backend/apps/roster/services.py` holds the pure math (ring layout, shift-per-date formulas, the Hungarian solver, the per-day cost-based solve) — deliberately kept free of request/view concerns so it's unit-testable from a plain shell. `backend/apps/roster/views.py` holds the HTTP layer and the sequential day-by-day orchestration (`RosterPeriodViewSet.rotate()`), plus the conflict-detection (`_compute_conflicts()`) and repair (`_repair_period()`) logic. `RotationPolicy` (one row per tenant, fetched-or-created lazily) holds every configurable weight/threshold.
+
+**Slice 5 (P3 depot proximity)** — the one P3 item that turned out to be genuinely buildable without new data sources: `VehicleGroup.home_latitude`/`home_longitude` (nullable, matches `platform.Stop`'s existing lat/lng convention — not a separate `Depot` model) and `RotationPolicy.depot_proximity_weight` (default 0/off, matching the doc's own default). A `haversine_meters()` helper feeds a new `depot_proximity` term into the existing cost `components` dict in `solve_day_assignment` — no other change needed since `total = sum(components.values())` already picks up any new key, same mechanism that made every prior weight addition a one-line change. Zero cost (and never blocks) when a group has no coordinates set or the route has no `start_stop`. Verified: a Django-shell integration test confirmed the Hungarian solver actually prefers the depot-proximate group when the weight is on, and a real-browser check confirmed both new UI pieces (the depot-location form on `VehicleGroupsPage.tsx`'s Manage modal, and the sixth weight input on `RosterGridPage.tsx`'s Rotation Policy panel) round-trip correctly through the real API.
+
+### NamastePay payment integration — what it is and what's built
+
+Each tenant (bus operator) gets their own NamastePay merchant account and must supply their own `client_id`/`client_secret`; all tenants call the *same* NamastePay API (shared base URLs, shared request/response shapes) — only the credentials differ per tenant. Scope for this pass, confirmed with the user: **credentials + gateway plumbing only** — no customer-facing checkout flow yet, because a codebase survey found `ticketing` today is issue-immediately (conductor/POS issues a ticket on the spot; `payment_method` is just a descriptive tag recorded afterward) with no passenger-facing purchase UI anywhere to hook a checkout into. That's a separate, later design question.
+
+Built (all in `backend/apps/ticketing/` except the settings entry):
+- `NamastePayConfig` model — per-tenant singleton, `client_secret` encrypted at rest via `django-encrypted-model-fields` (was an installed-but-unused dependency; now used for the first time in this codebase — confirmed the raw DB column is real Fernet ciphertext, not plaintext, via direct SQL inspection).
+- `FIELD_ENCRYPTION_KEY` setting (`backend/config/settings/base.py`) — **has a real, working default value committed to this repo** so local dev works out of the box. **Production must override this via env var before any real NamastePay credentials are ever saved**, or the encryption provides no actual protection to anyone with repo read access. This is the single most important thing to do before this feature goes anywhere near production data.
+- `namastepay.py` — the gateway client (`initiate_checkout`/`enquire_checkout`, doc's Checkout v2: `POST /api/v2/initiate`, `GET /api/v2/enquire/{checkout_id}`). Auth is implemented as HTTP Basic (`client_id:client_secret`) per the originally-shared doc page — **this is a guess**, not confirmed against a real account, and is the first thing to verify once real credentials exist. Re-verified live via the real UI: saving dummy credentials and clicking Test Connection produced a real outbound `Starting new HTTPS connection: testpay.namastepay.com:443` in the Django server log, NamastePay's real server responded `401 {"detail":"Not authenticated"}`, and the UI surfaced it cleanly ("NamastePay rejected the request (401). Check the client ID/secret.") — confirms the endpoint and request shape are reachable and well-formed; only the exact auth-header format remains unconfirmed until real credentials exist.
+- Settings page **"Payment Integration"** (`frontend/src/apps/tenant-portal/pages/PaymentIntegrationPage.tsx`) — Client ID/Secret/Environment/Active fields, a "Test Connection" button that does a real (tiny, throwaway) `initiate_checkout` call so a tenant can verify their own credentials the moment they have them. The secret field is write-only end to end: the API never echoes the real value back (only `client_secret_set: true/false`), and the frontend confirmed this holds across a real page reload in the browser.
+- Endpoint gated `IsCompanyAdmin` (stricter than the general company-info settings page's `IsOperationsRole`, since this is payment credentials) — confirmed a non-admin role gets a clean `403`.
+- `Ticket.PaymentMethod` and `accounting/signals.py`'s revenue-recognition map both already have a `NAMASTEPAY` entry, so a future purchase-flow implementation has nothing left to touch in the accounting layer.
+
+Committed alongside Slice 5 in this update (was local-only as of the prior write-up).
+
+**Important design constraint if/when the purchase flow gets built later**: `accounting/signals.py`'s `on_ticket_created` fires revenue recognition the instant *any* `ticketing.Ticket` row is created, unconditionally — there is no "pending payment" concept in `Ticket` today. Whatever builds the actual checkout flow must not create the `Ticket` row until `enquire_checkout()` confirms success server-side (never trust the `return_url` redirect's query-string status alone) — otherwise a merely-attempted or failed NamastePay payment would immediately post fake revenue.
+
+### Production deploy status
+
+**Slices 1–4 of the rotation engine are deployed and live** as of this update — `migrate_schemas` ran clean across all tenant schemas, RBAC permissions reseeded (`roster` module, 13 new permissions × 3 tenants), and `manage.py check` came back clean. Slice 5 (depot proximity) and NamastePay are committed in this update but **not yet deployed** — same standard sequence applies: `git pull` → `docker compose -f docker-compose.prod.yml up -d --build django frontend` → `docker exec docker-django-1 python backend/manage.py migrate_schemas` → `docker restart docker-nginx-1`.
+
+**The earlier outbound-HTTPS TLS blocker on the production server is resolved** (was external to the server itself — a network/firewall issue between the box and the internet, not code, not this server's own firewall config; fixed outside of this session's actions). `git pull` and the full deploy sequence above completed successfully once it cleared. If it recurs, the same verification one-liner still applies:
+```bash
+for host in github.com google.com; do curl -sSf --max-time 15 -o /dev/null "https://$host" && echo "$host: OK" || echo "$host: FAILED"; done
+```
+
+**One real migration-state scare during that deploy, resolved safely**: after the rebuild, `migrate_schemas` hit `DuplicateTable: relation "fleet_vehiclegroup" already exists` on the 2nd of 4 tenant schemas and crashed. Rather than force anything, a read-only diagnostic (comparing `django_migrations` rows against `information_schema.tables` per schema) confirmed all 3 tenant schemas were already fully consistent — Postgres's transactional DDL had rolled the failed attempt back cleanly, and a re-run of `migrate_schemas` came back clean (4× "No migrations to apply"). Worth knowing if this symptom ever recurs: check consistency read-only before assuming corruption.
+
+**Local dev container naming note**: this session's local dev stack uses container names prefixed `kvbms-` (`kvbms-django-1`, `kvbms-frontend-1`, etc.) — different from the `docker-` prefix (`docker-django-1`, `docker-nginx-1`) used in every production deploy command throughout this session and in this document's own §2. Both are correct, just for different compose projects (local dev vs. production) — don't mix them up when copy-pasting a command. Two stray `kvbms-`-prefixed containers (`kvbms-nginx-1`, `kvbms-frontend-1`) were also spotted sitting alongside the real `docker-*` production containers on the prod box itself — flagged, not yet investigated; worth checking whether they're leftover cruft from an earlier deploy attempt or something actually in use.
+
+### Next steps
+
+1. Deploy Slice 5 (depot proximity) and NamastePay to production using the standard sequence above.
+2. Set a real `FIELD_ENCRYPTION_KEY` via production env var **before** any tenant saves real NamastePay credentials.
+3. Get real NamastePay TEST credentials from NamastePay/NDPC (the merchant portal is login-only, no self-signup) to verify the auth-header guess in `namastepay.py` and confirm the request/response shapes against the real API.
+4. Decide/scope the actual customer-facing ticket-purchase flow that would consume the NamastePay plumbing — needs a decision on where/how a passenger triggers a purchase in the first place, since no such UI exists anywhere today. Separately: Yatroo passengers will **not** use this — per `docs/YATROO_INTEGRATION_STATUS.md`, Yatroo collects payment on their own side and just sends us a `payment_reference`, already fully built. NamastePay is only relevant for a possible future KVBMS-native purchase flow, independent of Yatroo.
+5. Remaining P3 items (crew hours, shared/syndicate routes) stay unscoped — crew-hours needs a policy decision, shared routes are out of v1 scope per the doc itself.
+6. Add `route_id` to `Ticket` (nullable, same bare-UUID convention as `from_stop_id`/`trip_id`) and have the one POS issuance form (`TicketingPage.tsx`) send the route it already has selected — small, safe, additive. Doesn't give surge detection immediately (needs weeks of accumulated data once it starts capturing), but unblocks that clock and has standalone reporting value.
+7. Investigate the two stray `kvbms-*` containers on the production box (see note above).
+8. Yatroo integration: the code side is complete and tested (see `docs/YATROO_INTEGRATION_STATUS.md`) — the one blocker is an auth-design decision only Yatroo's team can make (§5 of that doc). Not actionable from this side until they respond.

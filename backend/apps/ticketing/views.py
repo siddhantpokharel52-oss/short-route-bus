@@ -3,12 +3,13 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.viewsets import ModelViewSet
 from django.utils import timezone
-from .models import Ticket, DailyPass, MonthlyPass, StudentPass
+from .models import Ticket, DailyPass, MonthlyPass, StudentPass, NamastePayConfig
 from .serializers import (
     TicketSerializer, TicketVerifySerializer,
     DailyPassSerializer, MonthlyPassSerializer, StudentPassSerializer,
+    NamastePayConfigSerializer,
 )
-from backend.apps.users.permissions import IsConductor, IsOperationsRole
+from backend.apps.users.permissions import IsConductor, IsOperationsRole, IsCompanyAdmin
 
 
 def api_response(data=None, message="Success", success=True, errors=None, status_code=200):
@@ -138,6 +139,75 @@ class CancelTicketView(views.APIView):
         ticket.status = Ticket.Status.CANCELLED
         ticket.save(update_fields=["status"])
         return api_response(data=TicketSerializer(ticket).data, message="Ticket cancelled.")
+
+
+class NamastePayConfigView(generics.RetrieveUpdateAPIView):
+    """
+    GET/PUT/PATCH /ticketing/payment-gateway/
+    The tenant's own NamastePay credentials -- singleton-per-tenant, same
+    fetch-or-create-on-first-call shape as staff.BusCompanyView. Gated
+    IsCompanyAdmin rather than IsOperationsRole (what BusCompanyView uses)
+    since payment credentials are more sensitive than general company info.
+    """
+    serializer_class = NamastePayConfigSerializer
+    permission_classes = [IsCompanyAdmin]
+
+    def get_object(self):
+        obj = NamastePayConfig.objects.first()
+        if not obj:
+            obj = NamastePayConfig.objects.create()
+        return obj
+
+    def retrieve(self, request, *args, **kwargs):
+        serializer = self.get_serializer(self.get_object())
+        return api_response(data=serializer.data)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return api_response(data=serializer.data, message="Payment gateway settings saved.")
+
+
+class NamastePayTestConnectionView(views.APIView):
+    """
+    POST /ticketing/payment-gateway/test/
+    Proves the saved credentials actually work by attempting a real (tiny,
+    throwaway) checkout initiation -- there's no separate "verify
+    credentials" endpoint in NamastePay's API, so a successful initiate
+    call is the honest way to confirm they're valid before any real
+    purchase flow exists to exercise them.
+    """
+    permission_classes = [IsCompanyAdmin]
+
+    def post(self, request):
+        config = NamastePayConfig.objects.first()
+        if not config or not config.client_id or not config.client_secret:
+            return api_response(success=False, message="Save a client ID and client secret first.", status_code=400)
+
+        from . import namastepay
+        import uuid as uuid_lib
+
+        try:
+            result = namastepay.initiate_checkout(
+                config,
+                amount=1.00,
+                order_id=f"TEST-{uuid_lib.uuid4().hex[:10].upper()}",
+                return_url="https://example.com/namastepay-test-callback",
+                description="Connection test -- not a real charge",
+            )
+        except namastepay.NamastePayError as e:
+            return api_response(
+                success=False,
+                message=f"NamastePay rejected the request ({e.status_code}). Check the client ID/secret.",
+                errors={"detail": [str(e.body)[:500]]},
+                status_code=400,
+            )
+        except Exception as e:
+            return api_response(success=False, message=f"Could not reach NamastePay: {e}", status_code=502)
+
+        return api_response(data=result, message="NamastePay accepted the credentials.")
 
 
 class IssueDailyPassView(generics.CreateAPIView):
