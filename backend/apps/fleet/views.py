@@ -7,13 +7,14 @@ from datetime import timedelta
 from .models import (
     Vehicle, VehicleDocument, VehicleInsurance, VehicleGPS,
     VehicleCategory, VehicleGroup, GroupMember, GroupCompositionRule,
-    GroupDriverAssignment,
+    GroupDriverAssignment, GroupConductorAssignment,
 )
 from .serializers import (
     VehicleSerializer, VehicleDocumentSerializer,
     VehicleInsuranceSerializer, VehicleGPSSerializer, VehicleExpiryAlertSerializer,
     VehicleCategorySerializer, VehicleGroupSerializer, GroupMemberSerializer,
     GroupCompositionRuleSerializer, GroupDriverAssignmentSerializer,
+    GroupConductorAssignmentSerializer,
 )
 from backend.apps.users.permissions import IsFleetRole, IsOperationsRole, CanViewVehicles
 
@@ -317,6 +318,28 @@ class GroupDriverAssignmentViewSet(ModelViewSet):
 
     def get_queryset(self):
         return GroupDriverAssignment.objects.filter(group_id=self.kwargs["group_pk"], valid_to__isnull=True)
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["group"] = VehicleGroup.objects.get(pk=self.kwargs["group_pk"])
+        return context
+
+    def perform_create(self, serializer):
+        group = VehicleGroup.objects.get(pk=self.kwargs["group_pk"])
+        serializer.save(group=group)
+
+    def perform_destroy(self, instance):
+        instance.valid_to = timezone.now().date()
+        instance.save(update_fields=["valid_to"])
+
+
+class GroupConductorAssignmentViewSet(ModelViewSet):
+    serializer_class = GroupConductorAssignmentSerializer
+    permission_classes = [IsFleetRole]
+    http_method_names = ["get", "post", "delete", "head", "options"]
+
+    def get_queryset(self):
+        return GroupConductorAssignment.objects.filter(group_id=self.kwargs["group_pk"], valid_to__isnull=True)
 
     def get_serializer_context(self):
         context = super().get_serializer_context()

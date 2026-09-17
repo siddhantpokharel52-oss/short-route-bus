@@ -68,6 +68,8 @@ export interface RotationPolicy {
   consecutive_weight: number
   fair_share_weight: number
   depot_proximity_weight: number
+  crew_max_hours: number
+  crew_hours_weight: number
   created_at: string
   updated_at: string
 }
@@ -78,6 +80,7 @@ export interface CostComponents {
   consecutive_days: number
   fair_share: number
   depot_proximity: number
+  crew_hours: number
 }
 
 export interface DutyExplanation {

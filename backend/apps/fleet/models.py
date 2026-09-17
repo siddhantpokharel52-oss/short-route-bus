@@ -442,3 +442,38 @@ class GroupDriverAssignment(models.Model):
             driver_user_id=self.driver_user_id, valid_to__isnull=True
         ).exclude(pk=self.pk).exists():
             raise ValidationError("This driver is already assigned to a group.")
+
+
+class GroupConductorAssignment(models.Model):
+    """A conductor's standing crew binding to a group -- same shape as
+    GroupDriverAssignment, added for Slice 6 (P3 crew_hours) since the doc's
+    "where crew is bound" needs both drivers and conductors covered, and no
+    conductor-to-group link existed. conductor_user_id is a bare UUID, not an
+    FK, since User lives in the shared schema -- same convention as
+    driver_user_id."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    group = models.ForeignKey(VehicleGroup, on_delete=models.CASCADE, related_name="conductor_assignments")
+    conductor_user_id = models.UUIDField()
+    valid_from = models.DateField(auto_now_add=True)
+    valid_to = models.DateField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-valid_from"]
+        indexes = [
+            models.Index(fields=["group", "valid_to"]),
+            models.Index(fields=["conductor_user_id", "valid_to"]),
+        ]
+
+    def __str__(self):
+        return f"Conductor {self.conductor_user_id} in {self.group.code}"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.valid_to is not None:
+            return
+
+        if GroupConductorAssignment.objects.filter(
+            conductor_user_id=self.conductor_user_id, valid_to__isnull=True
+        ).exclude(pk=self.pk).exists():
+            raise ValidationError("This conductor is already assigned to a group.")

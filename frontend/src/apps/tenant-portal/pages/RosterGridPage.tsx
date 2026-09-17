@@ -402,6 +402,7 @@ function DutyDetail({
             <li>Consecutive days: {explanation.components.consecutive_days}</li>
             <li>Fair share: {explanation.components.fair_share}</li>
             <li>Depot proximity: {explanation.components.depot_proximity}</li>
+            <li>Crew hours: {explanation.components.crew_hours}</li>
           </ul>
           <p className="mt-1.5 text-sky-600">Total cost: {explanation.total} (lower is preferred; 0 means a perfect fit)</p>
         </div>
@@ -493,6 +494,8 @@ function RotationPolicyForm({
   const [consecutiveWeight, setConsecutiveWeight] = useState(policy.consecutive_weight)
   const [fairShareWeight, setFairShareWeight] = useState(policy.fair_share_weight)
   const [depotProximityWeight, setDepotProximityWeight] = useState(policy.depot_proximity_weight)
+  const [crewMaxHours, setCrewMaxHours] = useState(policy.crew_max_hours)
+  const [crewHoursWeight, setCrewHoursWeight] = useState(policy.crew_hours_weight)
 
   useEffect(() => {
     setRingStep(policy.ring_step)
@@ -506,6 +509,8 @@ function RotationPolicyForm({
     setConsecutiveWeight(policy.consecutive_weight)
     setFairShareWeight(policy.fair_share_weight)
     setDepotProximityWeight(policy.depot_proximity_weight)
+    setCrewMaxHours(policy.crew_max_hours)
+    setCrewHoursWeight(policy.crew_hours_weight)
   }, [policy])
 
   return (
@@ -603,6 +608,22 @@ function RotationPolicyForm({
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
             />
           </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Crew max hours/day</label>
+            <input
+              type="number" min={1} value={crewMaxHours}
+              onChange={(e) => setCrewMaxHours(Number(e.target.value))}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Crew hours weight</label>
+            <input
+              type="number" min={0} value={crewHoursWeight}
+              onChange={(e) => setCrewHoursWeight(Number(e.target.value))}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+          </div>
         </div>
       </div>
       <div className="flex justify-end border-t pt-4">
@@ -615,6 +636,8 @@ function RotationPolicyForm({
             max_consecutive_days_same_route: maxConsecutiveDays, consecutive_weight: consecutiveWeight,
             fair_share_weight: fairShareWeight,
             depot_proximity_weight: depotProximityWeight,
+            crew_max_hours: crewMaxHours,
+            crew_hours_weight: crewHoursWeight,
           })}
         >
           Save Policy

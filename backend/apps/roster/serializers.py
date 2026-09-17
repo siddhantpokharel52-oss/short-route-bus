@@ -17,7 +17,7 @@ class RotationPolicySerializer(serializers.ModelSerializer):
             "same_weekday_lookback_weeks", "route_cooldown_days",
             "rotation_preference_weight", "route_cooldown_weight",
             "max_consecutive_days_same_route", "consecutive_weight", "fair_share_weight",
-            "depot_proximity_weight",
+            "depot_proximity_weight", "crew_max_hours", "crew_hours_weight",
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]

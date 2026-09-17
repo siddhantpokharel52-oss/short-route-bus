@@ -41,6 +41,17 @@ class RotationPolicy(models.Model):
         default=0, help_text="Cost per 10km between a group's depot and the route's start stop -- 0 = off"
     )
 
+    # P3 (doc section 8): crew_hours, also OFF by default like depot_proximity.
+    # crew_max_hours is the threshold (paired with a weight, same shape as
+    # route_cooldown_days/route_cooldown_weight above); crew_hours_weight=0
+    # means the rule is a true no-op regardless of crew_max_hours.
+    crew_max_hours = models.PositiveSmallIntegerField(
+        default=15, help_text="Max scheduled hours/day for a group's bound crew before crew_hours_weight kicks in"
+    )
+    crew_hours_weight = models.PositiveSmallIntegerField(
+        default=0, help_text="Cost per hour over crew_max_hours -- 0 = off"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

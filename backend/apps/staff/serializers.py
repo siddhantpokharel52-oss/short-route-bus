@@ -87,7 +87,7 @@ class ConductorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Conductor
         fields = [
-            "id", "employee_id",
+            "id", "employee_id", "user_id",
             "full_name_en", "full_name_ne", "gender", "dob",
             "citizenship_no", "phone", "address",
             "emergency_contact_name", "emergency_contact_number",

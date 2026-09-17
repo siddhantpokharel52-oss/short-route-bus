@@ -24,6 +24,14 @@ export interface GroupDriverAssignment {
   valid_to: string | null
 }
 
+export interface GroupConductorAssignment {
+  id: string
+  group: string
+  conductor_user_id: string
+  valid_from: string
+  valid_to: string | null
+}
+
 export interface VehicleGroup {
   id: string
   code: string
@@ -119,6 +127,20 @@ const vehicleGroupService = {
 
   removeDriver: async (groupId: string, assignmentId: string): Promise<void> => {
     await apiClient.delete(`/fleet/groups/${groupId}/drivers/${assignmentId}/`)
+  },
+
+  listConductors: async (groupId: string): Promise<GroupConductorAssignment[]> => {
+    const { data } = await apiClient.get<ApiResponse<GroupConductorAssignment[]>>(`/fleet/groups/${groupId}/conductors/`)
+    return Array.isArray(data.data) ? data.data : []
+  },
+
+  addConductor: async (groupId: string, conductorUserId: string): Promise<GroupConductorAssignment> => {
+    const { data } = await apiClient.post(`/fleet/groups/${groupId}/conductors/`, { conductor_user_id: conductorUserId })
+    return (data as ApiResponse<GroupConductorAssignment>).data ?? data
+  },
+
+  removeConductor: async (groupId: string, assignmentId: string): Promise<void> => {
+    await apiClient.delete(`/fleet/groups/${groupId}/conductors/${assignmentId}/`)
   },
 
   eligibility: async (groupId: string): Promise<EligibilityResult> => {

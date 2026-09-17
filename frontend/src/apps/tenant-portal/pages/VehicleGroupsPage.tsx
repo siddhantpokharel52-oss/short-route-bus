@@ -20,6 +20,7 @@ import toast from 'react-hot-toast'
 import { useForm, Controller } from 'react-hook-form'
 
 interface DriverOption { id: string; user_id: string | null; full_name_en: string }
+interface ConductorOption { id: string; user_id: string | null; full_name_en: string }
 
 function SelectField({
   label, required, children, error, ...props
@@ -56,6 +57,7 @@ export default function VehicleGroupsPage() {
   const [deleteTarget, setDeleteTarget] = useState<VehicleGroup | null>(null)
   const [pickerVehicleId, setPickerVehicleId] = useState('')
   const [pickerDriverUserId, setPickerDriverUserId] = useState('')
+  const [pickerConductorUserId, setPickerConductorUserId] = useState('')
   const [dayType, setDayType] = useState('WEEKDAY')
 
   const { data: groups = [], isLoading } = useQuery({
@@ -86,6 +88,15 @@ export default function VehicleGroupsPage() {
     staleTime: 60_000,
   })
 
+  const { data: conductors = [] } = useQuery<ConductorOption[]>({
+    queryKey: ['conductors-for-groups'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/operator/conductors/', { params: { page_size: 500 } })
+      return data.data?.results ?? data.data ?? []
+    },
+    staleTime: 60_000,
+  })
+
   const liveManageTarget = manageTarget ? groups.find((g) => g.id === manageTarget.id) ?? manageTarget : null
 
   const saveDepotMutation = useMutation({
@@ -104,6 +115,12 @@ export default function VehicleGroupsPage() {
   const { data: groupDrivers = [] } = useQuery({
     queryKey: ['group-drivers', liveManageTarget?.id],
     queryFn: () => vehicleGroupService.listDrivers(liveManageTarget!.id),
+    enabled: !!liveManageTarget,
+  })
+
+  const { data: groupConductors = [] } = useQuery({
+    queryKey: ['group-conductors', liveManageTarget?.id],
+    queryFn: () => vehicleGroupService.listConductors(liveManageTarget!.id),
     enabled: !!liveManageTarget,
   })
 
@@ -198,10 +215,39 @@ export default function VehicleGroupsPage() {
     },
   })
 
+  const addConductorMutation = useMutation({
+    mutationFn: ({ groupId, conductorUserId }: { groupId: string; conductorUserId: string }) =>
+      vehicleGroupService.addConductor(groupId, conductorUserId),
+    onSuccess: () => {
+      toast.success('Conductor assigned to group.')
+      qc.invalidateQueries({ queryKey: ['group-conductors', liveManageTarget?.id] })
+      setPickerConductorUserId('')
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { errors?: { conductor_user_id?: string[] }; message?: string } } }
+      toast.error(e?.response?.data?.errors?.conductor_user_id?.[0] || e?.response?.data?.message || 'Failed to assign conductor.')
+    },
+  })
+
+  const removeConductorMutation = useMutation({
+    mutationFn: ({ groupId, assignmentId }: { groupId: string; assignmentId: string }) =>
+      vehicleGroupService.removeConductor(groupId, assignmentId),
+    onSuccess: () => {
+      toast.success('Conductor removed from group.')
+      qc.invalidateQueries({ queryKey: ['group-conductors', liveManageTarget?.id] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || 'Failed to remove conductor.')
+    },
+  })
+
   const groupedVehicleIds = new Set(groups.flatMap((g) => g.members.filter((m) => !m.valid_to).map((m) => m.vehicle)))
   const availableVehicles = vehicles.filter((v) => !groupedVehicleIds.has(v.id))
   const assignedDriverUserIds = new Set(groupDrivers.filter((d) => !d.valid_to).map((d) => d.driver_user_id))
   const availableDrivers = drivers.filter((d) => d.user_id && !assignedDriverUserIds.has(d.user_id))
+  const assignedConductorUserIds = new Set(groupConductors.filter((c) => !c.valid_to).map((c) => c.conductor_user_id))
+  const availableConductors = conductors.filter((c) => c.user_id && !assignedConductorUserIds.has(c.user_id))
 
   return (
     <div className="space-y-6">
@@ -425,6 +471,46 @@ export default function VehicleGroupsPage() {
                   })}
                   {groupDrivers.filter((d) => !d.valid_to).length === 0 && (
                     <p className="py-2 text-center text-xs text-gray-400">No driver assigned yet.</p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <UserCheck className="h-3.5 w-3.5" /> Conductors
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={pickerConductorUserId} onChange={(e) => setPickerConductorUserId(e.target.value)}
+                    className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="">— Select conductor —</option>
+                    {availableConductors.map((c) => <option key={c.id} value={c.user_id!}>{c.full_name_en}</option>)}
+                  </select>
+                  <Button
+                    size="sm" disabled={!pickerConductorUserId} loading={addConductorMutation.isPending}
+                    onClick={() => addConductorMutation.mutate({ groupId: liveManageTarget.id, conductorUserId: pickerConductorUserId })}
+                  >
+                    Add
+                  </Button>
+                </div>
+                <div className="mt-1.5 space-y-1.5">
+                  {groupConductors.filter((c) => !c.valid_to).map((c) => {
+                    const conductor = conductors.find((co) => co.user_id === c.conductor_user_id)
+                    return (
+                      <div key={c.id} className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 text-sm">
+                        <span>{conductor?.full_name_en ?? c.conductor_user_id}</span>
+                        <button
+                          onClick={() => removeConductorMutation.mutate({ groupId: liveManageTarget.id, assignmentId: c.id })}
+                          className="rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )
+                  })}
+                  {groupConductors.filter((c) => !c.valid_to).length === 0 && (
+                    <p className="py-2 text-center text-xs text-gray-400">No conductor assigned yet.</p>
                   )}
                 </div>
               </div>

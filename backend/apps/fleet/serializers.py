@@ -4,7 +4,7 @@ from django.utils import timezone
 from .models import (
     Vehicle, VehicleDocument, VehicleInsurance, VehicleGPS,
     VehicleCategory, VehicleGroup, GroupMember, GroupCompositionRule,
-    GroupDriverAssignment,
+    GroupDriverAssignment, GroupConductorAssignment,
 )
 
 
@@ -264,6 +264,23 @@ class GroupDriverAssignmentSerializer(serializers.ModelSerializer):
             instance.clean()
         except DjangoValidationError as e:
             raise serializers.ValidationError({"driver_user_id": e.messages})
+        return attrs
+
+
+class GroupConductorAssignmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GroupConductorAssignment
+        fields = ["id", "group", "conductor_user_id", "valid_from", "valid_to"]
+        # group is injected server-side by GroupConductorAssignmentViewSet.perform_create()
+        # from the URL's group_pk, same pattern as GroupDriverAssignmentSerializer.group.
+        read_only_fields = ["id", "group", "valid_from", "valid_to"]
+
+    def validate(self, attrs):
+        instance = GroupConductorAssignment(group=self.context["group"], conductor_user_id=attrs["conductor_user_id"])
+        try:
+            instance.clean()
+        except DjangoValidationError as e:
+            raise serializers.ValidationError({"conductor_user_id": e.messages})
         return attrs
 
 

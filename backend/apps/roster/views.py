@@ -375,13 +375,61 @@ class RosterPeriodViewSet(ModelViewSet):
         route_ids_in_play = {rid for dt in day_types_touched for rid, _ in demand_rows_by_daytype.get(dt, [])}
         history = _seed_history(rotating_groups, route_ids_in_play, dates[0])
 
+        # P3 crew_hours (doc section 8): precomputed once per rotate() call,
+        # same caching shape as ring_cache/route_ids_in_play above, then
+        # threaded into solve_day_assignment per date.
+        from backend.apps.fleet.models import GroupDriverAssignment, GroupConductorAssignment
+
+        rotating_group_ids = [g.id for g in rotating_groups]
+        crewed_group_ids = set(
+            GroupDriverAssignment.objects.filter(
+                group_id__in=rotating_group_ids, valid_to__isnull=True
+            ).values_list("group_id", flat=True)
+        ) | set(
+            GroupConductorAssignment.objects.filter(
+                group_id__in=rotating_group_ids, valid_to__isnull=True
+            ).values_list("group_id", flat=True)
+        )
+
+        # scheduling.Timetable is a TENANT app model (unlike platform.Route,
+        # which lives in the shared "public" schema) -- this query runs
+        # directly in the current tenant schema rotate() is already inside,
+        # no schema_context("public") wrapper needed or correct here.
+        route_hours_by_daytype = {}
+        from backend.apps.scheduling.models import Timetable
+
+        timetables = Timetable.objects.filter(
+            route_id__in=route_ids_in_play, day_type__in=day_types_touched, is_active=True
+        ).prefetch_related("slots")
+
+        def to_minutes(t):
+            return t.hour * 60 + t.minute + t.second / 60
+
+        spans = defaultdict(list)
+        for tt in timetables:
+            for slot in tt.slots.all():
+                # arrival <= departure would mean an overnight route (or bad
+                # data) -- out of scope, skip rather than let it corrupt the
+                # span with a negative/zero duration.
+                if slot.arrival_time <= slot.departure_time:
+                    continue
+                spans[(tt.route_id, tt.day_type)].append((to_minutes(slot.departure_time), to_minutes(slot.arrival_time)))
+        for key, pairs in spans.items():
+            earliest = min(p[0] for p in pairs)
+            latest = max(p[1] for p in pairs)
+            route_hours_by_daytype[key] = (latest - earliest) / 60
+
         updated = 0
         for date in dates:
-            ring = ring_for(self._day_type_for(date))
+            day_type = self._day_type_for(date)
+            ring = ring_for(day_type)
             if not ring:
                 continue
             shift = services.shift_for_date(policy, date)
-            day_result = services.solve_day_assignment(date, rotating_groups, ring, shift, routes_by_id, history, policy)
+            day_result = services.solve_day_assignment(
+                date, rotating_groups, ring, shift, routes_by_id, history, policy,
+                day_type=day_type, crewed_group_ids=crewed_group_ids, route_hours_by_daytype=route_hours_by_daytype,
+            )
             for (route_id, slot_index), (group, breakdown) in day_result.items():
                 duty = target_by_key.get((date, route_id, slot_index))
                 if duty is None:

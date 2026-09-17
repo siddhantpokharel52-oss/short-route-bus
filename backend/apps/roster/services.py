@@ -89,6 +89,27 @@ def depot_proximity_cost(group, route, policy):
     return round(policy.depot_proximity_weight * (distance_km / 10), 2)
 
 
+def crew_hours_cost(group_id, route_id, day_type, policy, crewed_group_ids, route_hours_by_daytype):
+    """P3 (doc section 8, default OFF): a soft penalty for a route whose
+    scheduled span would push a crewed group over crew_max_hours for the
+    day. Never penalizes (returns 0) when the weight is off, the group has
+    no bound driver or conductor (doc: "where crew is bound"), or the
+    route/day_type has no timetable data to estimate a span from -- same
+    "OFF means off, never block on missing data" contract as
+    depot_proximity_cost."""
+    if not policy.crew_hours_weight:
+        return 0
+    if group_id not in crewed_group_ids:
+        return 0
+    span_hours = route_hours_by_daytype.get((route_id, day_type))
+    if span_hours is None:
+        return 0
+    over = span_hours - policy.crew_max_hours
+    if over <= 0:
+        return 0
+    return round(policy.crew_hours_weight * over, 2)
+
+
 def smallest_coprime_step(ring_length, preferred=1):
     """The smallest step >= 1 that is coprime with ring_length -- offered
     back to the admin when their chosen step would leave some slots
@@ -173,7 +194,10 @@ def hungarian_min_cost_matching(cost_matrix):
     return col_for_row
 
 
-def solve_day_assignment(date, groups, ring, shift, routes_by_id, history, policy):
+def solve_day_assignment(
+    date, groups, ring, shift, routes_by_id, history, policy,
+    day_type=None, crewed_group_ids=None, route_hours_by_daytype=None,
+):
     """
     One day of doc section 7.4-7.5: build the cost matrix (group x ring
     position), solve it exactly, commit the result into `history` (mutated
@@ -190,7 +214,15 @@ def solve_day_assignment(date, groups, ring, shift, routes_by_id, history, polic
     updates it after every day, so same-weekday is enforced as a genuine
     forbidden pairing during the sequential solve rather than left to a
     later repair pass.
+
+    `day_type`/`crewed_group_ids`/`route_hours_by_daytype` feed the P3
+    crew_hours term (doc section 8) -- optional (default None/empty) since
+    they're only needed when crew_hours_weight is on; the caller computes
+    day_type once per date and the other two once per rotate() call, same
+    precomputed-and-passed-in shape as `ring`/`shift`.
     """
+    crewed_group_ids = crewed_group_ids or set()
+    route_hours_by_daytype = route_hours_by_daytype or {}
     from backend.apps.fleet.services import check_group_route_eligibility
 
     if not groups or not ring:
@@ -252,6 +284,10 @@ def solve_day_assignment(date, groups, ring, shift, routes_by_id, history, polic
             components["fair_share"] = fair_share_cost
 
             components["depot_proximity"] = depot_proximity_cost(group, route, policy)
+
+            components["crew_hours"] = crew_hours_cost(
+                group.id, route_id, day_type, policy, crewed_group_ids, route_hours_by_daytype
+            )
 
             total = sum(components.values())
             row_costs.append(total)
