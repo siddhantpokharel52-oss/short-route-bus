@@ -11,14 +11,12 @@ import { useForm } from 'react-hook-form'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CreditCard, Save, ShieldCheck, CheckCircle2, XCircle, PlugZap } from 'lucide-react'
 import { Button } from '@components/shared/Button'
-import { Input } from '@components/shared/Input'
 import { Badge } from '@components/shared/Badge'
 import paymentGatewayService, { NamastePayConfigPayload } from '@services/paymentGatewayService'
 import toast from 'react-hot-toast'
 
 interface FormValues {
-  client_id: string
-  client_secret: string
+  api_key: string
   environment: 'TEST' | 'LIVE'
   is_active: boolean
 }
@@ -33,13 +31,13 @@ export default function PaymentIntegrationPage() {
   })
 
   const { register, handleSubmit, reset } = useForm<FormValues>({
-    defaultValues: { client_id: '', client_secret: '', environment: 'TEST', is_active: false },
+    defaultValues: { api_key: '', environment: 'TEST', is_active: false },
   })
 
   useEffect(() => {
     if (config) {
       reset({
-        client_id: config.client_id, client_secret: '',
+        api_key: '',
         environment: config.environment, is_active: config.is_active,
       })
     }
@@ -69,9 +67,9 @@ export default function PaymentIntegrationPage() {
 
   const onSubmit = (d: FormValues) => {
     const payload: NamastePayConfigPayload = {
-      client_id: d.client_id, environment: d.environment, is_active: d.is_active,
+      environment: d.environment, is_active: d.is_active,
     }
-    if (d.client_secret) payload.client_secret = d.client_secret
+    if (d.api_key) payload.api_key = d.api_key
     saveMutation.mutate(payload)
   }
 
@@ -91,21 +89,20 @@ export default function PaymentIntegrationPage() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
               <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-primary-600" />
-              The client secret is encrypted at rest and never shown again after saving -- leave it blank to keep the current one.
+              The API key is encrypted at rest and never shown again after saving -- leave it blank to keep the current one.
             </div>
-
-            <Input label="Client ID" {...register('client_id')} />
 
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">
-                Client Secret {config?.client_secret_set && <Badge variant="success" className="ml-1">configured</Badge>}
+                API Key {config?.api_key_set && <Badge variant="success" className="ml-1">configured</Badge>}
               </label>
               <input
                 type="password"
-                placeholder={config?.client_secret_set ? 'Leave blank to keep the current secret' : 'Enter your NamastePay client secret'}
+                placeholder={config?.api_key_set ? 'Leave blank to keep the current key' : 'Enter your NamastePay API key'}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                {...register('client_secret')}
+                {...register('api_key')}
               />
+              <p className="mt-1 text-xs text-gray-400">Generate this from the NamastePay merchant portal for your environment.</p>
             </div>
 
             <div>
@@ -138,8 +135,8 @@ export default function PaymentIntegrationPage() {
               <Button
                 type="button" variant="outline" leftIcon={<PlugZap className="h-4 w-4" />}
                 loading={testMutation.isPending}
-                disabled={!config?.client_secret_set}
-                title={!config?.client_secret_set ? 'Save your credentials first' : undefined}
+                disabled={!config?.api_key_set}
+                title={!config?.api_key_set ? 'Save your API key first' : undefined}
                 onClick={() => testMutation.mutate()}
               >
                 Test Connection

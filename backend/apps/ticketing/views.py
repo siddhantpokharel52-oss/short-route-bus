@@ -272,8 +272,8 @@ class NamastePayTestConnectionView(views.APIView):
 
     def post(self, request):
         config = NamastePayConfig.objects.first()
-        if not config or not config.client_id or not config.client_secret:
-            return api_response(success=False, message="Save a client ID and client secret first.", status_code=400)
+        if not config or not config.api_key:
+            return api_response(success=False, message="Save an API key first.", status_code=400)
 
         from . import namastepay
         import uuid as uuid_lib
@@ -282,14 +282,13 @@ class NamastePayTestConnectionView(views.APIView):
             result = namastepay.initiate_checkout(
                 config,
                 amount=1.00,
-                order_id=f"TEST-{uuid_lib.uuid4().hex[:10].upper()}",
-                return_url="https://example.com/namastepay-test-callback",
-                description="Connection test -- not a real charge",
+                reference_id=f"TEST-{uuid_lib.uuid4().hex[:10].upper()}",
+                remarks="Connection test -- not a real charge",
             )
         except namastepay.NamastePayError as e:
             return api_response(
                 success=False,
-                message=f"NamastePay rejected the request ({e.status_code}). Check the client ID/secret.",
+                message=f"NamastePay rejected the request ({e.status_code}). Check the API key.",
                 errors={"detail": [str(e.body)[:500]]},
                 status_code=400,
             )

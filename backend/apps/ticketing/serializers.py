@@ -91,31 +91,30 @@ class TicketVerifySerializer(serializers.Serializer):
 
 class NamastePayConfigSerializer(serializers.ModelSerializer):
     # Write-only: accepted on save, never echoed back. The read side gets
-    # client_secret_set instead, same convention as a password field --
-    # the frontend shows "configured" rather than ever displaying the
-    # real secret again.
-    client_secret = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    client_secret_set = serializers.SerializerMethodField()
+    # api_key_set instead, same convention as a password field -- the
+    # frontend shows "configured" rather than ever displaying the real key.
+    api_key = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    api_key_set = serializers.SerializerMethodField()
 
     class Meta:
         model = NamastePayConfig
         fields = [
-            "id", "client_id", "client_secret", "client_secret_set",
+            "id", "api_key", "api_key_set",
             "environment", "is_active", "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "client_secret_set", "created_at", "updated_at"]
+        read_only_fields = ["id", "api_key_set", "created_at", "updated_at"]
 
-    def get_client_secret_set(self, obj):
-        return bool(obj.client_secret)
+    def get_api_key_set(self, obj):
+        return bool(obj.api_key)
 
     def update(self, instance, validated_data):
-        # A blank/omitted secret on save means "leave the existing one
-        # alone" -- the frontend never has the real value to resubmit.
-        new_secret = validated_data.pop("client_secret", None)
+        # A blank/omitted key on save means "leave the existing one alone"
+        # -- the frontend never has the real value to resubmit.
+        new_key = validated_data.pop("api_key", None)
         instance = super().update(instance, validated_data)
-        if new_secret:
-            instance.client_secret = new_secret
-            instance.save(update_fields=["client_secret"])
+        if new_key:
+            instance.api_key = new_key
+            instance.save(update_fields=["api_key"])
         return instance
 
 

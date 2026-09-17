@@ -5,13 +5,15 @@ per-tenant class hierarchy -- there's only one gateway to support right
 now (mirrors how this codebase keeps single-partner integrations concrete
 instead of building a generalized plug-in system too early).
 
-Auth header: implemented as HTTP Basic (client_id:client_secret) per the
-originally-shared checkout doc page. The current v2 portal's own docs
-describe "generate API keys" without showing the exact header in the
-screenshots available while building this -- this is the first thing to
-verify against a real TEST account once credentials exist, and the one
-line to change (BASIC vs. an X-API-KEY-style header) if it turns out
-different.
+Auth + request/response shapes confirmed directly against NamastePay's own
+published OpenAPI v2 spec (https://testpay.namastepay.com/api/v2/openapi.json)
+-- not a guess: a single API key sent as the X-API-KEY header (generated via
+their merchant portal), amounts as integers in paisa (not decimal NPR
+strings), and initiate takes reference_id/remarks/amount_breakdown -- no
+order_id, return_url, customer, or description field exists on their side.
+Where a passenger lands after paying is apparently configured on
+NamastePay's own merchant-portal side, not passed per-request -- worth
+confirming once a real TEST account exists.
 """
 import requests
 
@@ -39,30 +41,35 @@ def _base_url(config: NamastePayConfig) -> str:
     return BASE_URLS[config.environment]
 
 
-def _auth(config: NamastePayConfig):
-    return (config.client_id, config.client_secret)
+def _headers(config: NamastePayConfig) -> dict:
+    return {"X-API-KEY": config.api_key, "Accept": "application/json", "Content-Type": "application/json"}
 
 
-def initiate_checkout(config: NamastePayConfig, *, amount, order_id, return_url, customer=None, description=""):
-    """POST /api/v2/initiate -- starts a hosted checkout, returns the
-    dict the caller should read `id`/`url` from (field names kept as
-    NamastePay's own response shape, not remapped, so this stays a thin
-    passthrough)."""
+def initiate_checkout(config: NamastePayConfig, *, amount, reference_id, remarks, amount_breakdown=None):
+    """POST /api/v2/initiate -- starts a hosted checkout.
+
+    `amount` is taken in NPR (matches how the rest of this codebase already
+    thinks about money, e.g. Ticket.fare_paid) and converted to integer
+    paisa here, since that's the unit NamastePay's API actually requires
+    (range 1-20,000,000 paisa). `reference_id`/`remarks` are both required,
+    max 256 chars each. `amount_breakdown`, if given, must be a dict of
+    label -> paisa amounts summing to the total.
+
+    Returns the dict the caller should read `checkout_id`/`payment_url`/
+    `expires_at` from (field names kept as NamastePay's own response shape,
+    not remapped, so this stays a thin passthrough)."""
     payload = {
-        "amount": f"{amount:.2f}" if not isinstance(amount, str) else amount,
-        "order_id": order_id,
-        "return_url": return_url,
+        "amount": int(round(float(amount) * 100)),
+        "reference_id": reference_id,
+        "remarks": remarks,
     }
-    if description:
-        payload["description"] = description
-    if customer:
-        payload["customer"] = customer
+    if amount_breakdown:
+        payload["amount_breakdown"] = amount_breakdown
 
     resp = requests.post(
         f"{_base_url(config)}/api/v2/initiate",
         json=payload,
-        auth=_auth(config),
-        headers={"Accept": "application/json"},
+        headers=_headers(config),
         timeout=TIMEOUT_SECONDS,
     )
     if not resp.ok:
@@ -75,11 +82,11 @@ def initiate_checkout(config: NamastePayConfig, *, amount, order_id, return_url,
 def enquire_checkout(config: NamastePayConfig, checkout_id: str):
     """GET /api/v2/enquire/{checkout_id} -- the authoritative status check.
     Never trust a return_url's query-string status alone; always confirm
-    here server-side before treating a payment as real."""
+    here server-side before treating a payment as real. `status` is one of:
+    initiated, success, failed, pending, refunded, canceled, expired."""
     resp = requests.get(
         f"{_base_url(config)}/api/v2/enquire/{checkout_id}",
-        auth=_auth(config),
-        headers={"Accept": "application/json"},
+        headers=_headers(config),
         timeout=TIMEOUT_SECONDS,
     )
     if not resp.ok:

@@ -2,8 +2,7 @@ import apiClient, { ApiResponse } from './api'
 
 export interface NamastePayConfig {
   id: string
-  client_id: string
-  client_secret_set: boolean
+  api_key_set: boolean
   environment: 'TEST' | 'LIVE'
   is_active: boolean
   created_at: string
@@ -11,8 +10,7 @@ export interface NamastePayConfig {
 }
 
 export interface NamastePayConfigPayload {
-  client_id?: string
-  client_secret?: string
+  api_key?: string
   environment?: 'TEST' | 'LIVE'
   is_active?: boolean
 }
