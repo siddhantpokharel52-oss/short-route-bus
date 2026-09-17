@@ -52,6 +52,43 @@ def is_coprime_step(step, ring_length):
     return ring_length <= 1 or math.gcd(step, ring_length) == 1
 
 
+def haversine_meters(lat1, lon1, lat2, lon2):
+    """Distance between two GPS coordinates, in meters. Same formula as the
+    existing (dead-code) copy in dispatch/views.py and the live one in
+    scheduling/views.py -- kept local here rather than imported from a
+    views module, consistent with this file's existing self-contained pure
+    math (build_ring/shift_for_date/etc.)."""
+    R = 6371000
+    phi1, phi2 = math.radians(float(lat1)), math.radians(float(lat2))
+    dphi = math.radians(float(lat2) - float(lat1))
+    dlambda = math.radians(float(lon2) - float(lon1))
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def depot_proximity_cost(group, route, policy):
+    """P3 (doc section 8, default OFF): a soft preference for a group whose
+    depot is close to the route's start stop -- every 10km of distance
+    costs one weight-unit, so the weight alone tunes how much this matters.
+    Never penalizes (returns 0) when the weight is off, the group has no
+    depot coordinates set, or the route has no start_stop -- this rule
+    must be a true no-op until an operator has actually entered location
+    data, same "OFF means off" contract every other rule in this policy
+    follows."""
+    if not policy.depot_proximity_weight:
+        return 0
+    if group.home_latitude is None or group.home_longitude is None:
+        return 0
+    start_stop = getattr(route, "start_stop", None)
+    if start_stop is None:
+        return 0
+
+    distance_km = haversine_meters(
+        group.home_latitude, group.home_longitude, start_stop.latitude, start_stop.longitude
+    ) / 1000
+    return round(policy.depot_proximity_weight * (distance_km / 10), 2)
+
+
 def smallest_coprime_step(ring_length, preferred=1):
     """The smallest step >= 1 that is coprime with ring_length -- offered
     back to the admin when their chosen step would leave some slots
@@ -213,6 +250,8 @@ def solve_day_assignment(date, groups, ring, shift, routes_by_id, history, polic
                 if imbalance > 0:
                     fair_share_cost = round(policy.fair_share_weight * imbalance, 2)
             components["fair_share"] = fair_share_cost
+
+            components["depot_proximity"] = depot_proximity_cost(group, route, policy)
 
             total = sum(components.values())
             row_costs.append(total)

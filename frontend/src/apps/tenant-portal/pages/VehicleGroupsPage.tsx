@@ -88,6 +88,19 @@ export default function VehicleGroupsPage() {
 
   const liveManageTarget = manageTarget ? groups.find((g) => g.id === manageTarget.id) ?? manageTarget : null
 
+  const saveDepotMutation = useMutation({
+    mutationFn: ({ groupId, home_latitude, home_longitude }: { groupId: string; home_latitude: string | null; home_longitude: string | null }) =>
+      vehicleGroupService.update(groupId, { home_latitude, home_longitude }),
+    onSuccess: () => {
+      toast.success('Depot location saved.')
+      qc.invalidateQueries({ queryKey: ['vehicle-groups'] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || 'Failed to save depot location.')
+    },
+  })
+
   const { data: groupDrivers = [] } = useQuery({
     queryKey: ['group-drivers', liveManageTarget?.id],
     queryFn: () => vehicleGroupService.listDrivers(liveManageTarget!.id),
@@ -368,6 +381,14 @@ export default function VehicleGroupsPage() {
                 </p>
               </div>
 
+              <DepotLocationForm
+                key={liveManageTarget.id}
+                group={liveManageTarget}
+                saving={saveDepotMutation.isPending}
+                onSave={(home_latitude, home_longitude) =>
+                  saveDepotMutation.mutate({ groupId: liveManageTarget.id, home_latitude, home_longitude })}
+              />
+
               <div>
                 <label className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
                   <UserCheck className="h-3.5 w-3.5" /> Drivers
@@ -449,6 +470,40 @@ export default function VehicleGroupsPage() {
           </div>
         )}
       </Modal>
+    </div>
+  )
+}
+
+function DepotLocationForm({
+  group, saving, onSave,
+}: {
+  group: VehicleGroup
+  saving: boolean
+  onSave: (home_latitude: string | null, home_longitude: string | null) => void
+}) {
+  const [lat, setLat] = useState(group.home_latitude ?? '')
+  const [lng, setLng] = useState(group.home_longitude ?? '')
+
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+        Depot location <span className="font-normal normal-case text-gray-400">(optional -- feeds the rotation engine's depot-proximity preference)</span>
+      </label>
+      <div className="flex gap-2">
+        <input
+          type="number" step="any" placeholder="Latitude" value={lat}
+          onChange={(e) => setLat(e.target.value)}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        />
+        <input
+          type="number" step="any" placeholder="Longitude" value={lng}
+          onChange={(e) => setLng(e.target.value)}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        />
+        <Button size="sm" loading={saving} onClick={() => onSave(lat || null, lng || null)}>
+          Save
+        </Button>
+      </div>
     </div>
   )
 }

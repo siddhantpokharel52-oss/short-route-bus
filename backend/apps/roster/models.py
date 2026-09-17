@@ -34,6 +34,13 @@ class RotationPolicy(models.Model):
     consecutive_weight = models.PositiveSmallIntegerField(default=2)
     fair_share_weight = models.PositiveSmallIntegerField(default=1)
 
+    # P3 (doc section 8): default 0/OFF, matching the doc's own default for
+    # this rule exactly -- every rule above defaults "on"; this one doesn't,
+    # on purpose, until an operator has entered group depot coordinates.
+    depot_proximity_weight = models.PositiveSmallIntegerField(
+        default=0, help_text="Cost per 10km between a group's depot and the route's start stop -- 0 = off"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

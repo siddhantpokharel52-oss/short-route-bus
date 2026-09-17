@@ -30,6 +30,8 @@ export interface VehicleGroup {
   kind: 'ROTATING' | 'FIXED' | 'RESERVE'
   composition_mode: 'UNIFORM' | 'MIXED'
   status: 'ACTIVE' | 'INACTIVE'
+  home_latitude: string | null
+  home_longitude: string | null
   capability_min_seats: number
   capability_total_seats: number
   capability_all_ac: boolean
@@ -42,7 +44,9 @@ export interface VehicleGroup {
   updated_at: string
 }
 
-export type VehicleGroupPayload = Partial<Pick<VehicleGroup, 'code' | 'kind' | 'composition_mode' | 'status'>>
+export type VehicleGroupPayload = Partial<
+  Pick<VehicleGroup, 'code' | 'kind' | 'composition_mode' | 'status' | 'home_latitude' | 'home_longitude'>
+>
 
 export interface EligibilityRoute {
   route_id: string

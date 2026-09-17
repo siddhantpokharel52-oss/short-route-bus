@@ -67,6 +67,7 @@ export interface RotationPolicy {
   max_consecutive_days_same_route: number
   consecutive_weight: number
   fair_share_weight: number
+  depot_proximity_weight: number
   created_at: string
   updated_at: string
 }
@@ -76,6 +77,7 @@ export interface CostComponents {
   route_cooldown: number
   consecutive_days: number
   fair_share: number
+  depot_proximity: number
 }
 
 export interface DutyExplanation {

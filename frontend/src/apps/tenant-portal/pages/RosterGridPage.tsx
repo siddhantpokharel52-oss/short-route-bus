@@ -401,6 +401,7 @@ function DutyDetail({
             <li>Route cooldown: {explanation.components.route_cooldown}</li>
             <li>Consecutive days: {explanation.components.consecutive_days}</li>
             <li>Fair share: {explanation.components.fair_share}</li>
+            <li>Depot proximity: {explanation.components.depot_proximity}</li>
           </ul>
           <p className="mt-1.5 text-sky-600">Total cost: {explanation.total} (lower is preferred; 0 means a perfect fit)</p>
         </div>
@@ -491,6 +492,7 @@ function RotationPolicyForm({
   const [maxConsecutiveDays, setMaxConsecutiveDays] = useState(policy.max_consecutive_days_same_route)
   const [consecutiveWeight, setConsecutiveWeight] = useState(policy.consecutive_weight)
   const [fairShareWeight, setFairShareWeight] = useState(policy.fair_share_weight)
+  const [depotProximityWeight, setDepotProximityWeight] = useState(policy.depot_proximity_weight)
 
   useEffect(() => {
     setRingStep(policy.ring_step)
@@ -503,6 +505,7 @@ function RotationPolicyForm({
     setMaxConsecutiveDays(policy.max_consecutive_days_same_route)
     setConsecutiveWeight(policy.consecutive_weight)
     setFairShareWeight(policy.fair_share_weight)
+    setDepotProximityWeight(policy.depot_proximity_weight)
   }, [policy])
 
   return (
@@ -592,6 +595,14 @@ function RotationPolicyForm({
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
             />
           </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Depot proximity weight</label>
+            <input
+              type="number" min={0} value={depotProximityWeight}
+              onChange={(e) => setDepotProximityWeight(Number(e.target.value))}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+          </div>
         </div>
       </div>
       <div className="flex justify-end border-t pt-4">
@@ -603,6 +614,7 @@ function RotationPolicyForm({
             rotation_preference_weight: rotationPreferenceWeight, route_cooldown_weight: cooldownWeight,
             max_consecutive_days_same_route: maxConsecutiveDays, consecutive_weight: consecutiveWeight,
             fair_share_weight: fairShareWeight,
+            depot_proximity_weight: depotProximityWeight,
           })}
         >
           Save Policy

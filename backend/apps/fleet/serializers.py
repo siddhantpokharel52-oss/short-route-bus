@@ -238,6 +238,7 @@ class VehicleGroupSerializer(serializers.ModelSerializer):
         model = VehicleGroup
         fields = [
             "id", "code", "kind", "composition_mode", "status", "ring_position",
+            "home_latitude", "home_longitude",
             "capability_min_seats", "capability_total_seats", "capability_all_ac",
             "capability_ac_count", "capability_categories", "capability_permit_classes",
             "capability_computed_at", "members", "created_at", "updated_at",

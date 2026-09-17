@@ -246,6 +246,14 @@ class VehicleGroup(models.Model):
     # reshuffling everyone."
     ring_position = models.PositiveIntegerField(null=True, blank=True)
 
+    # P3: this group's home depot, for the rotation engine's optional
+    # depot_proximity cost term (doc section 8, default OFF) -- same
+    # DecimalField shape as platform.Stop's lat/lng, not a separate Depot
+    # model, since the doc talks about "the group's depot" (one coordinate
+    # pair per group), not a shared multi-group entity.
+    home_latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    home_longitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+
     # ── Derived capability profile (section 4.6) -- recomputed by
     # GroupMember, never written directly elsewhere. ──────────────────────
     capability_min_seats = models.PositiveSmallIntegerField(default=0)

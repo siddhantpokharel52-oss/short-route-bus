@@ -336,7 +336,10 @@ class RosterPeriodViewSet(ModelViewSet):
                 g.save(update_fields=["ring_position"])
 
         with schema_context("public"):
-            routes_qs = list(Route.objects.filter(is_deleted=False, status=Route.Status.APPROVED).select_related("requirement"))
+            routes_qs = list(
+                Route.objects.filter(is_deleted=False, status=Route.Status.APPROVED)
+                .select_related("requirement", "start_stop")
+            )
             routes_by_id = {r.id: r for r in routes_qs}
             demand_rows_by_daytype = defaultdict(list)
             for r in routes_qs:
