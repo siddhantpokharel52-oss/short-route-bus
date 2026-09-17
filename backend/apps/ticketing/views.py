@@ -1,15 +1,21 @@
+import csv
+from datetime import datetime, time
+
 from rest_framework import generics, status, views, filters
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.viewsets import ModelViewSet
+from django.db import connection, transaction
+from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from .models import Ticket, DailyPass, MonthlyPass, StudentPass, NamastePayConfig
 from .serializers import (
     TicketSerializer, TicketVerifySerializer,
     DailyPassSerializer, MonthlyPassSerializer, StudentPassSerializer,
     NamastePayConfigSerializer,
 )
-from backend.apps.users.permissions import IsConductor, IsOperationsRole, IsCompanyAdmin
+from backend.apps.users.permissions import IsConductor, IsOperationsRole, IsCompanyAdmin, IsFinanceRole
 
 
 def api_response(data=None, message="Success", success=True, errors=None, status_code=200):
@@ -81,6 +87,89 @@ class TicketViewSet(ModelViewSet):
             message="Ticket issued successfully.",
             status_code=status.HTTP_201_CREATED,
         )
+
+
+class TicketExportView(views.APIView):
+    """
+    GET /ticketing/tickets/export/?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
+
+    CSV download of every ticket issued in the given date range, including
+    each ticket's payment_reference where one was recorded by the public
+    consumer API (Yatroo etc.) -- the reconciliation data finance needs to
+    settle operator payouts manually while no automated revenue-split
+    infrastructure exists yet. See docs/YATROO_INTEGRATION_STATUS.md §7.
+    """
+    permission_classes = [IsFinanceRole]
+
+    def get(self, request):
+        date_from = parse_date(request.query_params.get("date_from", ""))
+        date_to = parse_date(request.query_params.get("date_to", ""))
+        if not date_from or not date_to:
+            return api_response(
+                success=False,
+                message="date_from and date_to are both required (YYYY-MM-DD).",
+                status_code=400,
+            )
+        if date_from > date_to:
+            return api_response(success=False, message="date_from must not be after date_to.", status_code=400)
+
+        tickets = list(
+            Ticket.objects.filter(
+                is_deleted=False,
+                issued_at__gte=timezone.make_aware(datetime.combine(date_from, time.min)),
+                issued_at__lte=timezone.make_aware(datetime.combine(date_to, time.max)),
+            ).order_by("issued_at")
+        )
+
+        stop_ids = {t.from_stop_id for t in tickets if t.from_stop_id} | {t.to_stop_id for t in tickets if t.to_stop_id}
+        stop_names = {}
+        if stop_ids:
+            from backend.apps.platform.models import Stop
+            stop_names = {s.id: s.name_en for s in Stop.objects.filter(id__in=stop_ids)}
+
+        # payment_reference lives in a side-store table the public consumer API
+        # (backend/fastapi_services/public_api) owns and writes via raw SQL, not
+        # a Django-migrated column on Ticket -- same reasoning as that service's
+        # own enrich_payment_references(). It's lazily created on that service's
+        # first write, so it may not exist yet in an environment that's never
+        # taken a self-service purchase; a savepoint keeps that failure from
+        # poisoning the tickets/stops queries already done above.
+        payment_refs = {}
+        uids = [t.ticket_uid for t in tickets]
+        if uids:
+            try:
+                with transaction.atomic(), connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT ticket_uid, payment_reference FROM public.public_api_ticket_payment_ref "
+                        "WHERE ticket_uid = ANY(%s)",
+                        [uids],
+                    )
+                    payment_refs = dict(cursor.fetchall())
+            except Exception:
+                payment_refs = {}
+
+        response = HttpResponse(content_type="text/csv")
+        filename = f"tickets-{date_from.isoformat()}-to-{date_to.isoformat()}.csv"
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        writer = csv.writer(response)
+        writer.writerow([
+            "ticket_uid", "issued_at", "issued_by", "payment_method", "payment_reference",
+            "fare_paid", "status", "passenger_name", "from_stop", "to_stop",
+        ])
+        for t in tickets:
+            writer.writerow([
+                t.ticket_uid,
+                t.issued_at.isoformat(),
+                t.issued_by,
+                t.payment_method,
+                payment_refs.get(t.ticket_uid, ""),
+                t.fare_paid,
+                t.status,
+                t.passenger_name,
+                stop_names.get(t.from_stop_id, t.from_stop_id or ""),
+                stop_names.get(t.to_stop_id, t.to_stop_id or ""),
+            ])
+        return response
 
 
 class VerifyTicketView(views.APIView):

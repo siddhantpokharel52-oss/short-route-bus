@@ -6,6 +6,9 @@ router = DefaultRouter()
 router.register("tickets", views.TicketViewSet, basename="ticket")
 
 urlpatterns = [
+    # Must come before the router include below -- DefaultRouter's detail
+    # route (tickets/<pk>/) would otherwise swallow "export" as a pk value.
+    path("tickets/export/", views.TicketExportView.as_view(), name="export-tickets"),
     path("", include(router.urls)),
     path("tickets/<str:uid>/verify/", views.VerifyTicketView.as_view(), name="verify-ticket"),
     path("tickets/<str:uid>/cancel/", views.CancelTicketView.as_view(), name="cancel-ticket"),

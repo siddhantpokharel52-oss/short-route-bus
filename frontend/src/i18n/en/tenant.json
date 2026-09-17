@@ -919,6 +919,15 @@
       "saveDraft": "Save as Draft",
       "addLine": "Add Line"
     },
+    "ticketExport": {
+      "title": "Ticket Reconciliation Export",
+      "description": "Download every ticket issued in a date range, with its payment reference where one was recorded -- for reconciling and settling payouts manually",
+      "dateFrom": "From",
+      "dateTo": "To",
+      "button": "Export CSV",
+      "success": "Export downloaded.",
+      "error": "Failed to export tickets."
+    },
     "overview": {
       "monthToDate": "Month-to-Date Summary",
       "revenue": "Revenue",

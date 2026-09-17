@@ -6,7 +6,7 @@ import {
   TrendingUp, TrendingDown, BarChart3, CheckCircle, RotateCcw,
   Wallet, Users, Fuel, Wrench, ArrowUpDown, AlertCircle, Ticket,
   Search, X, Printer, Activity, CreditCard, Building2,
-  Receipt, BadgeCheck, Clock,
+  Receipt, BadgeCheck, Clock, Download,
 } from 'lucide-react'
 import apiClient from '@services/api'
 import toast from 'react-hot-toast'
@@ -1074,7 +1074,31 @@ export default function AccountingPage() {
   const [showReversed, setShowReversed] = useState(false)
   const [expandedJE, setExpandedJE] = useState<string | null>(null)
   const [salarySearch, setSalarySearch] = useState('')
+  const toLocalDateStr = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const today = new Date()
+  const [exportDateFrom, setExportDateFrom] = useState(toLocalDateStr(new Date(today.getFullYear(), today.getMonth(), 1)))
+  const [exportDateTo, setExportDateTo] = useState(toLocalDateStr(today))
   const queryClient = useQueryClient()
+
+  const exportTicketsMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiClient.get('/ticketing/tickets/export/', {
+        params: { date_from: exportDateFrom, date_to: exportDateTo },
+        responseType: 'blob',
+      })
+      const url = window.URL.createObjectURL(new Blob([res.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `tickets-${exportDateFrom}-to-${exportDateTo}.csv`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    },
+    onSuccess: () => toast.success(t('accounting.ticketExport.success')),
+    onError: () => toast.error(t('accounting.ticketExport.error')),
+  })
 
   const { data: kpis } = useQuery<DashboardKPIs>({
     queryKey: ['accounting-dashboard'],
@@ -1269,6 +1293,43 @@ export default function AccountingPage() {
             <KpiCard label={t('accounting.overview.cashBalance')}   value={kpis ? fmt(kpis.cash_balance) : '—'}        icon={Wallet}      sub={t('accounting.overview.currentLiquidFunds')} />
             <KpiCard label={t('accounting.overview.receivable')}    value={kpis ? fmt(kpis.accounts_receivable) : '—'} icon={ArrowUpDown} sub={t('accounting.overview.amountsOwedToYou')} />
             <KpiCard label={t('accounting.overview.payable')}       value={kpis ? fmt(kpis.accounts_payable) : '—'}    icon={CreditCard}  sub={t('accounting.overview.amountsYouOwe')} />
+          </div>
+
+          {/* Ticket reconciliation export */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden">
+            <div className="flex items-center gap-2.5 px-5 py-4 border-b border-gray-100 dark:border-gray-700">
+              <div className="w-7 h-7 rounded-lg bg-primary-600 flex items-center justify-center">
+                <Download className="h-3.5 w-3.5 text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-gray-800 dark:text-gray-100">{t('accounting.ticketExport.title')}</p>
+                <p className="text-xs text-gray-400">{t('accounting.ticketExport.description')}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-end gap-3 p-5">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">{t('accounting.ticketExport.dateFrom')}</label>
+                <input
+                  type="date" value={exportDateFrom} onChange={(e) => setExportDateFrom(e.target.value)}
+                  className="rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-900 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">{t('accounting.ticketExport.dateTo')}</label>
+                <input
+                  type="date" value={exportDateTo} onChange={(e) => setExportDateTo(e.target.value)}
+                  className="rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-900 px-3 py-2 text-sm"
+                />
+              </div>
+              <button
+                onClick={() => exportTicketsMutation.mutate()}
+                disabled={exportTicketsMutation.isPending}
+                className="flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
+              >
+                <Download className="h-4 w-4" />
+                {t('accounting.ticketExport.button')}
+              </button>
+            </div>
           </div>
 
           {/* Auto-journaling mapping */}
