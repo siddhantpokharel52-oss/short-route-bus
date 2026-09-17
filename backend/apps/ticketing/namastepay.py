@@ -11,9 +11,12 @@ published OpenAPI v2 spec (https://testpay.namastepay.com/api/v2/openapi.json)
 their merchant portal), amounts as integers in paisa (not decimal NPR
 strings), and initiate takes reference_id/remarks/amount_breakdown -- no
 order_id, return_url, customer, or description field exists on their side.
-Where a passenger lands after paying is apparently configured on
-NamastePay's own merchant-portal side, not passed per-request -- worth
-confirming once a real TEST account exists.
+Where a passenger lands after paying (the return URL) is confirmed set once
+when generating the API key in NamastePay's merchant portal, not passed
+per-request -- their own spec's callbacks section documents the redirect as
+{$your_return_url}?checkout_id=...&reference_id=...&transaction_id=...&status=...&amount=...,
+but that status is still just a query-string claim -- always confirm via
+enquire_checkout() server-side before treating a payment as real.
 """
 import requests
 
