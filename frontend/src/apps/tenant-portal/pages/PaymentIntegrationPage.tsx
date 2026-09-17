@@ -102,7 +102,9 @@ export default function PaymentIntegrationPage() {
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 {...register('api_key')}
               />
-              <p className="mt-1 text-xs text-gray-400">Generate this from the NamastePay merchant portal for your environment.</p>
+              <p className="mt-1 text-xs text-gray-400">
+                Generate this from the NamastePay merchant portal for your environment. Set your return URL there too, when generating the key -- it isn't configured here.
+              </p>
             </div>
 
             <div>
