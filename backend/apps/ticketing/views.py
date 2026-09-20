@@ -9,9 +9,10 @@ from django.db import connection, transaction
 from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
-from .models import Ticket, DailyPass, MonthlyPass, StudentPass, NamastePayConfig
+from .models import Ticket, Booking, DailyPass, MonthlyPass, StudentPass, NamastePayConfig
 from .serializers import (
     TicketSerializer, TicketVerifySerializer,
+    BookingSerializer, BookingCreateSerializer,
     DailyPassSerializer, MonthlyPassSerializer, StudentPassSerializer,
     NamastePayConfigSerializer,
 )
@@ -26,6 +27,23 @@ def api_response(data=None, message="Success", success=True, errors=None, status
         "errors": errors,
         "meta": {"timestamp": timezone.now().isoformat()},
     }, status=status_code)
+
+
+def resolve_conductor_vehicle_id(conductor_user_id):
+    """Which bus a conductor is on right now, from today's dispatch
+    allocation -- dynamic and dispatcher-adjustable, unlike a static
+    assigned-vehicle field. Returns None (never blocks issuance) if no
+    active allocation is found for today."""
+    try:
+        from backend.apps.dispatch.models import DailyAllocation
+        allocation = DailyAllocation.objects.filter(
+            date=timezone.localdate(),
+            conductor_id=conductor_user_id,
+            status="ACTIVE",
+        ).values_list("vehicle_id", flat=True).first()
+        return str(allocation) if allocation else None
+    except Exception:
+        return None
 
 
 class TicketViewSet(ModelViewSet):
@@ -59,7 +77,7 @@ class TicketViewSet(ModelViewSet):
         # since silently falling back would defeat the point of the toggle.
         my_bus = request.query_params.get("my_bus")
         if my_bus and my_bus.lower() in ("1", "true", "yes"):
-            vehicle_id = self._resolve_conductor_vehicle_id(request.user.id)
+            vehicle_id = resolve_conductor_vehicle_id(request.user.id)
             qs = qs.filter(vehicle_id=vehicle_id) if vehicle_id else qs.none()
 
         page = self.paginate_queryset(qs)
@@ -78,20 +96,7 @@ class TicketViewSet(ModelViewSet):
         return api_response(data={"results": serializer.data, "count": qs.count()})
 
     def _resolve_conductor_vehicle_id(self, conductor_user_id):
-        """Which bus a conductor is on right now, from today's dispatch
-        allocation -- dynamic and dispatcher-adjustable, unlike a static
-        assigned-vehicle field. Returns None (never blocks issuance) if no
-        active allocation is found for today."""
-        try:
-            from backend.apps.dispatch.models import DailyAllocation
-            allocation = DailyAllocation.objects.filter(
-                date=timezone.localdate(),
-                conductor_id=conductor_user_id,
-                status="ACTIVE",
-            ).values_list("vehicle_id", flat=True).first()
-            return str(allocation) if allocation else None
-        except Exception:
-            return None
+        return resolve_conductor_vehicle_id(conductor_user_id)
 
     def create(self, request, *args, **kwargs):
         data = {
@@ -112,6 +117,68 @@ class TicketViewSet(ModelViewSet):
         return api_response(
             data=TicketSerializer(ticket).data,
             message="Ticket issued successfully.",
+            status_code=status.HTTP_201_CREATED,
+        )
+
+
+class BookingViewSet(ModelViewSet):
+    """
+    Groups several tickets under one purchase -- CB2 ("a family of five buying
+    tickets together, one payment").
+    GET  /ticketing/bookings/          -> paginated list
+    POST /ticketing/bookings/          -> issue a whole group of tickets atomically
+    GET  /ticketing/bookings/{id}/     -> retrieve a booking + its tickets
+    """
+    serializer_class = BookingSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):
+        return Booking.objects.filter(is_deleted=False)
+
+    def list(self, request, *args, **kwargs):
+        qs = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            paginated = self.get_paginated_response(serializer.data)
+            return api_response(
+                data={
+                    "results": serializer.data,
+                    "count": paginated.data.get("count", 0),
+                    "next": paginated.data.get("next"),
+                    "previous": paginated.data.get("previous"),
+                },
+            )
+        serializer = self.get_serializer(qs, many=True)
+        return api_response(data={"results": serializer.data, "count": qs.count()})
+
+    def retrieve(self, request, *args, **kwargs):
+        booking = self.get_object()
+        return api_response(data=self.get_serializer(booking).data)
+
+    def create(self, request, *args, **kwargs):
+        # Same conductor/vehicle auto-fill TicketViewSet.create() already applies to
+        # a single ticket, passed down so every ticket in the group gets it too.
+        ticket_defaults = {
+            "issued_by": request.data.get("issued_by", "POS"),
+        }
+        if hasattr(request.user, "role") and request.user.role == "CONDUCTOR":
+            ticket_defaults["conductor_id"] = str(request.user.id)
+            ticket_defaults["issued_by"] = "CONDUCTOR"
+            ticket_defaults["vehicle_id"] = resolve_conductor_vehicle_id(request.user.id)
+        passenger_id = request.data.get("passenger_id")
+        if passenger_id:
+            ticket_defaults["passenger_id"] = passenger_id
+
+        serializer = BookingCreateSerializer(
+            data=request.data, context={"ticket_defaults": ticket_defaults}
+        )
+        serializer.is_valid(raise_exception=True)
+        booking = serializer.save()
+        return api_response(
+            data=BookingSerializer(booking).data,
+            message="Booking issued successfully.",
             status_code=status.HTTP_201_CREATED,
         )
 

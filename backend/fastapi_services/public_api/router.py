@@ -1051,6 +1051,184 @@ async def issue_ticket(
     return _passthrough(resp)
 
 
+@router.post("/tickets/group/")
+async def issue_group_tickets(
+    payload: dict,
+    user: dict = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    """Group booking (CB2) — a family buying several tickets together as one purchase.
+    Passenger self-service only, same journey step as the single-ticket self-service
+    path in issue_ticket() above (no conductor/QR involved), just for N passengers at
+    once instead of one. `route_id` + a **required** `payment_reference`, plus
+    `passengers`: a list of 1-20 `{ticket_type?, passenger_name?, fare_paid}` — a family
+    can mix adult/student/senior in one booking. All tickets are issued together or not
+    at all (Django's BookingCreateSerializer wraps the whole group in one transaction).
+
+    This deliberately duplicates rather than shares issue_ticket()'s self-service
+    schema-resolution block: that function already juggles three intertwined role
+    branches and an idempotency reservation lifecycle, and refactoring it to share ~25
+    lines with this one new caller would be a riskier change than the duplication it
+    would save."""
+    if user.get("role") != PASSENGER_ROLE:
+        raise HTTPException(status_code=403, detail="Only a passenger token can book a group of tickets.")
+
+    passenger_id = user.get("user_id")
+    if not passenger_id:
+        return _error("Invalid token.", 401)
+
+    route_id = payload.get("route_id")
+    if not isinstance(route_id, str) or not route_id.strip():
+        return _error("route_id is required.", 400)
+
+    payment_reference = payload.get("payment_reference")
+    if not isinstance(payment_reference, str) or not payment_reference.strip():
+        return _error(
+            "payment_reference is required for a group ticket purchase — there is no "
+            "conductor present to collect cash for this flow.",
+            400,
+        )
+
+    passengers = payload.get("passengers")
+    if not isinstance(passengers, list) or not passengers:
+        return _error("passengers must be a non-empty list.", 400)
+
+    operator_schemas = await tenant_db.get_route_operator_schemas(route_id)
+    if not operator_schemas:
+        return _error("Route not found or not currently served by any operator.", 404)
+    if len(operator_schemas) == 1:
+        schema = operator_schemas[0]
+    else:
+        requested_schema = payload.get("tenant_schema")
+        if not isinstance(requested_schema, str) or requested_schema not in operator_schemas:
+            return _error(
+                "This route is served by more than one operator — specify which one via "
+                "`tenant_schema`.",
+                400,
+                errors={"operators": operator_schemas},
+            )
+        schema = requested_schema
+
+    resolved_passengers = []
+    for passenger in passengers:
+        entry = {"fare_paid": passenger.get("fare_paid"), "passenger_name": passenger.get("passenger_name", "")}
+        ticket_type_code = passenger.get("ticket_type")
+        if isinstance(ticket_type_code, str) and ticket_type_code.strip():
+            ticket_type_id = await tenant_db.resolve_ticket_type_id(ticket_type_code.strip().upper())
+            if ticket_type_id is None:
+                return _error(f"Unknown ticket_type: {ticket_type_code!r}.", 400)
+            entry["ticket_type_id"] = ticket_type_id
+        resolved_passengers.append(entry)
+
+    account_id = await tenant_db.get_or_create_self_service_account(schema)
+    bearer_token = _mint_self_service_token(account_id, schema)
+
+    idempotency_key = payload.get("idempotency_key")
+    cache_key = None
+    owns_reservation = False
+    if isinstance(idempotency_key, str) and idempotency_key.strip():
+        cache_key = _idempotency_cache_key(schema, idempotency_key)
+        try:
+            owns_reservation = bool(
+                await redis.set(cache_key, IDEMPOTENCY_IN_PROGRESS, nx=True, ex=IDEMPOTENCY_RESERVATION_TTL_SECONDS)
+            )
+            if not owns_reservation:
+                existing = await redis.get(cache_key)
+                if existing is not None and existing != IDEMPOTENCY_IN_PROGRESS:
+                    stored = json.loads(existing)
+                    return JSONResponse(status_code=stored["status_code"], content=stored["body"])
+                stored = await _await_idempotent_result(redis, cache_key)
+                if stored is not None:
+                    return JSONResponse(status_code=stored["status_code"], content=stored["body"])
+                return _error(
+                    "A request with this idempotency_key is already being processed. Please retry.",
+                    409,
+                )
+        except Exception:
+            logger.warning(
+                "Redis unavailable for idempotency check (tenant=%s) — issuing group tickets without "
+                "dedupe protection.",
+                schema,
+                exc_info=True,
+            )
+            cache_key = None
+            owns_reservation = False
+
+    domain = await tenant_db.get_domain_for_schema(schema)
+    if not domain:
+        return _error(f"No domain configured for tenant '{schema}'.", 500)
+
+    django_payload = {
+        "route_id": route_id,
+        "from_stop_id": payload.get("from_stop_id"),
+        "to_stop_id": payload.get("to_stop_id"),
+        "payment_method": payload.get("payment_method", "CASH"),
+        "passenger_id": passenger_id,
+        "issued_by": "MOBILE",
+        "passengers": resolved_passengers,
+    }
+    resp = await _proxy_to_django(
+        "POST", "/api/v1/ticketing/bookings/", schema, domain, bearer_token, json_body=django_payload,
+    )
+
+    try:
+        body = resp.json()
+    except ValueError:
+        body = None
+
+    if body is not None and 200 <= resp.status_code < 300 and isinstance(body, dict):
+        tickets = ((body.get("data") or {}).get("tickets")) or []
+        for ticket in tickets:
+            ticket_uid = ticket.get("ticket_uid")
+            if not ticket_uid:
+                continue
+            try:
+                await tenant_db.store_payment_reference(ticket_uid, schema, payment_reference.strip())
+            except Exception:
+                logger.warning(
+                    "Failed to store payment_reference for ticket %s in group booking (tenant=%s) — "
+                    "the ticket was issued successfully, but its payment_reference won't be retrievable.",
+                    ticket_uid,
+                    schema,
+                    exc_info=True,
+                )
+            try:
+                await ticket_ws_manager.broadcast(
+                    {"event": "ticket_issued", "data": ticket}, group=f"passenger_{passenger_id}",
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to broadcast ticket_issued over WebSocket for passenger %s (group booking).",
+                    passenger_id,
+                    exc_info=True,
+                )
+
+    if cache_key is not None and owns_reservation and body is not None:
+        if 200 <= resp.status_code < 300:
+            try:
+                await redis.set(
+                    cache_key, json.dumps({"status_code": resp.status_code, "body": body}), ex=IDEMPOTENCY_TTL_SECONDS,
+                )
+            except Exception:
+                logger.warning(
+                    "Redis unavailable while storing idempotency result (tenant=%s) — a group-booking "
+                    "retry with this key won't be deduped.",
+                    schema,
+                    exc_info=True,
+                )
+        else:
+            try:
+                await redis.delete(cache_key)
+            except Exception:
+                logger.warning(
+                    "Redis unavailable while releasing a failed idempotency reservation (tenant=%s).",
+                    schema,
+                    exc_info=True,
+                )
+
+    return _passthrough(resp)
+
+
 @router.get("/tickets/my/")
 async def my_tickets(
     user: dict = Depends(get_current_user),

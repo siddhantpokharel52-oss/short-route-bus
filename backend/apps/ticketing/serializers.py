@@ -1,7 +1,30 @@
 from rest_framework import serializers
 import secrets
+from decimal import Decimal
+from django.db import transaction
 from django.utils import timezone
-from .models import Ticket, DailyPass, MonthlyPass, StudentPass, NamastePayConfig
+from .models import Ticket, Booking, DailyPass, MonthlyPass, StudentPass, NamastePayConfig
+
+
+def _generate_ticket_uid_and_qr():
+    """A fresh ticket_uid plus its base64 PNG QR code, encoding just the uid --
+    shared by single-ticket and group-booking creation so both stay in sync."""
+    ticket_uid = f"TKT-{secrets.token_hex(6).upper()}"
+    try:
+        import qrcode
+        import io
+        import base64
+        qr = qrcode.make(ticket_uid)
+        buf = io.BytesIO()
+        qr.save(buf, format="PNG")
+        qr_b64 = base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        qr_b64 = ""
+    return ticket_uid, qr_b64
+
+
+def _default_valid_until():
+    return timezone.now().replace(hour=23, minute=59, second=59, microsecond=0)
 
 
 def _resolve_stop_name(stop_id):
@@ -60,27 +83,10 @@ class TicketSerializer(serializers.ModelSerializer):
         return _resolve_vehicle_bus_number(obj.vehicle_id)
 
     def create(self, validated_data):
-        # Auto-generate ticket UID
-        ticket_uid = f"TKT-{secrets.token_hex(6).upper()}"
+        ticket_uid, qr_b64 = _generate_ticket_uid_and_qr()
 
-        # Auto-set valid_until to end of today if not provided
         if not validated_data.get("valid_until"):
-            validated_data["valid_until"] = (
-                timezone.now()
-                .replace(hour=23, minute=59, second=59, microsecond=0)
-            )
-
-        # Generate QR code
-        try:
-            import qrcode
-            import io
-            import base64
-            qr = qrcode.make(ticket_uid)
-            buf = io.BytesIO()
-            qr.save(buf, format="PNG")
-            qr_b64 = base64.b64encode(buf.getvalue()).decode()
-        except Exception:
-            qr_b64 = ""
+            validated_data["valid_until"] = _default_valid_until()
 
         return Ticket.objects.create(
             ticket_uid=ticket_uid,
@@ -104,6 +110,65 @@ class TicketVerifySerializer(serializers.Serializer):
         if ticket.status == Ticket.Status.CANCELLED:
             raise serializers.ValidationError("Ticket is cancelled.")
         return value
+
+
+class BookingPassengerSerializer(serializers.Serializer):
+    ticket_type_id = serializers.UUIDField(required=False, allow_null=True)
+    passenger_name = serializers.CharField(required=False, allow_blank=True, default="")
+    fare_paid = serializers.DecimalField(max_digits=8, decimal_places=2, min_value=Decimal("0"))
+
+
+class BookingSerializer(serializers.ModelSerializer):
+    tickets = TicketSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Booking
+        fields = [
+            "id", "passenger_id", "route_id", "from_stop_id", "to_stop_id",
+            "total_fare", "payment_method", "booked_at", "status", "tickets",
+        ]
+        read_only_fields = ["id", "total_fare", "booked_at", "status", "tickets"]
+
+
+class BookingCreateSerializer(serializers.Serializer):
+    """Groups several tickets under one purchase -- CB2. Each ticket's own
+    fare_paid is client-supplied, same trust model a single ticket already has
+    (see Booking's own docstring). passenger_id/conductor_id/vehicle_id/issued_by
+    are injected by the view, not accepted from the request body, mirroring how
+    TicketViewSet.create() already handles those fields for a single ticket."""
+    route_id = serializers.UUIDField(required=False, allow_null=True)
+    from_stop_id = serializers.UUIDField(required=False, allow_null=True)
+    to_stop_id = serializers.UUIDField(required=False, allow_null=True)
+    payment_method = serializers.ChoiceField(choices=Ticket.PaymentMethod.choices, default=Ticket.PaymentMethod.CASH)
+    passengers = BookingPassengerSerializer(many=True, min_length=1, max_length=20)
+
+    def create(self, validated_data):
+        passengers = validated_data.pop("passengers")
+        ticket_defaults = self.context.get("ticket_defaults", {})
+
+        with transaction.atomic():
+            booking = Booking.objects.create(
+                total_fare=sum(p["fare_paid"] for p in passengers),
+                passenger_id=ticket_defaults.get("passenger_id"),
+                **validated_data,
+            )
+            valid_until = _default_valid_until()
+            for passenger in passengers:
+                ticket_uid, qr_b64 = _generate_ticket_uid_and_qr()
+                Ticket.objects.create(
+                    ticket_uid=ticket_uid,
+                    qr_code=qr_b64,
+                    booking=booking,
+                    valid_until=valid_until,
+                    from_stop_id=validated_data.get("from_stop_id"),
+                    to_stop_id=validated_data.get("to_stop_id"),
+                    payment_method=validated_data["payment_method"],
+                    ticket_type_id=passenger.get("ticket_type_id"),
+                    passenger_name=passenger.get("passenger_name", ""),
+                    fare_paid=passenger["fare_paid"],
+                    **ticket_defaults,
+                )
+        return booking
 
 
 class NamastePayConfigSerializer(serializers.ModelSerializer):

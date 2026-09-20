@@ -4,6 +4,7 @@ from . import views
 
 router = DefaultRouter()
 router.register("tickets", views.TicketViewSet, basename="ticket")
+router.register("bookings", views.BookingViewSet, basename="booking")
 
 urlpatterns = [
     # Must come before the router include below -- DefaultRouter's detail

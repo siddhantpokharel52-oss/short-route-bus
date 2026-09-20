@@ -29,6 +29,9 @@ class Ticket(models.Model):
     ticket_type_id = models.UUIDField(null=True, blank=True)
     trip_id = models.UUIDField(null=True, blank=True)
     vehicle_id = models.UUIDField(null=True, blank=True)
+    booking = models.ForeignKey(
+        "Booking", null=True, blank=True, on_delete=models.CASCADE, related_name="tickets"
+    )
     passenger_id = models.UUIDField(null=True, blank=True)
     passenger_name = models.CharField(max_length=255, blank=True)
     conductor_id = models.UUIDField(null=True, blank=True)
@@ -53,6 +56,33 @@ class Ticket(models.Model):
 
     def __str__(self):
         return self.ticket_uid
+
+
+class Booking(models.Model):
+    """Ties several tickets together under one purchase -- a family buying tickets
+    together, per the payment design doc's CB2. Grouping only: each ticket's own
+    fare_paid stays client-supplied, same trust model a single ticket already has;
+    no fare-lookup logic lives here (that's CB3's concern, not this one)."""
+    class Status(models.TextChoices):
+        VALID = "VALID", "Valid"
+        CANCELLED = "CANCELLED", "Cancelled"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    passenger_id = models.UUIDField(null=True, blank=True)
+    route_id = models.UUIDField(null=True, blank=True)
+    from_stop_id = models.UUIDField(null=True, blank=True)
+    to_stop_id = models.UUIDField(null=True, blank=True)
+    total_fare = models.DecimalField(max_digits=9, decimal_places=2)
+    payment_method = models.CharField(max_length=15, choices=Ticket.PaymentMethod.choices, default=Ticket.PaymentMethod.CASH)
+    booked_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.VALID)
+    is_deleted = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-booked_at"]
+
+    def __str__(self):
+        return str(self.id)
 
 
 class DailyPass(models.Model):
