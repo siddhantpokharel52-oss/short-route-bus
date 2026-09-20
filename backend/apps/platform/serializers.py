@@ -113,6 +113,35 @@ class RouteRequirementSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError(f"'{code}.{k}' must be an integer.")
         return value
 
+    def validate_allowed_categories(self, value):
+        # RG-028: reject a bare string (accepted today since a string is
+        # JSON-serializable) -- must be a list of category-code strings.
+        # Can't check the codes actually exist: RouteRequirement is
+        # shared-schema and a route can be served by several tenants, each
+        # with their own VehicleCategory codes, so there's no single fleet
+        # to validate against at save time.
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            raise serializers.ValidationError("Must be a list of category code strings.")
+        return value
+
+    def validate(self, attrs):
+        # RG-029/032: this endpoint is always a partial update once a
+        # RouteRequirement row exists (see requirement() in views.py), so a
+        # payload for the new mode naturally omits the old mode's fields --
+        # they survive as stale leftovers unless explicitly cleared here.
+        # Only fires when the client is actually setting mode; an ordinary
+        # partial update of some unrelated field is untouched.
+        mode = attrs.get("mode")
+        if mode == RouteRequirement.Mode.PER_VEHICLE:
+            attrs.setdefault("min_total_seats", None)
+            attrs.setdefault("min_ac_count", None)
+            attrs.setdefault("category_bounds", {})
+        elif mode == RouteRequirement.Mode.GROUP_LEVEL:
+            attrs.setdefault("min_seats", None)
+            attrs.setdefault("require_ac", False)
+            attrs.setdefault("allowed_categories", [])
+        return attrs
+
 
 class RouteDemandSerializer(serializers.ModelSerializer):
     class Meta:

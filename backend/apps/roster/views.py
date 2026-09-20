@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import timedelta
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Max, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -644,7 +645,8 @@ class RosterPeriodViewSet(ModelViewSet):
 
 class DutyViewSet(ModelViewSet):
     serializer_class = DutySerializer
-    http_method_names = ["get", "patch", "head", "options", "post"]
+    http_method_names = ["get", "patch", "delete", "head", "options", "post"]
+    IMMUTABLE_DUTY_FIELDS = {"service_date", "route_id", "slot_index"}  # RG-057(c)
 
     def get_permissions(self):
         if self.action in ("list", "retrieve", "explain"):
@@ -673,17 +675,46 @@ class DutyViewSet(ModelViewSet):
             status_code=405,
         )
 
+    def destroy(self, request, *args, **kwargs):
+        # RG-071: a normal demand-slot duty must stay visible as unassigned,
+        # never disappear -- only a surge-created (mistaken or not) duty is
+        # safe to remove outright. Duty has no soft-delete field, so this is
+        # a real DELETE (cascades its own DutyOverride audit row too, which
+        # is fine -- deleting a mistake taking its own audit trail with it
+        # is reasonable, unlike deleting a real published-roster override).
+        instance = self.get_object()
+        if instance.source != Duty.Source.RESERVE_FILL:
+            return api_response(
+                success=False,
+                message="Only a surge-created duty can be deleted -- a regular demand slot must stay visible as unassigned.",
+                status_code=400,
+            )
+        return super().destroy(request, *args, **kwargs)
+
     def partial_update(self, request, *args, **kwargs):
         duty = self.get_object()
         period = duty.roster_period
         if period.status == RosterPeriod.Status.CLOSED:
             return api_response(success=False, message="This roster period is closed.", status_code=400)
 
+        # RG-057(c): these were silently ignored while the response still
+        # claimed "Duty updated" -- reject explicitly instead.
+        disallowed = self.IMMUTABLE_DUTY_FIELDS & set(request.data.keys())
+        if disallowed:
+            return api_response(
+                success=False, message=f"These fields cannot be changed: {', '.join(sorted(disallowed))}.",
+                status_code=400,
+            )
+
         # Locking/unlocking is its own call -- a group reassignment in the
         # same request while locked is refused below rather than silently
         # allowed just because "locked" was also present.
         if "locked" in request.data and "group" not in request.data:
-            duty.locked = bool(request.data["locked"])
+            # RG-057(b): bool("maybe") is True -- any non-empty string was
+            # silently coerced with no real type check.
+            if not isinstance(request.data["locked"], bool):
+                return api_response(success=False, message="locked must be true or false.", status_code=400)
+            duty.locked = request.data["locked"]
             duty.save(update_fields=["locked", "updated_at"])
             return api_response(data=DutySerializer(duty).data, message="Duty lock updated.")
 
@@ -719,7 +750,10 @@ class DutyViewSet(ModelViewSet):
         if new_group_id:
             try:
                 new_group = VehicleGroup.objects.get(pk=new_group_id, is_deleted=False)
-            except VehicleGroup.DoesNotExist:
+            except (VehicleGroup.DoesNotExist, DjangoValidationError, ValueError, TypeError):
+                # RG-057(a): a malformed (non-UUID) id raised an uncaught
+                # ValidationError from Django's UUID parsing before DoesNotExist
+                # ever had a chance to fire -- 500 instead of a clean 400.
                 return api_response(success=False, message="Group not found.", status_code=400)
 
             if new_group.kind == VehicleGroup.Kind.RESERVE and duty.source != Duty.Source.RESERVE_FILL:
@@ -850,7 +884,13 @@ class DutyViewSet(ModelViewSet):
         from backend.apps.platform.models import Route
 
         with schema_context("public"):
-            route = Route.objects.select_related("requirement").filter(pk=route_id).first()
+            try:
+                route = Route.objects.select_related("requirement").filter(pk=route_id).first()
+            except (DjangoValidationError, ValueError, TypeError):
+                # RG-072: a malformed (non-UUID) route_id raised an uncaught
+                # ValidationError from Django's UUID parsing before .first()
+                # ever got a chance to return None -- 500 instead of 400.
+                route = None
         if route is None:
             return api_response(success=False, message="Route not found.", status_code=400)
         if route.status != Route.Status.APPROVED:
@@ -877,29 +917,48 @@ class DutyViewSet(ModelViewSet):
             Duty.objects.filter(service_date=service_date, group__isnull=False).values_list("group_id", flat=True)
         )
 
+        # RG-070: name every candidate's specific blocking reason -- "busy
+        # today," "ineligible," and "no reserve groups at all" used to all
+        # produce the identical generic message with an empty errors list,
+        # since .exclude(id__in=busy_today) removed busy groups from the
+        # loop before eligibility was ever checked against them.
+        reserve_groups = list(VehicleGroup.objects.filter(is_deleted=False, kind=VehicleGroup.Kind.RESERVE))
+        if not reserve_groups:
+            return api_response(success=False, message="No reserve groups exist for this operator.", status_code=400)
+
         candidates = []
-        blocking_reasons = set()
-        for g in VehicleGroup.objects.filter(is_deleted=False, kind=VehicleGroup.Kind.RESERVE).exclude(id__in=busy_today):
+        blocking = {}
+        for g in reserve_groups:
+            if g.id in busy_today:
+                blocking[g.code] = "already covering another duty today"
+                continue
             ok, reasons = check_group_route_eligibility(g, route, allow_reserve=True)
             if ok:
                 last_used = Duty.objects.filter(group=g).aggregate(Max("service_date"))["service_date__max"]
                 candidates.append((last_used, g))
             else:
-                blocking_reasons.update(reasons)
+                blocking[g.code] = "; ".join(reasons)
 
         if not candidates:
             return api_response(
                 success=False, message="No reserve group qualifies for this route.",
-                errors=sorted(blocking_reasons), status_code=400,
+                errors=[f"{code}: {reason}" for code, reason in sorted(blocking.items())], status_code=400,
             )
 
         # Least-recently-used first: never-used (None) sorts ahead of any date.
         candidates.sort(key=lambda pair: (pair[0] is not None, pair[0]))
         chosen = candidates[0][1]
 
+        reason = (request.data.get("reason") or "").strip()
         duty = Duty.objects.create(
             roster_period=period, service_date=service_date, route_id=route_id,
             slot_index=next_slot, group=chosen, source=Duty.Source.RESERVE_FILL,
+        )
+        # RG-070: a surge fill previously created no audit row at all --
+        # DutyOverride already shape-fits (previous_group=None, new_group=chosen).
+        DutyOverride.objects.create(
+            duty=duty, previous_group=None, new_group=chosen,
+            reason=reason or "Surge fill", actor_id=request.user.id,
         )
         return api_response(data=DutySerializer(duty).data, message=f"Surge slot filled by {chosen.code}.")
 

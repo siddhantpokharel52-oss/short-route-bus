@@ -298,7 +298,14 @@ class VehicleGroupViewSet(ModelViewSet):
                 .select_related("route", "route__requirement")
             )
         total_slots = sum(d.slot_count for d in demand_rows)
-        rotating_groups = list(VehicleGroup.objects.filter(is_deleted=False, kind=VehicleGroup.Kind.ROTATING))
+        # RG-030: an empty (0-vehicle) group can never actually run a duty --
+        # excluding it here (rather than in a later filter step) keeps both
+        # total_rotating_groups and group_passes' per-requirement counts from
+        # being inflated by supply that doesn't really exist. capability_total_seats
+        # is already kept live by recompute_capability(), so this is a free filter.
+        rotating_groups = list(VehicleGroup.objects.filter(
+            is_deleted=False, kind=VehicleGroup.Kind.ROTATING, capability_total_seats__gt=0,
+        ))
         total_groups = len(rotating_groups)
 
         def group_passes(group, req):

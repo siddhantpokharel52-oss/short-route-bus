@@ -1,3 +1,4 @@
+import re
 from rest_framework import serializers
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
@@ -83,6 +84,26 @@ class VehicleSerializer(serializers.ModelSerializer):
         if self.instance is None and attrs.get("category") is None:
             raise serializers.ValidationError({"category": "category is required."})
         return attrs
+
+    def validate_registration_no(self, value):
+        # RG-012: case-insensitive uniqueness -- a real plate ("Ba 1 Kha 2155"
+        # vs "ba 1 kha 2155") is the same vehicle either way. Uppercasing
+        # doesn't corrupt a real plate string, and matches this codebase's
+        # own convention of storing handles in a canonical case.
+        normalized = value.strip().upper()
+        qs = Vehicle.objects.filter(registration_no__iexact=normalized)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(f"'{normalized}' already exists (case-insensitive).")
+        return normalized
+
+    def validate_capacity_seated(self, value):
+        # RG-016: 0 is accepted by PositiveSmallIntegerField (only excludes
+        # negatives) but breaks the min/total-seats maths downstream.
+        if value < 1:
+            raise serializers.ValidationError("Must be at least 1.")
+        return value
 
     def update(self, instance, validated_data):
         insurance_policy_no = validated_data.pop("insurance_policy_no", "")
@@ -208,6 +229,28 @@ class VehicleCategorySerializer(serializers.ModelSerializer):
     def get_vehicle_count(self, obj):
         return obj.vehicles.filter(is_deleted=False).count()
 
+    def validate_code(self, value):
+        # RG-005: case-insensitive uniqueness. RG-048: codes are short ASCII
+        # handles by the model's own help_text ("e.g. DLX-35") -- unlike
+        # Vehicle.registration_no, which must keep accepting real plate
+        # formats, so only this code field gets a character whitelist.
+        normalized = value.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9\-_]+", normalized):
+            raise serializers.ValidationError("Only letters, numbers, hyphens and underscores are allowed.")
+        qs = VehicleCategory.objects.filter(code__iexact=normalized)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(f"'{normalized}' already exists (case-insensitive).")
+        return normalized
+
+    def validate_seating_capacity(self, value):
+        # RG-006: 0 is accepted by PositiveSmallIntegerField (only excludes
+        # negatives) but breaks the min/total-seats maths downstream.
+        if value < 1:
+            raise serializers.ValidationError("Must be at least 1.")
+        return value
+
 
 class GroupMemberVehicleSerializer(serializers.Serializer):
     """Slim read-only vehicle shape nested inside a group's member list --
@@ -259,6 +302,21 @@ class VehicleGroupSerializer(serializers.ModelSerializer):
             "capability_computed_at", "created_at", "updated_at",
         ]
 
+    def validate_code(self, value):
+        # RG-018: case-insensitive uniqueness. RG-048: codes are short ASCII
+        # handles by the model's own help_text ("e.g. G-03") -- a whitelist
+        # keeps HTML/emoji/SQL-looking text out of a string used as a handle
+        # across UI and reports.
+        normalized = value.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9\-_]+", normalized):
+            raise serializers.ValidationError("Only letters, numbers, hyphens and underscores are allowed.")
+        qs = VehicleGroup.objects.filter(code__iexact=normalized)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(f"'{normalized}' already exists (case-insensitive).")
+        return normalized
+
     def validate(self, attrs):
         # RG-043: switching an existing MIXED group to UNIFORM must not be
         # allowed to bypass the uniform invariant every member-add already
@@ -273,6 +331,34 @@ class VehicleGroupSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"composition_mode": "This group has more than one category -- remove members until only one remains first."}
                 )
+
+        # RG-049: kind/composition_mode both have model defaults, so DRF
+        # would otherwise silently fill in ROTATING/UNIFORM before validate()
+        # ever sees a "missing" value -- check the raw payload instead.
+        if self.instance is None:
+            if "kind" not in self.initial_data:
+                raise serializers.ValidationError({"kind": "kind is required."})
+            if "composition_mode" not in self.initial_data:
+                raise serializers.ValidationError({"composition_mode": "composition_mode is required."})
+
+        # RG-044: a group's code is a handle used across rosters/reports --
+        # immutable once it has any duty, published or not.
+        if "code" in attrs and self.instance and attrs["code"] != self.instance.code:
+            from backend.apps.roster.models import Duty
+            if Duty.objects.filter(group=self.instance).exists():
+                raise serializers.ValidationError(
+                    {"code": "This group's code is immutable once it has duties."}
+                )
+
+        # RG-047: depot coordinates -- both or neither, and within real range.
+        lat, lon = attrs.get("home_latitude"), attrs.get("home_longitude")
+        if (lat is None) != (lon is None):
+            raise serializers.ValidationError("Provide both home_latitude and home_longitude, or neither.")
+        if lat is not None and not (-90 <= lat <= 90):
+            raise serializers.ValidationError({"home_latitude": "Must be between -90 and 90."})
+        if lon is not None and not (-180 <= lon <= 180):
+            raise serializers.ValidationError({"home_longitude": "Must be between -180 and 180."})
+
         return attrs
 
 
@@ -285,6 +371,16 @@ class GroupDriverAssignmentSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "group", "valid_from", "valid_to"]
 
     def validate(self, attrs):
+        # RG-077: driver_user_id is deliberately a bare UUID, not an FK
+        # (User lives in the shared schema) -- with no existence check at
+        # all, a nonexistent id fell through to clean()'s duplicate-assignment
+        # check and produced a misleading "already assigned" message instead.
+        from django_tenants.utils import schema_context
+        from backend.apps.users.models import User
+        with schema_context("public"):
+            if not User.objects.filter(id=attrs["driver_user_id"]).exists():
+                raise serializers.ValidationError({"driver_user_id": "No user with this id exists."})
+
         instance = GroupDriverAssignment(group=self.context["group"], driver_user_id=attrs["driver_user_id"])
         try:
             instance.clean()
@@ -302,6 +398,13 @@ class GroupConductorAssignmentSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "group", "valid_from", "valid_to"]
 
     def validate(self, attrs):
+        # RG-077: same gap as GroupDriverAssignmentSerializer -- see there.
+        from django_tenants.utils import schema_context
+        from backend.apps.users.models import User
+        with schema_context("public"):
+            if not User.objects.filter(id=attrs["conductor_user_id"]).exists():
+                raise serializers.ValidationError({"conductor_user_id": "No user with this id exists."})
+
         instance = GroupConductorAssignment(group=self.context["group"], conductor_user_id=attrs["conductor_user_id"])
         try:
             instance.clean()

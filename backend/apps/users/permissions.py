@@ -1,6 +1,19 @@
 from django.conf import settings
+from django.db import connection
+from django_tenants.utils import get_public_schema_name
 from rest_framework.permissions import BasePermission
 from .models import User
+
+
+def _has_tenant_context(request):
+    """RG-090: fleet/roster (TENANT_APPS) queries 500 when the request
+    resolves to the public schema -- role-only permission checks let a
+    super-admin (present in every ops/fleet role set below) reach them with
+    no real tenant, since schema resolution comes from the request's host
+    (TenantMainMiddleware), not from request.user.tenant_schema at all.
+    Reject before any tenant-table query runs, rather than patching every
+    affected view individually."""
+    return connection.schema_name != get_public_schema_name()
 
 
 class IsInternalService(BasePermission):
@@ -49,7 +62,7 @@ class IsOperationsRole(BasePermission):
     }
 
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and
+        return bool(_has_tenant_context(request) and request.user and request.user.is_authenticated and
                     request.user.role in self.ops_roles)
 
 
@@ -62,7 +75,7 @@ class IsFleetRole(BasePermission):
     }
 
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and
+        return bool(_has_tenant_context(request) and request.user and request.user.is_authenticated and
                     request.user.role in self.fleet_roles)
 
 
@@ -74,7 +87,7 @@ class CanViewVehicles(BasePermission):
     _roles = IsFleetRole.fleet_roles | {User.Role.DISPATCHER}
 
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and
+        return bool(_has_tenant_context(request) and request.user and request.user.is_authenticated and
                     request.user.role in self._roles)
 
 

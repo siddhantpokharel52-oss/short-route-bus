@@ -129,11 +129,13 @@ class Duty(models.Model):
 
 
 class DutyOverride(models.Model):
-    """Append-only audit trail of a group change on an already-published
-    duty (doc section 12): effective_roster = published_baseline +
+    """Append-only audit trail of a group assignment that needs a reason on
+    record (doc section 12): effective_roster = published_baseline +
     override_layer. Never created directly by the API -- written
     automatically by DutyViewSet.partial_update() when the parent period is
-    already PUBLISHED."""
+    already PUBLISHED (previous_group set), and by DutyViewSet.surge()
+    for every reserve fill (RG-070; previous_group=None, since there was no
+    prior assignment to override)."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     duty = models.ForeignKey(Duty, on_delete=models.CASCADE, related_name="overrides")
     previous_group = models.ForeignKey(

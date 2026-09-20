@@ -37,6 +37,11 @@ class RosterPeriodSerializer(serializers.ModelSerializer):
 
 
 class RotationPolicySerializer(serializers.ModelSerializer):
+    # RG-040: no existing cross-model convention for "a reasonable max" here
+    # (same gap RosterPeriodSerializer.MAX_PERIOD_DAYS already noted) --
+    # this establishes the second instance of that same class-constant pattern.
+    MAX_COOLDOWN_DAYS = 90
+
     class Meta:
         model = RotationPolicy
         fields = [
@@ -48,6 +53,22 @@ class RotationPolicySerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        # RG-037: ring_step=0 means "no rotation ever happens" -- always
+        # invalid regardless of ring length (gcd(0, n) != 1 for any n > 1),
+        # so it doesn't need the ring-length-dependent coprimality check
+        # (services.is_coprime_step, only computable at rotate time) to reject.
+        ring_step = attrs.get("ring_step", getattr(self.instance, "ring_step", None))
+        if ring_step is not None and ring_step < 1:
+            raise serializers.ValidationError({"ring_step": "Must be at least 1 -- 0 means no rotation ever happens."})
+
+        cooldown = attrs.get("route_cooldown_days", getattr(self.instance, "route_cooldown_days", None))
+        if cooldown is not None and cooldown > self.MAX_COOLDOWN_DAYS:
+            raise serializers.ValidationError(
+                {"route_cooldown_days": f"Must be at most {self.MAX_COOLDOWN_DAYS} days."}
+            )
+        return attrs
 
 
 class DutyOverrideSerializer(serializers.ModelSerializer):

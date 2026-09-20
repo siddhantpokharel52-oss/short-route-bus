@@ -35,7 +35,10 @@ def check_group_route_eligibility(group, route, allow_reserve=False):
                     f"this group's smallest member has {group.capability_min_seats}."
                 )
             if req.require_ac and not group.capability_all_ac:
-                reasons.append("Route requires every bus to be air conditioned.")
+                # RG-031: name the actual count, matching spec's own worked
+                # example ("2 members are not air conditioned").
+                non_ac = sum(group.capability_categories.values()) - group.capability_ac_count
+                reasons.append(f"Route requires every bus to be air conditioned -- {non_ac} member(s) are not.")
             if req.allowed_categories:
                 offending = sorted(set(group.capability_categories) - set(req.allowed_categories))
                 if offending:
