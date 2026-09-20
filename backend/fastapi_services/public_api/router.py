@@ -1112,7 +1112,13 @@ async def issue_group_tickets(
 
     resolved_passengers = []
     for passenger in passengers:
-        entry = {"fare_paid": passenger.get("fare_paid"), "passenger_name": passenger.get("passenger_name", "")}
+        entry = {
+            "fare_paid": passenger.get("fare_paid"),
+            "passenger_name": passenger.get("passenger_name", ""),
+            # Destination is per passenger, origin (from_stop_id, below) is
+            # shared by the whole booking — Team Implementation Guide §3.2.
+            "to_stop_id": passenger.get("to_stop_id"),
+        }
         ticket_type_code = passenger.get("ticket_type")
         if isinstance(ticket_type_code, str) and ticket_type_code.strip():
             ticket_type_id = await tenant_db.resolve_ticket_type_id(ticket_type_code.strip().upper())
@@ -1162,7 +1168,6 @@ async def issue_group_tickets(
     django_payload = {
         "route_id": route_id,
         "from_stop_id": payload.get("from_stop_id"),
-        "to_stop_id": payload.get("to_stop_id"),
         "payment_method": payload.get("payment_method", "CASH"),
         "passenger_id": passenger_id,
         "issued_by": "MOBILE",
@@ -1297,7 +1302,13 @@ async def start_namastepay_checkout(
 
     resolved_passengers = []
     for passenger in passengers:
-        entry = {"fare_paid": passenger.get("fare_paid"), "passenger_name": passenger.get("passenger_name", "")}
+        entry = {
+            "fare_paid": passenger.get("fare_paid"),
+            "passenger_name": passenger.get("passenger_name", ""),
+            # Destination is per passenger, origin (from_stop_id, below) is
+            # shared by the whole checkout — Team Implementation Guide §3.2.
+            "to_stop_id": passenger.get("to_stop_id"),
+        }
         ticket_type_code = passenger.get("ticket_type")
         if isinstance(ticket_type_code, str) and ticket_type_code.strip():
             ticket_type_id = await tenant_db.resolve_ticket_type_id(ticket_type_code.strip().upper())
@@ -1313,7 +1324,6 @@ async def start_namastepay_checkout(
     django_payload = {
         "route_id": route_id,
         "from_stop_id": payload.get("from_stop_id"),
-        "to_stop_id": payload.get("to_stop_id"),
         "vehicle_id": payload.get("vehicle_id"),
         "return_to": return_to,
         "passenger_id": passenger_id,

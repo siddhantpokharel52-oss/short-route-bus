@@ -62,7 +62,12 @@ class Booking(models.Model):
     """Ties several tickets together under one purchase -- a family buying tickets
     together, per the payment design doc's CB2. Grouping only: each ticket's own
     fare_paid stays client-supplied, same trust model a single ticket already has;
-    no fare-lookup logic lives here (that's CB3's concern, not this one)."""
+    no fare-lookup logic lives here (that's CB3's concern, not this one).
+
+    Origin is shared by the booking (from_stop_id -- everyone boards the same bus
+    at the same point) but destination is per passenger, per the Team
+    Implementation Guide's own field table -- so there's deliberately no
+    to_stop_id here; each Ticket.to_stop_id carries its own passenger's stop."""
     class Status(models.TextChoices):
         VALID = "VALID", "Valid"
         CANCELLED = "CANCELLED", "Cancelled"
@@ -71,7 +76,6 @@ class Booking(models.Model):
     passenger_id = models.UUIDField(null=True, blank=True)
     route_id = models.UUIDField(null=True, blank=True)
     from_stop_id = models.UUIDField(null=True, blank=True)
-    to_stop_id = models.UUIDField(null=True, blank=True)
     total_fare = models.DecimalField(max_digits=9, decimal_places=2)
     payment_method = models.CharField(max_length=15, choices=Ticket.PaymentMethod.choices, default=Ticket.PaymentMethod.CASH)
     booked_at = models.DateTimeField(auto_now_add=True)
@@ -160,7 +164,8 @@ class NamastePayCheckout(models.Model):
     passenger_id = models.UUIDField(null=True, blank=True)
     route_id = models.UUIDField(null=True, blank=True)
     from_stop_id = models.UUIDField(null=True, blank=True)
-    to_stop_id = models.UUIDField(null=True, blank=True)
+    # No to_stop_id -- destination is per passenger, stored inside `passengers`
+    # below, same reasoning as Booking's own docstring.
     # Unset for a self-service checkout (no bus known until boarding, same rule
     # CB1 already established for Ticket.vehicle_id) -- auto-filled for a
     # conductor-initiated walk-in checkout (CB4) from their active allocation.

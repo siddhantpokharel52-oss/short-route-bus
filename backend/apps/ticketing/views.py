@@ -446,13 +446,13 @@ class NamastePayCheckoutCreateView(views.APIView):
             passenger_id=request.data.get("passenger_id"),
             route_id=data.get("route_id"),
             from_stop_id=data.get("from_stop_id"),
-            to_stop_id=data.get("to_stop_id"),
             vehicle_id=vehicle_id,
             passengers=[
                 {
                     "ticket_type_id": str(p["ticket_type_id"]) if p.get("ticket_type_id") else None,
                     "passenger_name": p.get("passenger_name", ""),
                     "fare_paid": str(p["fare_paid"]),
+                    "to_stop_id": str(p["to_stop_id"]) if p.get("to_stop_id") else None,
                 }
                 for p in passengers
             ],
@@ -520,7 +520,6 @@ class NamastePayCheckoutConfirmView(views.APIView):
                 data={
                     "route_id": str(checkout.route_id) if checkout.route_id else None,
                     "from_stop_id": str(checkout.from_stop_id) if checkout.from_stop_id else None,
-                    "to_stop_id": str(checkout.to_stop_id) if checkout.to_stop_id else None,
                     "payment_method": Ticket.PaymentMethod.NAMASTEPAY,
                     "passengers": checkout.passengers,
                 },

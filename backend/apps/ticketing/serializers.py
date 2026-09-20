@@ -116,6 +116,9 @@ class BookingPassengerSerializer(serializers.Serializer):
     ticket_type_id = serializers.UUIDField(required=False, allow_null=True)
     passenger_name = serializers.CharField(required=False, allow_blank=True, default="")
     fare_paid = serializers.DecimalField(max_digits=8, decimal_places=2, min_value=Decimal("0"))
+    # Destination is per passenger (origin is the booking/checkout's shared
+    # from_stop_id) -- Team Implementation Guide §3.2's own field table.
+    to_stop_id = serializers.UUIDField(required=False, allow_null=True)
 
 
 class BookingSerializer(serializers.ModelSerializer):
@@ -124,7 +127,7 @@ class BookingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Booking
         fields = [
-            "id", "passenger_id", "route_id", "from_stop_id", "to_stop_id",
+            "id", "passenger_id", "route_id", "from_stop_id",
             "total_fare", "payment_method", "booked_at", "status", "tickets",
         ]
         read_only_fields = ["id", "total_fare", "booked_at", "status", "tickets"]
@@ -138,7 +141,6 @@ class BookingCreateSerializer(serializers.Serializer):
     TicketViewSet.create() already handles those fields for a single ticket."""
     route_id = serializers.UUIDField(required=False, allow_null=True)
     from_stop_id = serializers.UUIDField(required=False, allow_null=True)
-    to_stop_id = serializers.UUIDField(required=False, allow_null=True)
     payment_method = serializers.ChoiceField(choices=Ticket.PaymentMethod.choices, default=Ticket.PaymentMethod.CASH)
     passengers = BookingPassengerSerializer(many=True, min_length=1, max_length=20)
 
@@ -161,7 +163,7 @@ class BookingCreateSerializer(serializers.Serializer):
                     booking=booking,
                     valid_until=valid_until,
                     from_stop_id=validated_data.get("from_stop_id"),
-                    to_stop_id=validated_data.get("to_stop_id"),
+                    to_stop_id=passenger.get("to_stop_id"),
                     payment_method=validated_data["payment_method"],
                     ticket_type_id=passenger.get("ticket_type_id"),
                     passenger_name=passenger.get("passenger_name", ""),
@@ -178,7 +180,6 @@ class NamastePayCheckoutCreateSerializer(serializers.Serializer):
     independently verifies the payment does a Booking/Ticket set actually appear."""
     route_id = serializers.UUIDField(required=False, allow_null=True)
     from_stop_id = serializers.UUIDField(required=False, allow_null=True)
-    to_stop_id = serializers.UUIDField(required=False, allow_null=True)
     vehicle_id = serializers.UUIDField(required=False, allow_null=True)
     # Required for a passenger-initiated self-service checkout; optional for a
     # conductor-initiated walk-in one (CB4) -- enforced in the view, not here,
@@ -194,7 +195,7 @@ class NamastePayCheckoutSerializer(serializers.ModelSerializer):
         model = NamastePayCheckout
         fields = [
             "id", "checkout_id", "reference_id", "passenger_id",
-            "route_id", "from_stop_id", "to_stop_id", "vehicle_id", "amount", "return_to",
+            "route_id", "from_stop_id", "vehicle_id", "amount", "return_to",
             "status", "booking", "created_at", "confirmed_at",
         ]
         read_only_fields = fields
