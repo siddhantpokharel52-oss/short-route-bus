@@ -112,9 +112,12 @@ def _compute_conflicts(period):
 
     for d in duties:
         if d.group_id is None:
+            # RG-035: without the route, two different routes sharing a slot
+            # index on the same day produced byte-identical, unlocatable lines.
+            route_code = getattr(routes_by_id.get(d.route_id), "route_code", d.route_id)
             conflicts.append({
                 "duty_id": str(d.id), "severity": "hard",
-                "message": f"{d.service_date} slot {d.slot_index}: no group assigned.",
+                "message": f"{d.service_date} slot {d.slot_index} ({route_code}): no group assigned.",
             })
             continue
 
@@ -1006,9 +1009,18 @@ class FairShareReportView(views.APIView):
         with schema_context("public"):
             routes_by_id = {r.id: r for r in Route.objects.filter(id__in=route_ids)}
 
-        counts = defaultdict(lambda: defaultdict(int))
-        totals = defaultdict(int)
+        # RG-073: start from the real group list, not from duties -- a group
+        # with zero duties this period previously never became a dict key at
+        # all, so it was missing from the report entirely instead of showing
+        # a real 0. Idle groups are exactly the evidence a fair-share report
+        # exists to surface.
+        from backend.apps.fleet.models import VehicleGroup
+        rotating_groups = VehicleGroup.objects.filter(is_deleted=False, kind=VehicleGroup.Kind.ROTATING)
+        counts = {g.code: defaultdict(int) for g in rotating_groups}
+        totals = {g.code: 0 for g in rotating_groups}
         for d in duties:
+            counts.setdefault(d.group.code, defaultdict(int))
+            totals.setdefault(d.group.code, 0)
             counts[d.group.code][getattr(routes_by_id.get(d.route_id), "route_code", str(d.route_id))] += 1
             totals[d.group.code] += 1
 

@@ -43,7 +43,8 @@ export default function RosterPeriodsPage() {
     queryFn: () => rosterService.listPeriods(),
   })
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<CreateForm>()
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<CreateForm>()
+  const todayIso = new Date().toISOString().slice(0, 10)
 
   const createMutation = useMutation({
     mutationFn: (payload: CreateForm) => rosterService.createPeriod(payload),
@@ -55,8 +56,15 @@ export default function RosterPeriodsPage() {
       navigate(`/tenant/roster/${period.id}/grid`)
     },
     onError: (err: unknown) => {
-      const e = err as { response?: { data?: { message?: string } } }
-      toast.error(e?.response?.data?.message || 'Failed to create roster period.')
+      const e = err as { response?: { data?: { message?: string; errors?: Record<string, unknown> } } }
+      const res = e?.response?.data
+      if (res?.errors && typeof res.errors === 'object' && Object.keys(res.errors).length > 0) {
+        const firstKey = Object.keys(res.errors)[0]
+        const val = res.errors[firstKey]
+        toast.error(Array.isArray(val) ? String(val[0]) : String(val))
+      } else {
+        toast.error(res?.message || 'Failed to create roster period.')
+      }
     },
   })
 
@@ -123,11 +131,11 @@ export default function RosterPeriodsPage() {
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="New Roster Period" size="sm">
         <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-4 p-6">
           <Input
-            type="date" label="Start Date" required error={errors.start_date?.message}
+            type="date" label="Start Date" required min={todayIso} error={errors.start_date?.message}
             {...register('start_date', { required: 'Required' })}
           />
           <Input
-            type="date" label="End Date" required error={errors.end_date?.message}
+            type="date" label="End Date" required min={watch('start_date') || todayIso} error={errors.end_date?.message}
             {...register('end_date', { required: 'Required' })}
           />
           <p className="text-xs text-gray-400">

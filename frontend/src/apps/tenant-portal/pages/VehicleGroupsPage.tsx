@@ -16,6 +16,7 @@ import { Modal } from '@components/shared/Modal'
 import apiClient from '@services/api'
 import vehicleGroupService, { VehicleGroup } from '@services/vehicleGroupService'
 import { Vehicle } from '@services/fleetService'
+import compositionRuleService from '@services/compositionRuleService'
 import toast from 'react-hot-toast'
 import { useForm, Controller } from 'react-hook-form'
 
@@ -97,7 +98,16 @@ export default function VehicleGroupsPage() {
     staleTime: 60_000,
   })
 
+  const { data: compositionRules = [] } = useQuery({
+    queryKey: ['composition-rules'],
+    queryFn: () => compositionRuleService.list(),
+    staleTime: 60_000,
+  })
+
   const liveManageTarget = manageTarget ? groups.find((g) => g.id === manageTarget.id) ?? manageTarget : null
+  const targetCompositionRule = liveManageTarget
+    ? compositionRules.find((r) => r.group === liveManageTarget.id) ?? compositionRules.find((r) => r.group === null)
+    : undefined
 
   const saveDepotMutation = useMutation({
     mutationFn: ({ groupId, home_latitude, home_longitude }: { groupId: string; home_latitude: string | null; home_longitude: string | null }) =>
@@ -130,7 +140,7 @@ export default function VehicleGroupsPage() {
     enabled: !!liveManageTarget,
   })
 
-  const { register, handleSubmit, reset, control, formState: { errors } } = useForm<GroupForm>({
+  const { register, handleSubmit, reset, control, setError, formState: { errors } } = useForm<GroupForm>({
     defaultValues: { kind: 'ROTATING', composition_mode: 'UNIFORM' },
   })
 
@@ -144,8 +154,23 @@ export default function VehicleGroupsPage() {
       setManageTarget(group)
     },
     onError: (err: unknown) => {
-      const e = err as { response?: { data?: { message?: string } } }
-      toast.error(e?.response?.data?.message || 'Failed to create group.')
+      const e = err as { response?: { status?: number; data?: Record<string, unknown> } }
+      if (e?.response?.status === 403) return
+      const res = e?.response?.data ?? {}
+      const fieldErrors = (
+        res.errors && typeof res.errors === 'object' ? res.errors : res
+      ) as Record<string, unknown>
+      const firstKey = Object.keys(fieldErrors).find(
+        (k) => !['success', 'data', 'message', 'meta'].includes(k)
+      )
+      if (firstKey) {
+        const val = fieldErrors[firstKey]
+        const msg = Array.isArray(val) ? String(val[0]) : String(val)
+        setError(firstKey as keyof GroupForm, { type: 'server', message: msg })
+        toast.error(`${firstKey}: ${msg}`)
+      } else {
+        toast.error((res as { message?: string }).message || 'Failed to create group.')
+      }
     },
   })
 
@@ -398,7 +423,8 @@ export default function VehicleGroupsPage() {
 
               <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Members ({liveManageTarget.members.filter((m) => !m.valid_to).length})
+                  Members ({liveManageTarget.members.filter((m) => !m.valid_to).length}
+                  {targetCompositionRule ? ` / ${targetCompositionRule.group_size} target` : ''})
                 </label>
                 <div className="space-y-1.5">
                   {liveManageTarget.members.filter((m) => !m.valid_to).map((m) => (

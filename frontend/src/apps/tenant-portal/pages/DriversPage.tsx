@@ -405,13 +405,16 @@ export default function DriversPage() {
 
       <div className="card p-0">
         <Table columns={columns} data={data ?? []} keyExtractor={(d) => d.id} loading={isLoading} />
-        <Pagination
-          page={pagination.page}
-          totalPages={pagination.totalPages}
-          totalCount={totalCount}
-          pageSize={pagination.pageSize}
-          onPageChange={pagination.setPage}
-        />
+        {/* RG-003: avoid flashing "0 of 0 results" under the spinner while loading */}
+        {!isLoading && (
+          <Pagination
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            totalCount={totalCount}
+            pageSize={pagination.pageSize}
+            onPageChange={pagination.setPage}
+          />
+        )}
       </div>
 
       {/* ── View Driver Modal ─────────────────────────────────────────────── */}

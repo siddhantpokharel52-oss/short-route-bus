@@ -152,7 +152,10 @@ export default function RosterGridPage() {
     () => Array.from(new Set(duties.map((d) => d.service_date))).sort(),
     [duties]
   )
-  const rosterGroups = useMemo(() => groups.filter((g) => g.kind !== 'RESERVE' && g.status === 'ACTIVE'), [groups])
+  const rosterGroups = useMemo(
+    () => groups.filter((g) => g.kind !== 'RESERVE' && g.status === 'ACTIVE' && g.capability_total_seats > 0),
+    [groups],
+  )
   const cellMap = useMemo(() => {
     const m = new Map<string, Duty>()
     duties.forEach((d) => { if (d.group) m.set(`${d.group}|${d.service_date}`, d) })
@@ -214,7 +217,7 @@ export default function RosterGridPage() {
           <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700">
             <AlertTriangle className="h-4 w-4 text-amber-500" /> Conflicts ({hardConflicts.length} blocking)
           </h2>
-          <ul className="space-y-1 text-xs">
+          <ul className="max-h-64 space-y-1 overflow-y-auto text-xs">
             {conflicts.map((c, i) => (
               <li key={i} className={c.severity === 'hard' ? 'text-red-600' : 'text-amber-600'}>
                 <Badge variant={c.severity === 'hard' ? 'danger' : 'warning'} className="mr-1.5">{c.severity}</Badge>
@@ -333,6 +336,7 @@ export default function RosterGridPage() {
             groups={assignableGroups}
             members={currentMembers}
             vehicles={vehicles}
+            policy={policy}
             published={period.status === 'PUBLISHED'}
             onAssign={(group, reason) => assignMutation.mutate({ dutyId: dutyTarget.id, group, reason })}
             onLock={(locked) => lockMutation.mutate({ dutyId: dutyTarget.id, locked })}
@@ -358,14 +362,47 @@ export default function RosterGridPage() {
   )
 }
 
+const COST_COMPONENT_LABELS: Record<string, string> = {
+  rotation_preference: 'Rotation preference',
+  route_cooldown: 'Route cooldown',
+  consecutive_days: 'Consecutive days',
+  fair_share: 'Fair share',
+  depot_proximity: 'Depot proximity',
+  crew_hours: 'Crew hours',
+}
+
+function explainComponent(key: string, value: number, policy: RotationPolicy | undefined): string {
+  if (value === 0) {
+    return {
+      rotation_preference: 'Matched its predicted rotation slot',
+      route_cooldown: 'No recent repeat of this route',
+      consecutive_days: 'Not running this route on consecutive days',
+      fair_share: 'Balanced share of routes so far',
+      depot_proximity: "Starts near this group's depot",
+      crew_hours: 'Within crew-hour limits',
+    }[key] ?? String(value)
+  }
+  return {
+    rotation_preference: `Off its predicted rotation slot (penalty ${value})`,
+    route_cooldown: policy
+      ? `Ran this route recently -- within the ${policy.route_cooldown_days}-day cooldown (penalty ${value})`
+      : `Ran this route recently (penalty ${value})`,
+    consecutive_days: `Running this route multiple days in a row (penalty ${value})`,
+    fair_share: `Has had more of this route than other groups (penalty ${value})`,
+    depot_proximity: `Starts far from this group's depot (penalty ${value})`,
+    crew_hours: `Pushing crew-hour limits (penalty ${value})`,
+  }[key] ?? String(value)
+}
+
 function DutyDetail({
-  periodId, duty, groups, members, vehicles, published, onAssign, onLock, onSubstitute, assigning, substituting,
+  periodId, duty, groups, members, vehicles, policy, published, onAssign, onLock, onSubstitute, assigning, substituting,
 }: {
   periodId: string
   duty: Duty
   groups: VehicleGroup[]
   members: { vehicle: string; vehicle_detail: { registration_no: string } }[]
   vehicles: Vehicle[]
+  policy: RotationPolicy | undefined
   published: boolean
   onAssign: (group: string | null, reason?: string) => void
   onLock: (locked: boolean) => void
@@ -397,12 +434,11 @@ function DutyDetail({
         <div className="rounded-lg bg-sky-50 p-3 text-xs text-sky-800">
           <p className="mb-1.5 font-semibold">Why this assignment?</p>
           <ul className="space-y-0.5">
-            <li>Rotation preference: {explanation.components.rotation_preference}</li>
-            <li>Route cooldown: {explanation.components.route_cooldown}</li>
-            <li>Consecutive days: {explanation.components.consecutive_days}</li>
-            <li>Fair share: {explanation.components.fair_share}</li>
-            <li>Depot proximity: {explanation.components.depot_proximity}</li>
-            <li>Crew hours: {explanation.components.crew_hours}</li>
+            {Object.entries(explanation.components).map(([key, value]) => (
+              <li key={key}>
+                {COST_COMPONENT_LABELS[key] ?? key}: {explainComponent(key, value as number, policy)}
+              </li>
+            ))}
           </ul>
           <p className="mt-1.5 text-sky-600">Total cost: {explanation.total} (lower is preferred; 0 means a perfect fit)</p>
         </div>

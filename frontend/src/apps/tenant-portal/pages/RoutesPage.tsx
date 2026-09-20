@@ -273,14 +273,13 @@ const DAY_TYPES: RouteDemandRow['day_type'][] = ['WEEKDAY', 'SATURDAY', 'SUNDAY'
 // into the (already large, map-heavy) edit-route modal above, since this is
 // a self-contained sub-resource with its own save action.
 function RequirementDemandModal({
-  route, onClose, onSaveRequirement, onSaveDemand, savingRequirement, savingDemand,
+  route, onClose, onSaveRequirement, onSaveDemand, saving,
 }: {
   route: Route
   onClose: () => void
-  onSaveRequirement: (payload: Partial<RouteRequirement>) => void
-  onSaveDemand: (rows: { day_type: string; slot_count: number }[]) => void
-  savingRequirement: boolean
-  savingDemand: boolean
+  onSaveRequirement: (payload: Partial<RouteRequirement>) => Promise<unknown>
+  onSaveDemand: (rows: { day_type: string; slot_count: number }[]) => Promise<unknown>
+  saving: boolean
 }) {
   const req = route.requirement
   const [mode, setMode] = useState<RouteRequirement['mode']>(req?.mode ?? 'PER_VEHICLE')
@@ -297,6 +296,24 @@ function RequirementDemandModal({
     for (const row of route.demand_profiles ?? []) initial[row.day_type] = String(row.slot_count)
     return initial
   })
+
+  async function handleSaveAll() {
+    await Promise.all([
+      onSaveRequirement({
+        mode,
+        min_seats: minSeats ? Number(minSeats) : null,
+        require_ac: requireAc,
+        allowed_categories: allowedCategories.split(',').map((s) => s.trim()).filter(Boolean),
+        permit_class: permitClass,
+        min_total_seats: minTotalSeats ? Number(minTotalSeats) : null,
+        min_ac_count: minAcCount ? Number(minAcCount) : null,
+      }),
+      onSaveDemand(
+        DAY_TYPES.filter((dt) => demand[dt] && Number(demand[dt]) > 0)
+          .map((dt) => ({ day_type: dt, slot_count: Number(demand[dt]) }))
+      ),
+    ])
+  }
 
   return (
     <Modal open onClose={onClose} title={`Requirement & Demand — ${route.route_code}`} size="md">
@@ -333,23 +350,6 @@ function RequirementDemandModal({
               </div>
             )}
             <Input label="Permit Class" placeholder="e.g. city-A" value={permitClass} onChange={(e) => setPermitClass(e.target.value)} />
-
-            <div className="flex justify-end">
-              <Button
-                size="sm" loading={savingRequirement}
-                onClick={() => onSaveRequirement({
-                  mode,
-                  min_seats: minSeats ? Number(minSeats) : null,
-                  require_ac: requireAc,
-                  allowed_categories: allowedCategories.split(',').map((s) => s.trim()).filter(Boolean),
-                  permit_class: permitClass,
-                  min_total_seats: minTotalSeats ? Number(minTotalSeats) : null,
-                  min_ac_count: minAcCount ? Number(minAcCount) : null,
-                })}
-              >
-                Save Requirement
-              </Button>
-            </div>
           </div>
         </div>
 
@@ -369,17 +369,12 @@ function RequirementDemandModal({
               </div>
             ))}
           </div>
-          <div className="mt-3 flex justify-end">
-            <Button
-              size="sm" loading={savingDemand}
-              onClick={() => onSaveDemand(
-                DAY_TYPES.filter((dt) => demand[dt] && Number(demand[dt]) > 0)
-                  .map((dt) => ({ day_type: dt, slot_count: Number(demand[dt]) }))
-              )}
-            >
-              Save Demand
-            </Button>
-          </div>
+        </div>
+
+        <div className="border-t border-gray-100 pt-5 flex justify-end">
+          <Button size="sm" loading={saving} onClick={handleSaveAll}>
+            Save
+          </Button>
         </div>
       </div>
     </Modal>
@@ -800,11 +795,16 @@ export default function RoutesPage() {
 
       <div className="card p-0">
         <Table columns={columns} data={data ?? []} keyExtractor={(r) => r.id} loading={isLoading} />
-        <Pagination
-          page={pagination.page} totalPages={pagination.totalPages}
-          totalCount={totalCount} pageSize={pagination.pageSize}
-          onPageChange={pagination.setPage}
-        />
+        {/* RG-003: totalCount/totalPages read from state that starts at 0/1 before
+            the first response lands -- rendering this while loading flashed
+            "Showing 1 to 0 of 0 results" right under the spinner. */}
+        {!isLoading && (
+          <Pagination
+            page={pagination.page} totalPages={pagination.totalPages}
+            totalCount={totalCount} pageSize={pagination.pageSize}
+            onPageChange={pagination.setPage}
+          />
+        )}
       </div>
 
       {/* ── View Route Modal ─────────────────────────────────────────────────── */}
@@ -1123,10 +1123,9 @@ export default function RoutesPage() {
         <RequirementDemandModal
           route={requirementTarget}
           onClose={() => setRequirementTarget(null)}
-          onSaveRequirement={(payload) => saveRequirementMutation.mutate({ routeId: requirementTarget.id, payload })}
-          onSaveDemand={(rows) => saveDemandMutation.mutate({ routeId: requirementTarget.id, rows })}
-          savingRequirement={saveRequirementMutation.isPending}
-          savingDemand={saveDemandMutation.isPending}
+          onSaveRequirement={(payload) => saveRequirementMutation.mutateAsync({ routeId: requirementTarget.id, payload })}
+          onSaveDemand={(rows) => saveDemandMutation.mutateAsync({ routeId: requirementTarget.id, rows })}
+          saving={saveRequirementMutation.isPending || saveDemandMutation.isPending}
         />
       )}
 
