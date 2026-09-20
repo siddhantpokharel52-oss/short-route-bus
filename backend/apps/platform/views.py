@@ -14,7 +14,7 @@ from .models import (
     AdminNotification, SuggestedStop, RouteRequirement, RouteDemand,
 )
 from .serializers import (
-    StopSerializer, StopAnalyticsSerializer, RouteSerializer, RouteStopSerializer,
+    StopSerializer, StopAnalyticsSerializer, RouteSerializer, RoutePublicSerializer, RouteStopSerializer,
     RouteAssignmentSerializer, RouteDiversionSerializer, TicketTypeSerializer,
     FareMatrixSerializer, SmartCardSerializer, CardTransactionSerializer,
     CardRechargeSerializer, FarePolicySerializer, AdminNotificationSerializer,
@@ -222,6 +222,11 @@ class RouteViewSet(ModelViewSet):
 
     def get_queryset(self):
         qs = Route.objects.filter(is_deleted=False)
+        # RG-089: an anonymous caller only ever sees approved routes -- draft/
+        # pending-approval routes are a platform-internal review state, not
+        # something to leak to an unauthenticated GET.
+        if not (self.request.user and self.request.user.is_authenticated):
+            qs = qs.filter(status=Route.Status.APPROVED)
         tenant_id = self.request.query_params.get("tenant")
         if tenant_id:
             qs = qs.filter(
@@ -229,6 +234,14 @@ class RouteViewSet(ModelViewSet):
                 assignments__status=RouteAssignment.Status.ACTIVE,
             ).distinct()
         return qs.prefetch_related("assignments__tenant", "route_stops__stop", "demand_profiles").select_related("requirement")
+
+    def get_serializer_class(self):
+        # RG-089: an anonymous caller gets route/stop data only -- never the
+        # nested requirement (fleet composition rules), demand_profiles (slot
+        # planning), approved_by, or operators (tenant schema + revenue share).
+        if self.action in ("list", "retrieve") and not (self.request.user and self.request.user.is_authenticated):
+            return RoutePublicSerializer
+        return RouteSerializer
 
     def get_permissions(self):
         # "stops" is a read-only lookup action — allow unauthenticated access
@@ -697,14 +710,23 @@ class RouteViewSet(ModelViewSet):
         route = self.get_object()
         rows = request.data if isinstance(request.data, list) else request.data.get("demand", [])
         today = timezone.now().date()
-        route.demand_profiles.filter(effective_to__isnull=True).delete()
-        created = [
-            RouteDemand.objects.create(
-                route=route, day_type=row["day_type"], slot_count=row["slot_count"],
-                effective_from=row.get("effective_from") or today,
-            )
+
+        # RG-026/027: validate the whole payload before touching anything --
+        # the old code read raw dict keys (KeyError on a missing one, no type/
+        # range check) and deleted existing demand before creating replacements,
+        # with no transaction, so one bad row 500'd after wiping real data.
+        row_serializers = [
+            RouteDemandSerializer(data={**row, "effective_from": row.get("effective_from") or today})
+            if isinstance(row, dict) else RouteDemandSerializer(data={})
             for row in rows
         ]
+        for s in row_serializers:
+            s.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            route.demand_profiles.filter(effective_to__isnull=True).delete()
+            created = [RouteDemand.objects.create(route=route, **s.validated_data) for s in row_serializers]
+
         return api_response(data=RouteDemandSerializer(created, many=True).data, message="Route demand saved.")
 
 class TicketTypeViewSet(ModelViewSet):

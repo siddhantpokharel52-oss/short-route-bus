@@ -242,6 +242,16 @@ class RosterPeriodViewSet(ModelViewSet):
         period = serializer.save(created_by_id=self.request.user.id)
         self._generate_duties(period)
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.status != RosterPeriod.Status.DRAFT:
+            return api_response(
+                success=False,
+                message=f"Cannot delete a {instance.status.lower()} roster period -- only drafts can be deleted.",
+                status_code=400,
+            )
+        return super().destroy(request, *args, **kwargs)
+
     def _generate_duties(self, period):
         """P0's whole "generate" step (doc section 5.7's stage 1, without the
         rotation engine): one unassigned Duty per route/slot, from Slice 1's
@@ -682,6 +692,17 @@ class DutyViewSet(ModelViewSet):
                 success=False, message="This duty is locked. Unlock it before reassigning.", status_code=400
             )
 
+        if "group" not in request.data:
+            # RG-056: this endpoint isn't a real partial update -- it never
+            # runs the payload through DutySerializer(partial=True), so
+            # falling through with request.data.get("group") (None on both
+            # "absent" and "explicit null") used to unconditionally clear an
+            # existing assignment on e.g. PATCH {} or PATCH {"reason": "..."}.
+            return api_response(
+                success=False, message="No recognized field to update (expected 'group' or 'locked').",
+                status_code=400,
+            )
+
         from backend.apps.fleet.models import VehicleGroup
 
         new_group_id = request.data.get("group")
@@ -802,14 +823,16 @@ class DutyViewSet(ModelViewSet):
             if not ok:
                 return api_response(success=False, message="Eligibility test failed.", errors=reasons, status_code=400)
 
+        # RG-058: this record alone is the complete, correct account of "on
+        # this specific duty, in_vehicle ran instead of out_vehicle" -- the
+        # composition/eligibility checks above already validated a *hypothetical*
+        # swap (compute_prospective_capability), not a real membership change,
+        # so nothing here should touch the group's actual composition. A
+        # substitution is scoped to one duty, not a standing membership edit.
         VehicleSubstitution.objects.create(
             duty=duty, out_vehicle=out_vehicle, in_vehicle=in_vehicle,
             reason=reason, actor_id=request.user.id,
         )
-        membership = GroupMember.objects.get(group=duty.group, vehicle=out_vehicle, valid_to__isnull=True)
-        membership.valid_to = timezone.now().date()
-        membership.save(update_fields=["valid_to"])
-        GroupMember.objects.create(group=duty.group, vehicle=in_vehicle)
 
         return api_response(data=DutySerializer(duty).data, message="Vehicle substituted.")
 
@@ -830,6 +853,18 @@ class DutyViewSet(ModelViewSet):
             route = Route.objects.select_related("requirement").filter(pk=route_id).first()
         if route is None:
             return api_response(success=False, message="Route not found.", status_code=400)
+        if route.status != Route.Status.APPROVED:
+            return api_response(success=False, message="Surge can only target an approved route.", status_code=400)
+
+        from django.utils.dateparse import parse_date  # matches apps.ticketing.views' existing convention
+
+        parsed_date = parse_date(service_date) if isinstance(service_date, str) else None
+        if parsed_date is None:
+            return api_response(success=False, message="service_date must be a valid ISO date.", status_code=400)
+        if not (period.start_date <= parsed_date <= period.end_date):
+            return api_response(
+                success=False, message="service_date must fall within this roster period.", status_code=400
+            )
 
         next_slot = Duty.objects.filter(
             roster_period=period, service_date=service_date, route_id=route_id

@@ -10,12 +10,15 @@ import { Modal } from '@components/shared/Modal'
 import { NepaliDateInput } from '@components/shared/NepaliDateInput'
 import { usePagination } from '@hooks/usePagination'
 import fleetService, { Vehicle, VehicleCreatePayload, VehicleUpdatePayload } from '@services/fleetService'
+import vehicleCategoryService from '@services/vehicleCategoryService'
 import apiClient from '@services/api'
 import toast from 'react-hot-toast'
 import { useForm, Controller } from 'react-hook-form'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface VehicleForm {
+  // Category
+  category: string
   // Basic
   registration_no: string
   vehicle_type: string
@@ -86,6 +89,7 @@ export default function FleetPage() {
   // Edit form state
   const [editType, setEditType] = useState('')
   const [editStatus, setEditStatus] = useState('')
+  const [editCategory, setEditCategory] = useState('')
   const [editColor, setEditColor] = useState('')
   const [editSeated, setEditSeated] = useState('')
   const [editStanding, setEditStanding] = useState('')
@@ -105,6 +109,12 @@ export default function FleetPage() {
       setTotalCount(data.meta?.total_count ?? data.data?.count ?? 0)
       return data.data?.results ?? data.data ?? []
     },
+  })
+
+  // Category dropdown (RG-009 -- category is required on the vehicle form)
+  const { data: categories = [] } = useQuery({
+    queryKey: ['vehicle-categories'],
+    queryFn: () => vehicleCategoryService.list(),
   })
 
   // Routes dropdown
@@ -127,6 +137,7 @@ export default function FleetPage() {
   const createMutation = useMutation({
     mutationFn: (form: VehicleForm) => {
       const payload: VehicleCreatePayload = {
+        category: form.category,
         registration_no: form.registration_no,
         vehicle_type: form.vehicle_type as Vehicle['vehicle_type'],
         make: form.make,
@@ -184,6 +195,7 @@ export default function FleetPage() {
     if (!editTarget) return
     setEditType(editTarget.vehicle_type)
     setEditStatus(editTarget.status)
+    setEditCategory(editTarget.category ?? '')
     setEditColor(editTarget.color ?? '')
     setEditSeated(String(editTarget.capacity_seated))
     setEditStanding(String(editTarget.capacity_standing ?? 0))
@@ -199,6 +211,7 @@ export default function FleetPage() {
   const updateVehicleMutation = useMutation({
     mutationFn: async (id: string) => {
       const payload: VehicleUpdatePayload = {
+        category: editCategory || null,
         vehicle_type: editType as Vehicle['vehicle_type'],
         status: editStatus as Vehicle['status'],
         color: editColor,
@@ -260,6 +273,15 @@ export default function FleetPage() {
       header: t('fleet.columns.type'),
       render: (v) => (
         <Badge variant="neutral">{t(`fleet.vehicleTypes.${v.vehicle_type}`, { defaultValue: v.vehicle_type?.replace('_', ' ') ?? '—' })}</Badge>
+      ),
+    },
+    {
+      key: 'category_code',
+      header: t('fleet.columns.category', { defaultValue: 'Category' }),
+      render: (v) => v.category_code ? (
+        <Badge variant="neutral">{v.category_code}</Badge>
+      ) : (
+        <span className="text-xs text-gray-400">—</span>
       ),
     },
     {
@@ -438,6 +460,16 @@ export default function FleetPage() {
         <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={t('fleet.editTitle', { reg: editTarget.registration_no })} size="md">
           <div className="p-5 space-y-4">
             <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('fleet.labels.category', { defaultValue: 'Category' })}</label>
+                <select value={editCategory} onChange={(e) => setEditCategory(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                  <option value="">— No category —</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.code} — {c.name_en}</option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">{t('fleet.labels.vehicleType')}</label>
                 <select value={editType} onChange={(e) => setEditType(e.target.value)}
@@ -461,6 +493,7 @@ export default function FleetPage() {
                   <option value="INACTIVE">{t('fleet.statuses.INACTIVE')}</option>
                   <option value="RETIRED">{t('fleet.statuses.RETIRED')}</option>
                   <option value="BREAKDOWN">{t('fleet.statuses.BREAKDOWN')}</option>
+                  <option value="RESERVE">{t('fleet.statuses.RESERVE', { defaultValue: 'Reserve' })}</option>
                 </select>
               </div>
               <div>
@@ -609,6 +642,21 @@ export default function FleetPage() {
             <p className="text-xs text-blue-600">{t('fleet.busIdNote')}</p>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <Controller
+                name="category"
+                control={control}
+                rules={{ required: 'Category is required' }}
+                render={({ field }) => (
+                  <SelectField label={t('fleet.labels.category', { defaultValue: 'Category' })} required error={errors.category?.message} {...field}>
+                    <option value="">— Select category —</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>{c.code} — {c.name_en}</option>
+                    ))}
+                  </SelectField>
+                )}
+              />
+            </div>
             <div className="sm:col-span-2">
               <Input
                 label={t('fleet.labels.busRegistrationNo')}

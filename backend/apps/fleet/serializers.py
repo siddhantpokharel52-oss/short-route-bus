@@ -74,6 +74,16 @@ class VehicleSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
+    def validate(self, attrs):
+        # RG-010: required on create -- existing uncategorised vehicles (per
+        # Vehicle.category's own null=True comment) keep working untouched.
+        # attrs.get() (not validate_category, a required=False field's
+        # validate_<field> hook never even runs when the key is omitted)
+        # correctly catches both "omitted" and "explicitly null".
+        if self.instance is None and attrs.get("category") is None:
+            raise serializers.ValidationError({"category": "category is required."})
+        return attrs
+
     def update(self, instance, validated_data):
         insurance_policy_no = validated_data.pop("insurance_policy_no", "")
         insurance_expiry_date = validated_data.pop("insurance_expiry_date", None)
@@ -248,6 +258,22 @@ class VehicleGroupSerializer(serializers.ModelSerializer):
             "capability_ac_count", "capability_categories", "capability_permit_classes",
             "capability_computed_at", "created_at", "updated_at",
         ]
+
+    def validate(self, attrs):
+        # RG-043: switching an existing MIXED group to UNIFORM must not be
+        # allowed to bypass the uniform invariant every member-add already
+        # enforces (GroupMember.clean()) -- that check only ever sees one
+        # incoming member, so a whole-group audit is needed here instead.
+        new_mode = attrs.get("composition_mode")
+        if new_mode == VehicleGroup.CompositionMode.UNIFORM and self.instance:
+            category_count = self.instance.members.filter(
+                valid_to__isnull=True
+            ).values("vehicle__category").distinct().count()
+            if category_count > 1:
+                raise serializers.ValidationError(
+                    {"composition_mode": "This group has more than one category -- remove members until only one remains first."}
+                )
+        return attrs
 
 
 class GroupDriverAssignmentSerializer(serializers.ModelSerializer):

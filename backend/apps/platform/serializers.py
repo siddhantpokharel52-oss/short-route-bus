@@ -99,6 +99,20 @@ class RouteRequirementSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "route", "created_at", "updated_at"]
 
+    def validate_category_bounds(self, value):
+        # RG-025: an unvalidated shape here reaches fleet's balance() and
+        # check_group_route_eligibility() unconditionally as {code: {min?, max?}}
+        # -- anything else 500s the Balance Check screen for the whole operator.
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Must be an object of {category_code: {min?, max?}}.")
+        for code, bounds in value.items():
+            if not isinstance(bounds, dict) or not set(bounds).issubset({"min", "max"}):
+                raise serializers.ValidationError(f"'{code}': must be an object with only 'min'/'max' integer keys.")
+            for k in ("min", "max"):
+                if k in bounds and not isinstance(bounds[k], int):
+                    raise serializers.ValidationError(f"'{code}.{k}' must be an integer.")
+        return value
+
 
 class RouteDemandSerializer(serializers.ModelSerializer):
     class Meta:
@@ -130,6 +144,24 @@ class RouteSerializer(serializers.ModelSerializer):
             "requirement", "demand_profiles", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "approved_by", "approved_at", "created_at", "updated_at"]
+
+
+class RoutePublicSerializer(serializers.ModelSerializer):
+    """RG-089: what an anonymous/unauthenticated caller may see -- excludes
+    requirement/demand_profiles (internal fleet-composition and slot-planning
+    data), approved_by (a raw user id), and operators (tenant schema names +
+    revenue-share percentages). RouteViewSet also filters unapproved routes
+    out of this path entirely; this serializer only handles field exposure."""
+    route_stops = RouteStopSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Route
+        fields = [
+            "id", "route_code", "name_en", "name_ne", "start_stop", "end_stop",
+            "distance_km", "route_type", "status", "geojson_path", "route_stops",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = fields
 
 
 class RouteAssignmentSerializer(serializers.ModelSerializer):

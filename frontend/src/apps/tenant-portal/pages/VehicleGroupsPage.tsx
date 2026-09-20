@@ -371,16 +371,16 @@ export default function VehicleGroupsPage() {
       </Modal>
 
       {/* ── Manage members modal ─────────────────────────────────────────── */}
-      <Modal open={!!liveManageTarget} onClose={() => setManageTarget(null)} title={liveManageTarget ? `Manage ${liveManageTarget.code}` : ''} size="lg">
+      <Modal open={!!liveManageTarget} onClose={() => setManageTarget(null)} title={liveManageTarget ? `Manage ${liveManageTarget.code}` : ''} size="xl">
         {liveManageTarget && (
-          <div className="grid grid-cols-2 gap-6 p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6">
             <div className="space-y-4">
               <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Add a vehicle</label>
                 <div className="flex gap-2">
                   <select
                     value={pickerVehicleId} onChange={(e) => setPickerVehicleId(e.target.value)}
-                    className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                    className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
                   >
                     <option value="">— Select vehicle —</option>
                     {availableVehicles.map((v) => (
@@ -442,7 +442,7 @@ export default function VehicleGroupsPage() {
                 <div className="flex gap-2">
                   <select
                     value={pickerDriverUserId} onChange={(e) => setPickerDriverUserId(e.target.value)}
-                    className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                    className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
                   >
                     <option value="">— Select driver —</option>
                     {availableDrivers.map((d) => <option key={d.id} value={d.user_id!}>{d.full_name_en}</option>)}
@@ -454,6 +454,9 @@ export default function VehicleGroupsPage() {
                     Add
                   </Button>
                 </div>
+                {availableDrivers.length === 0 && (
+                  <p className="mt-1 text-xs text-gray-500">No drivers with a login yet — link a driver to a user account first.</p>
+                )}
                 <div className="mt-1.5 space-y-1.5">
                   {groupDrivers.filter((d) => !d.valid_to).map((d) => {
                     const driver = drivers.find((dr) => dr.user_id === d.driver_user_id)
@@ -482,7 +485,7 @@ export default function VehicleGroupsPage() {
                 <div className="flex gap-2">
                   <select
                     value={pickerConductorUserId} onChange={(e) => setPickerConductorUserId(e.target.value)}
-                    className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                    className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
                   >
                     <option value="">— Select conductor —</option>
                     {availableConductors.map((c) => <option key={c.id} value={c.user_id!}>{c.full_name_en}</option>)}
@@ -494,6 +497,9 @@ export default function VehicleGroupsPage() {
                     Add
                   </Button>
                 </div>
+                {availableConductors.length === 0 && (
+                  <p className="mt-1 text-xs text-gray-500">No conductors with a login yet — link a conductor to a user account first.</p>
+                )}
                 <div className="mt-1.5 space-y-1.5">
                   {groupConductors.filter((c) => !c.valid_to).map((c) => {
                     const conductor = conductors.find((co) => co.user_id === c.conductor_user_id)

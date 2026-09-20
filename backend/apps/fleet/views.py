@@ -47,12 +47,51 @@ class VehicleViewSet(ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by_id=self.request.user.id)
 
+    def perform_update(self, serializer):
+        old_status, old_category_id = serializer.instance.status, serializer.instance.category_id
+        instance = serializer.save()
+        if instance.status != old_status or instance.category_id != old_category_id:
+            # RG-052/053: a group's derived capability profile is stale the moment
+            # a member vehicle's status or category changes underneath it -- only
+            # GroupMember.save()/delete() re-derives today, never this.
+            for membership in instance.group_memberships.filter(valid_to__isnull=True).select_related("group"):
+                membership.group.recompute_capability()
+
     def partial_update(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
         return api_response(data=serializer.data, message="Vehicle updated successfully.")
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        from backend.apps.roster.models import Duty, RosterPeriod
+
+        open_memberships = list(instance.group_memberships.filter(valid_to__isnull=True).select_related("group"))
+        blocking_groups = [
+            m.group for m in open_memberships
+            if Duty.objects.filter(
+                group=m.group, roster_period__is_deleted=False,
+                roster_period__status__in=[RosterPeriod.Status.PUBLISHED, RosterPeriod.Status.CLOSED],
+            ).exists()
+        ]
+        if blocking_groups:
+            codes = ", ".join(sorted({g.code for g in blocking_groups}))
+            return api_response(
+                success=False,
+                message=(
+                    f"Cannot delete '{instance.registration_no}' -- it's a member of group(s) {codes}, "
+                    "which have published/closed duties. Remove it from the group first."
+                ),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        for m in open_memberships:
+            m.valid_to = timezone.now().date()
+            m.save(update_fields=["valid_to"])  # GroupMember.save() re-triggers recompute_capability()
+
+        return super().destroy(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
         instance.is_deleted = True
@@ -116,6 +155,28 @@ class VehicleCategoryViewSet(ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(created_by_id=self.request.user.id)
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        # RG-054: a category's own attributes (air_conditioned, seating_capacity,
+        # permit_class) are read live by recompute_capability(), so every group
+        # with an open member in this category is now stale until re-derived.
+        affected = VehicleGroup.objects.filter(
+            is_deleted=False, members__valid_to__isnull=True, members__vehicle__category_id=instance.id,
+        ).distinct()
+        for group in affected:
+            group.recompute_capability()
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        vehicle_count = instance.vehicles.filter(is_deleted=False).count()
+        if vehicle_count:
+            return api_response(
+                success=False,
+                message=f"Cannot delete '{instance.code}' -- {vehicle_count} vehicle(s) still reference it.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        return super().destroy(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
         instance.is_deleted = True

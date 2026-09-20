@@ -20,6 +20,7 @@ class Vehicle(models.Model):
         INACTIVE = "INACTIVE", "Inactive"
         RETIRED = "RETIRED", "Retired"
         BREAKDOWN = "BREAKDOWN", "Breakdown"
+        RESERVE = "RESERVE", "Reserve"
 
     class VehicleType(models.TextChoices):
         BUS = "BUS", "Bus"
@@ -278,10 +279,19 @@ class VehicleGroup(models.Model):
         return self.code
 
     def recompute_capability(self):
-        """Rebuilds the derived profile from every currently-open
-        membership. Called by GroupMember.save()/delete() -- see there for
-        why an explicit call beats a signal here."""
-        members = self.members.filter(valid_to__isnull=True).select_related("vehicle", "vehicle__category")
+        """Rebuilds the derived profile from every currently-open membership
+        that's actually operational right now. Called by GroupMember.save()/
+        delete(), and (RG-052) by VehicleViewSet.perform_update() whenever a
+        member vehicle's status changes -- a bus sent to maintenance/retired/
+        breakdown doesn't contribute real capacity even though its GroupMember
+        row stays open (the membership itself is a separate, longer-lived
+        concept from whether the bus can run today)."""
+        operational_statuses = (Vehicle.Status.ACTIVE, Vehicle.Status.AVAILABLE)
+        if self.kind == VehicleGroup.Kind.RESERVE:
+            operational_statuses += (Vehicle.Status.RESERVE,)
+        members = self.members.filter(
+            valid_to__isnull=True, vehicle__status__in=operational_statuses
+        ).select_related("vehicle", "vehicle__category")
         categories = {}
         permit_classes = set()
         seats = []
@@ -359,6 +369,14 @@ class GroupMember(models.Model):
 
         if self.vehicle.category_id is None:
             raise ValidationError("Vehicle has no category set -- assign one before adding it to a group.")
+
+        allowed_statuses = (Vehicle.Status.ACTIVE, Vehicle.Status.AVAILABLE)
+        if self.group.kind == VehicleGroup.Kind.RESERVE:
+            allowed_statuses += (Vehicle.Status.RESERVE,)  # a reserve group is exactly where a reserve bus belongs
+        if self.vehicle.status not in allowed_statuses:
+            raise ValidationError(
+                f"Vehicle is {self.vehicle.get_status_display()} -- only active/available vehicles can join a group."
+            )
 
         # Fall back to the doc's own default values (section 4.5's "Default"
         # column) when no operator has configured a rule row yet -- an

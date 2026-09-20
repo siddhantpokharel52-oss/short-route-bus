@@ -1,8 +1,14 @@
+from django.utils import timezone
 from rest_framework import serializers
 from .models import RosterPeriod, Duty, DutyOverride, VehicleSubstitution, RotationPolicy
 
 
 class RosterPeriodSerializer(serializers.ModelSerializer):
+    # RG-062: no existing "maximum reasonable range" convention elsewhere in
+    # this codebase to match -- roughly two months is generous for any real
+    # rotation cycle while still catching a fat-fingered multi-year range.
+    MAX_PERIOD_DAYS = 62
+
     class Meta:
         model = RosterPeriod
         fields = ["id", "start_date", "end_date", "status", "version", "created_at", "updated_at"]
@@ -14,6 +20,10 @@ class RosterPeriodSerializer(serializers.ModelSerializer):
         if start and end:
             if start > end:
                 raise serializers.ValidationError("start_date must be before end_date.")
+            if (end - start).days > self.MAX_PERIOD_DAYS:
+                raise serializers.ValidationError(f"A roster period can span at most {self.MAX_PERIOD_DAYS} days.")
+            if self.instance is None and end < timezone.now().date():
+                raise serializers.ValidationError("This date range is entirely in the past.")
             overlapping = RosterPeriod.objects.filter(
                 is_deleted=False, start_date__lte=end, end_date__gte=start,
             )
