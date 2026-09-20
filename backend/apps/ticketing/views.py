@@ -1,5 +1,6 @@
 import csv
 from datetime import datetime, time
+from decimal import Decimal
 
 from rest_framework import generics, status, views, filters
 from rest_framework.response import Response
@@ -9,12 +10,13 @@ from django.db import connection, transaction
 from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
-from .models import Ticket, Booking, DailyPass, MonthlyPass, StudentPass, NamastePayConfig
+from .models import Ticket, Booking, DailyPass, MonthlyPass, StudentPass, NamastePayConfig, NamastePayCheckout
 from .serializers import (
     TicketSerializer, TicketVerifySerializer,
     BookingSerializer, BookingCreateSerializer,
     DailyPassSerializer, MonthlyPassSerializer, StudentPassSerializer,
     NamastePayConfigSerializer,
+    NamastePayCheckoutCreateSerializer, NamastePayCheckoutSerializer,
 )
 from backend.apps.users.permissions import IsConductor, IsOperationsRole, IsCompanyAdmin, IsFinanceRole
 
@@ -390,6 +392,143 @@ class NamastePayTestConnectionView(views.APIView):
             return api_response(success=False, message=f"Could not reach NamastePay: {e}", status_code=502)
 
         return api_response(data=result, message="NamastePay accepted the credentials.")
+
+
+class NamastePayCheckoutCreateView(views.APIView):
+    """
+    POST /ticketing/payment-gateway/checkout/
+    Starts a NamastePay hosted checkout for a purchase -- CB9. Nothing is
+    issued yet; NamastePayCheckoutConfirmView is what actually creates
+    tickets, and only once the payment is independently confirmed.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        config = NamastePayConfig.objects.first()
+        if not config or not config.api_key or not config.is_active:
+            return api_response(success=False, message="NamastePay is not configured.", status_code=400)
+
+        serializer = NamastePayCheckoutCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        passengers = data["passengers"]
+        amount = sum(p["fare_paid"] for p in passengers)
+
+        from . import namastepay
+        import uuid as uuid_lib
+
+        reference_id = f"CB-{uuid_lib.uuid4().hex[:16].upper()}"
+        try:
+            result = namastepay.initiate_checkout(
+                config, amount=amount, reference_id=reference_id, remarks="CityBus ticket purchase",
+            )
+        except namastepay.NamastePayError as e:
+            return api_response(
+                success=False,
+                message=f"NamastePay rejected the checkout request ({e.status_code}).",
+                status_code=400,
+            )
+        except Exception as e:
+            return api_response(success=False, message=f"Could not reach NamastePay: {e}", status_code=502)
+
+        checkout = NamastePayCheckout.objects.create(
+            checkout_id=result["checkout_id"],
+            reference_id=reference_id,
+            passenger_id=request.data.get("passenger_id"),
+            route_id=data.get("route_id"),
+            from_stop_id=data.get("from_stop_id"),
+            to_stop_id=data.get("to_stop_id"),
+            passengers=[
+                {
+                    "ticket_type_id": str(p["ticket_type_id"]) if p.get("ticket_type_id") else None,
+                    "passenger_name": p.get("passenger_name", ""),
+                    "fare_paid": str(p["fare_paid"]),
+                }
+                for p in passengers
+            ],
+            amount=amount,
+            return_to=data["return_to"],
+        )
+        return api_response(
+            data={
+                "checkout_id": result.get("checkout_id"),
+                "payment_url": result.get("payment_url"),
+                "expires_at": result.get("expires_at"),
+                "reference_id": reference_id,
+                "internal_id": str(checkout.id),
+            },
+            message="Checkout started.",
+            status_code=status.HTTP_201_CREATED,
+        )
+
+
+class NamastePayCheckoutConfirmView(views.APIView):
+    """
+    GET /ticketing/payment-gateway/checkout/{checkout_id}/confirm/
+    The actual "receiver" -- never trusts a redirect's raw query params,
+    always re-checks with NamastePay server-side before creating anything.
+    Idempotent: calling this again on an already-CONFIRMED checkout just
+    returns the existing booking, no second NamastePay call, no duplicate.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, checkout_id):
+        try:
+            checkout = NamastePayCheckout.objects.get(checkout_id=checkout_id)
+        except NamastePayCheckout.DoesNotExist:
+            return api_response(success=False, message="Checkout not found.", status_code=404)
+
+        if checkout.status == NamastePayCheckout.Status.CONFIRMED:
+            return api_response(data=NamastePayCheckoutSerializer(checkout).data)
+
+        config = NamastePayConfig.objects.first()
+        if not config or not config.api_key:
+            return api_response(success=False, message="NamastePay is not configured.", status_code=400)
+
+        from . import namastepay
+
+        try:
+            result = namastepay.enquire_checkout(config, checkout.checkout_id)
+        except namastepay.NamastePayError as e:
+            return api_response(
+                success=False, message=f"Could not confirm with NamastePay ({e.status_code}).", status_code=502,
+            )
+        except Exception as e:
+            return api_response(success=False, message=f"Could not reach NamastePay: {e}", status_code=502)
+
+        remote_status = result.get("status")
+        if remote_status == "success":
+            reported_amount = Decimal(str(result.get("total_amount", 0))) / Decimal("100")
+            if reported_amount != checkout.amount:
+                return api_response(
+                    success=False,
+                    message="NamastePay's confirmed amount doesn't match the checkout's expected amount.",
+                    status_code=409,
+                )
+
+            booking_serializer = BookingCreateSerializer(
+                data={
+                    "route_id": str(checkout.route_id) if checkout.route_id else None,
+                    "from_stop_id": str(checkout.from_stop_id) if checkout.from_stop_id else None,
+                    "to_stop_id": str(checkout.to_stop_id) if checkout.to_stop_id else None,
+                    "payment_method": Ticket.PaymentMethod.NAMASTEPAY,
+                    "passengers": checkout.passengers,
+                },
+                context={"ticket_defaults": {"passenger_id": checkout.passenger_id, "issued_by": "MOBILE"}},
+            )
+            booking_serializer.is_valid(raise_exception=True)
+            booking = booking_serializer.save()
+
+            checkout.status = NamastePayCheckout.Status.CONFIRMED
+            checkout.booking = booking
+            checkout.confirmed_at = timezone.now()
+            checkout.save(update_fields=["status", "booking", "confirmed_at"])
+        elif remote_status in ("failed", "canceled", "expired"):
+            checkout.status = NamastePayCheckout.Status.FAILED
+            checkout.save(update_fields=["status"])
+        # else: still initiated/pending -- leave PENDING, create nothing.
+
+        return api_response(data=NamastePayCheckoutSerializer(checkout).data)
 
 
 class IssueDailyPassView(generics.CreateAPIView):

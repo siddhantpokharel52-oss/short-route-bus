@@ -3,7 +3,7 @@ import secrets
 from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
-from .models import Ticket, Booking, DailyPass, MonthlyPass, StudentPass, NamastePayConfig
+from .models import Ticket, Booking, DailyPass, MonthlyPass, StudentPass, NamastePayConfig, NamastePayCheckout
 
 
 def _generate_ticket_uid_and_qr():
@@ -169,6 +169,31 @@ class BookingCreateSerializer(serializers.Serializer):
                     **ticket_defaults,
                 )
         return booking
+
+
+class NamastePayCheckoutCreateSerializer(serializers.Serializer):
+    """Starts a NamastePay hosted-checkout purchase -- CB9. Same passenger-list
+    shape as BookingCreateSerializer (one payment can cover several tickets), but
+    nothing is created here yet -- only once NamastePayCheckoutConfirmView
+    independently verifies the payment does a Booking/Ticket set actually appear."""
+    route_id = serializers.UUIDField(required=False, allow_null=True)
+    from_stop_id = serializers.UUIDField(required=False, allow_null=True)
+    to_stop_id = serializers.UUIDField(required=False, allow_null=True)
+    return_to = serializers.URLField(max_length=500)
+    passengers = BookingPassengerSerializer(many=True, min_length=1, max_length=20)
+
+
+class NamastePayCheckoutSerializer(serializers.ModelSerializer):
+    booking = BookingSerializer(read_only=True)
+
+    class Meta:
+        model = NamastePayCheckout
+        fields = [
+            "id", "checkout_id", "reference_id", "passenger_id",
+            "route_id", "from_stop_id", "to_stop_id", "amount", "return_to",
+            "status", "booking", "created_at", "confirmed_at",
+        ]
+        read_only_fields = fields
 
 
 class NamastePayConfigSerializer(serializers.ModelSerializer):

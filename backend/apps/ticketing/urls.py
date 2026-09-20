@@ -18,4 +18,10 @@ urlpatterns = [
     path("passes/student/issue/", views.IssueStudentPassView.as_view(), name="issue-student-pass"),
     path("payment-gateway/", views.NamastePayConfigView.as_view(), name="namastepay-config"),
     path("payment-gateway/test/", views.NamastePayTestConnectionView.as_view(), name="namastepay-test"),
+    path("payment-gateway/checkout/", views.NamastePayCheckoutCreateView.as_view(), name="namastepay-checkout-create"),
+    path(
+        "payment-gateway/checkout/<str:checkout_id>/confirm/",
+        views.NamastePayCheckoutConfirmView.as_view(),
+        name="namastepay-checkout-confirm",
+    ),
 ]

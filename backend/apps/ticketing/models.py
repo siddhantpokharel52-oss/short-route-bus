@@ -140,6 +140,39 @@ class NamastePayConfig(models.Model):
         return f"NamastePay config ({self.environment})"
 
 
+class NamastePayCheckout(models.Model):
+    """A NamastePay hosted-checkout attempt -- CB9. NamastePay's real API has no
+    signed server-to-server webhook (confirmed against their spec): only a browser
+    redirect to a fixed return_url carrying untrusted query params, which their own
+    docs say to always re-verify via GET /api/v2/enquire/{checkout_id}. This row is
+    what that confirmation step checks against and, once genuinely confirmed,
+    creates a Booking (same shape CB2 already built) from -- a Ticket must never be
+    created on an unconfirmed payment (accounting.signals fires revenue recognition
+    unconditionally the instant one exists)."""
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        CONFIRMED = "CONFIRMED", "Confirmed"
+        FAILED = "FAILED", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    checkout_id = models.CharField(max_length=100, unique=True)
+    reference_id = models.CharField(max_length=100, unique=True)
+    passenger_id = models.UUIDField(null=True, blank=True)
+    route_id = models.UUIDField(null=True, blank=True)
+    from_stop_id = models.UUIDField(null=True, blank=True)
+    to_stop_id = models.UUIDField(null=True, blank=True)
+    passengers = models.JSONField()
+    amount = models.DecimalField(max_digits=9, decimal_places=2)
+    return_to = models.URLField(max_length=500)
+    booking = models.ForeignKey(Booking, null=True, blank=True, on_delete=models.SET_NULL)
+    status = models.CharField(max_length=9, choices=Status.choices, default=Status.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.checkout_id} ({self.status})"
+
+
 class StudentPass(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     passenger_id = models.UUIDField()

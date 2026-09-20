@@ -64,7 +64,7 @@ import httpx
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.security import HTTPAuthorizationCredentials
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from jose import JWTError, jwt as jose_jwt
 
 from ..config import settings
@@ -1228,6 +1228,139 @@ async def issue_group_tickets(
                 )
 
     return _passthrough(resp)
+
+
+@router.post("/tickets/namastepay/checkout/")
+async def start_namastepay_checkout(
+    payload: dict,
+    user: dict = Depends(get_current_user),
+):
+    """Starts a NamastePay hosted checkout (CB9) — passenger self-service, same
+    schema-resolution/per-passenger `ticket_type` handling as issue_group_tickets()
+    above, duplicated for the same reason stated there. Nothing is issued here —
+    only `namastepay_return()` below actually creates a Ticket, and only once the
+    payment is independently confirmed server-side.
+
+    `return_to` is required: where the passenger's app wants to land once payment
+    is confirmed (or fails) — NamastePay's own return_url is fixed per tenant with
+    no per-request override, so this is stored against the checkout and used by
+    namastepay_return() to redirect there afterward."""
+    if user.get("role") != PASSENGER_ROLE:
+        raise HTTPException(status_code=403, detail="Only a passenger token can start a checkout.")
+
+    passenger_id = user.get("user_id")
+    if not passenger_id:
+        return _error("Invalid token.", 401)
+
+    route_id = payload.get("route_id")
+    if not isinstance(route_id, str) or not route_id.strip():
+        return _error("route_id is required.", 400)
+
+    return_to = payload.get("return_to")
+    if not isinstance(return_to, str) or not return_to.strip():
+        return _error("return_to is required.", 400)
+
+    passengers = payload.get("passengers")
+    if not isinstance(passengers, list) or not passengers:
+        return _error("passengers must be a non-empty list.", 400)
+
+    operator_schemas = await tenant_db.get_route_operator_schemas(route_id)
+    if not operator_schemas:
+        return _error("Route not found or not currently served by any operator.", 404)
+    if len(operator_schemas) == 1:
+        schema = operator_schemas[0]
+    else:
+        requested_schema = payload.get("tenant_schema")
+        if not isinstance(requested_schema, str) or requested_schema not in operator_schemas:
+            return _error(
+                "This route is served by more than one operator — specify which one via "
+                "`tenant_schema`.",
+                400,
+                errors={"operators": operator_schemas},
+            )
+        schema = requested_schema
+
+    resolved_passengers = []
+    for passenger in passengers:
+        entry = {"fare_paid": passenger.get("fare_paid"), "passenger_name": passenger.get("passenger_name", "")}
+        ticket_type_code = passenger.get("ticket_type")
+        if isinstance(ticket_type_code, str) and ticket_type_code.strip():
+            ticket_type_id = await tenant_db.resolve_ticket_type_id(ticket_type_code.strip().upper())
+            if ticket_type_id is None:
+                return _error(f"Unknown ticket_type: {ticket_type_code!r}.", 400)
+            entry["ticket_type_id"] = ticket_type_id
+        resolved_passengers.append(entry)
+
+    account_id = await tenant_db.get_or_create_self_service_account(schema)
+    bearer_token = _mint_self_service_token(account_id, schema)
+
+    domain = await tenant_db.get_domain_for_schema(schema)
+    if not domain:
+        return _error(f"No domain configured for tenant '{schema}'.", 500)
+
+    django_payload = {
+        "route_id": route_id,
+        "from_stop_id": payload.get("from_stop_id"),
+        "to_stop_id": payload.get("to_stop_id"),
+        "return_to": return_to,
+        "passenger_id": passenger_id,
+        "passengers": resolved_passengers,
+    }
+    resp = await _proxy_to_django(
+        "POST", "/api/v1/ticketing/payment-gateway/checkout/", schema, domain, bearer_token, json_body=django_payload,
+    )
+    return _passthrough(resp)
+
+
+@router.get("/tickets/namastepay/return/")
+async def namastepay_return(checkout_id: str, tenant_schema: str):
+    """The fixed redirect target NamastePay sends the passenger's browser back to
+    (registered once per tenant in their merchant portal, expected to include
+    `?tenant_schema=<this tenant>` baked into the registered URL itself — NamastePay's
+    callback carries no tenant-identifying field of its own). Everything else in the
+    query string NamastePay appended (`status`, `transaction_id`, etc.) is read by
+    nobody here — only `checkout_id`/`tenant_schema` are used, to route the server-side
+    confirmation call; the actual status the passenger is redirected onward with comes
+    from Django's own re-check with NamastePay, never from these raw query params."""
+    domain = await tenant_db.get_domain_for_schema(tenant_schema)
+    if not domain:
+        return _error(f"No domain configured for tenant '{tenant_schema}'.", 500)
+
+    schema = tenant_schema
+    account_id = await tenant_db.get_or_create_self_service_account(schema)
+    bearer_token = _mint_self_service_token(account_id, schema)
+
+    resp = await _proxy_to_django(
+        "GET",
+        f"/api/v1/ticketing/payment-gateway/checkout/{checkout_id}/confirm/",
+        schema,
+        domain,
+        bearer_token,
+    )
+    try:
+        body = resp.json()
+    except ValueError:
+        body = None
+
+    data = (body or {}).get("data") or {}
+    return_to = None
+    status_value = "error"
+    booking_id = None
+    if 200 <= resp.status_code < 300 and data:
+        status_value = data.get("status", "error").lower()
+        booking = data.get("booking")
+        booking_id = booking.get("id") if booking else None
+    return_to = data.get("return_to")
+    if not return_to:
+        # No usable redirect target -- surface the confirmation result directly
+        # rather than send the passenger's browser nowhere.
+        return _passthrough(resp)
+
+    separator = "&" if "?" in return_to else "?"
+    redirect_url = f"{return_to}{separator}status={status_value}"
+    if booking_id:
+        redirect_url += f"&booking_id={booking_id}"
+    return RedirectResponse(url=redirect_url, status_code=302)
 
 
 @router.get("/tickets/my/")
