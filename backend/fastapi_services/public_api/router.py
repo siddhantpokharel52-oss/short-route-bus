@@ -709,6 +709,19 @@ def _serialize_ticket(t: dict) -> dict:
         "operator_schema": t["tenant_schema"],
         "ticket_type_id": t.get("ticket_type_id"),
         "trip_id": t.get("trip_id"),
+        # Which purchase this ticket belongs to (CB2 group bookings) -- null for a
+        # single ticket issued on its own. A client can already group tickets that
+        # share a booking_id without this endpoint needing to nest the response.
+        "booking_id": t.get("booking_id"),
+        "vehicle_id": t.get("vehicle_id"),
+        # bus_number/route_id/route_code/route_name are resolved by
+        # tenant_db.enrich_booking_and_vehicle()/enrich_route_names() -- not
+        # columns on Ticket itself (route_id especially: recovered via Booking or
+        # scheduling_trip, or left None when a ticket genuinely has neither).
+        "bus_number": t.get("bus_number"),
+        "route_id": t.get("route_id"),
+        "route_code": t.get("route_code"),
+        "route_name": t.get("route_name"),
         "passenger_id": t.get("passenger_id"),
         "passenger_name": t.get("passenger_name"),
         # Same side-store pattern as payment_reference just below — apps.ticketing.Ticket
@@ -1414,6 +1427,8 @@ async def my_tickets(
     await tenant_db.enrich_stop_names(tickets)
     await tenant_db.enrich_payment_references(tickets)
     await tenant_db.enrich_passenger_details(tickets)
+    await tenant_db.enrich_booking_and_vehicle(tickets)
+    await tenant_db.enrich_route_names(tickets)
     return _ok(data=[_serialize_ticket(t) for t in tickets])
 
 

@@ -688,7 +688,7 @@ async def fetch_timetable_for_route(route_id: str, day_type: str) -> list[dict]:
 # migration adds one, do not add it to this column list without checking
 # whether it belongs in a passenger-facing response.
 _TICKET_COLUMNS = """
-    id, ticket_uid, ticket_type_id, trip_id, vehicle_id, passenger_id, passenger_name,
+    id, ticket_uid, ticket_type_id, trip_id, vehicle_id, booking_id, passenger_id, passenger_name,
     conductor_id, issued_at, issued_by, valid_until, fare_paid,
     payment_method, qr_code, status, from_stop_id, to_stop_id
 """
@@ -785,6 +785,89 @@ async def enrich_stop_names(tickets: list[dict]) -> None:
     for t in tickets:
         t["from_stop_name"] = names.get(t.get("from_stop_id"))
         t["to_stop_name"] = names.get(t.get("to_stop_id"))
+
+
+async def enrich_booking_and_vehicle(tickets: list[dict]) -> None:
+    """Fills in route_id/bus_number in place -- Ticket itself has no route_id
+    column, so it's resolved via ticketing_booking (group bookings, CB2) or
+    scheduling_trip (scan-to-book) instead; a plain self-service ticket has
+    neither and stays None, since no route was ever recorded for that path.
+
+    Unlike enrich_stop_names' single global query (platform_stop is a shared
+    table), Booking/scheduling_trip/fleet_vehicle are all tenant-scoped, so
+    this groups tickets by tenant_schema and queries each schema separately --
+    same per-schema shape find_tickets_for_passenger already uses to build
+    this list in the first place."""
+    by_schema: dict[str, list[dict]] = {}
+    for t in tickets:
+        by_schema.setdefault(t.get("tenant_schema"), []).append(t)
+
+    engine = get_engine()
+    for schema, schema_tickets in by_schema.items():
+        if not schema:
+            for t in schema_tickets:
+                t["route_id"] = None
+                t["bus_number"] = None
+            continue
+
+        safe = _safe_schema(schema)
+        booking_ids = {t["booking_id"] for t in schema_tickets if t.get("booking_id")}
+        trip_ids = {t["trip_id"] for t in schema_tickets if t.get("trip_id")}
+        vehicle_ids = {t["vehicle_id"] for t in schema_tickets if t.get("vehicle_id")}
+
+        booking_routes: dict = {}
+        trip_routes: dict = {}
+        vehicle_buses: dict = {}
+        async with engine.connect() as conn:
+            if booking_ids:
+                result = await conn.execute(
+                    text(f'SELECT id, route_id FROM "{safe}".ticketing_booking WHERE id = ANY(:ids)'),
+                    {"ids": list(booking_ids)},
+                )
+                booking_routes = {row.id: row.route_id for row in result.fetchall()}
+            if trip_ids:
+                result = await conn.execute(
+                    text(f'SELECT id, route_id FROM "{safe}".scheduling_trip WHERE id = ANY(:ids)'),
+                    {"ids": list(trip_ids)},
+                )
+                trip_routes = {row.id: row.route_id for row in result.fetchall()}
+            if vehicle_ids:
+                result = await conn.execute(
+                    text(f'SELECT id, bus_number, registration_no FROM "{safe}".fleet_vehicle WHERE id = ANY(:ids)'),
+                    {"ids": list(vehicle_ids)},
+                )
+                vehicle_buses = {row.id: (row.bus_number or row.registration_no) for row in result.fetchall()}
+
+        for t in schema_tickets:
+            t["route_id"] = booking_routes.get(t.get("booking_id")) or trip_routes.get(t.get("trip_id"))
+            t["bus_number"] = vehicle_buses.get(t.get("vehicle_id"))
+
+
+async def enrich_route_names(tickets: list[dict]) -> None:
+    """Fills in route_code/route_name in place, resolved from the shared
+    platform_route table -- same single global query style as
+    enrich_stop_names, since Route (unlike Booking/Vehicle) is shared, not
+    tenant-scoped. Must run after enrich_booking_and_vehicle, which is what
+    actually puts route_id on each ticket in the first place."""
+    ids = {t["route_id"] for t in tickets if t.get("route_id")}
+    if not ids:
+        for t in tickets:
+            t["route_code"] = None
+            t["route_name"] = None
+        return
+
+    engine = get_engine()
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text("SELECT id, route_code, name_en FROM public.platform_route WHERE id = ANY(:ids)"),
+            {"ids": list(ids)},
+        )
+        routes = {row.id: (row.route_code, row.name_en) for row in result.fetchall()}
+
+    for t in tickets:
+        route = routes.get(t.get("route_id"))
+        t["route_code"] = route[0] if route else None
+        t["route_name"] = route[1] if route else None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
