@@ -105,7 +105,7 @@ function redirectByRole(role: string, navigate: (path: string) => void) {
   } else if (
     ['COMPANY_ADMIN', 'OPERATIONS_MANAGER', 'DISPATCHER', 'FLEET_MANAGER',
      'MAINTENANCE_MANAGER', 'STATION_MANAGER', 'DRIVER', 'CONDUCTOR',
-     'INSPECTOR', 'FINANCE_OFFICER', 'HR_OFFICER'].includes(role)
+     'INSPECTOR', 'OWNER', 'FINANCE_OFFICER', 'HR_OFFICER'].includes(role)
   ) {
     navigate('/tenant/live-tracking')
   } else {

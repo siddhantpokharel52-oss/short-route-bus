@@ -79,6 +79,16 @@ class IsFleetRole(BasePermission):
                     request.user.role in self.fleet_roles)
 
 
+class IsOwner(BasePermission):
+    """A bus owner viewing their own dashboard -- Team Implementation Guide
+    §3.7. Includes the _has_tenant_context guard (unlike IsConductor, which
+    skips it) since Owner/Vehicle are TENANT_APPS models and a public-schema
+    request here would 500 exactly like RG-090 did for fleet/roster."""
+    def has_permission(self, request, view):
+        return bool(_has_tenant_context(request) and request.user and request.user.is_authenticated and
+                    request.user.role == User.Role.OWNER)
+
+
 class CanViewVehicles(BasePermission):
     """Read access to the vehicle list for anyone who needs it to do their
     job -- fleet roles who own the data, plus dispatchers who need to pick

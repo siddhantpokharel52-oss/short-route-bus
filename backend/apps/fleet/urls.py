@@ -5,6 +5,7 @@ from . import views
 
 router = DefaultRouter()
 router.register("vehicles", views.VehicleViewSet, basename="vehicle")
+router.register("owners", views.OwnerViewSet, basename="owner")
 router.register("categories", views.VehicleCategoryViewSet, basename="vehicle-category")
 router.register("groups", views.VehicleGroupViewSet, basename="vehicle-group")
 router.register("composition-rules", views.GroupCompositionRuleViewSet, basename="group-composition-rule")

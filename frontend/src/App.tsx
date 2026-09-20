@@ -183,7 +183,7 @@ export default function App() {
               allowedRoles={[
                 'COMPANY_ADMIN', 'OPERATIONS_MANAGER', 'DISPATCHER',
                 'FLEET_MANAGER', 'MAINTENANCE_MANAGER', 'STATION_MANAGER',
-                'DRIVER', 'CONDUCTOR', 'INSPECTOR',
+                'DRIVER', 'CONDUCTOR', 'INSPECTOR', 'OWNER',
                 'FINANCE_OFFICER', 'HR_OFFICER',
               ]}
             >

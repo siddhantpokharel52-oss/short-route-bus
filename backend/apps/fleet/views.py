@@ -7,14 +7,14 @@ from datetime import timedelta
 from .models import (
     Vehicle, VehicleDocument, VehicleInsurance, VehicleGPS,
     VehicleCategory, VehicleGroup, GroupMember, GroupCompositionRule,
-    GroupDriverAssignment, GroupConductorAssignment,
+    GroupDriverAssignment, GroupConductorAssignment, Owner,
 )
 from .serializers import (
     VehicleSerializer, VehicleDocumentSerializer,
     VehicleInsuranceSerializer, VehicleGPSSerializer, VehicleExpiryAlertSerializer,
     VehicleCategorySerializer, VehicleGroupSerializer, GroupMemberSerializer,
     GroupCompositionRuleSerializer, GroupDriverAssignmentSerializer,
-    GroupConductorAssignmentSerializer,
+    GroupConductorAssignmentSerializer, OwnerSerializer,
 )
 from backend.apps.users.permissions import IsFleetRole, IsOperationsRole, CanViewVehicles
 
@@ -136,6 +136,19 @@ class VehicleDocumentViewSet(ModelViewSet):
         # Schedule expiry alert check
         from backend.apps.notifications.tasks import check_document_expiry
         check_document_expiry.delay(str(serializer.instance.id))
+
+
+class OwnerViewSet(ModelViewSet):
+    """A bus owner -- Team Implementation Guide §3.7. Fleet-managed like
+    VehicleCategory (this is who a vehicle is assigned to via
+    VehicleViewSet's own update endpoint, not a separate assignment API)."""
+    serializer_class = OwnerSerializer
+    permission_classes = [IsFleetRole]
+    search_fields = ["name", "phone", "email"]
+    ordering_fields = ["name", "created_at"]
+
+    def get_queryset(self):
+        return Owner.objects.all()
 
 
 class VehicleCategoryViewSet(ModelViewSet):

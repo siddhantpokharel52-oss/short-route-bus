@@ -18,6 +18,7 @@ export type UserRole =
   | 'DRIVER'
   | 'CONDUCTOR'
   | 'INSPECTOR'
+  | 'OWNER'
   | 'PASSENGER'
   | 'STUDENT'
   | 'TOURIST'
@@ -110,6 +111,6 @@ export const isPlatformRole = (role?: UserRole) =>
 export const isTenantRole = (role?: UserRole) =>
   ['COMPANY_ADMIN', 'OPERATIONS_MANAGER', 'DISPATCHER', 'FLEET_MANAGER',
    'MAINTENANCE_MANAGER', 'FINANCE_OFFICER', 'HR_OFFICER', 'STATION_MANAGER',
-   'DRIVER', 'CONDUCTOR', 'INSPECTOR'].includes(role ?? '')
+   'DRIVER', 'CONDUCTOR', 'INSPECTOR', 'OWNER'].includes(role ?? '')
 export const isOperationsRole = (role?: UserRole) =>
   ['DISPATCHER', 'DRIVER', 'CONDUCTOR'].includes(role ?? '')

@@ -2,7 +2,7 @@ from rest_framework import views
 from rest_framework.response import Response
 from django.utils import timezone
 from .models import TenantAnalyticsSnapshot, CityAnalyticsSnapshot
-from backend.apps.users.permissions import IsOperationsRole, IsTransportAuthority, IsFinanceRole
+from backend.apps.users.permissions import IsOperationsRole, IsTransportAuthority, IsFinanceRole, IsOwner
 
 
 def api_response(data=None, message="Success", success=True, errors=None, status_code=200):
@@ -150,6 +150,172 @@ class TenantTripTrendView(views.APIView):
                 "passengers": td["count"],
                 "revenue": td["revenue"],
             })
+
+        return api_response(data=trend)
+
+
+class OwnerDashboardSummaryView(views.APIView):
+    """
+    GET /analytics/owner/summary/
+    Earnings summary for the calling owner's own buses only -- Team
+    Implementation Guide §3.7. Scoped strictly to vehicles Owner.user_id
+    matches the caller; never another owner's, never the whole tenant fleet.
+
+    "settled vs outstanding cash liability" (the doc's literal ask) needs a
+    real settlement event that doesn't exist anywhere in this codebase yet
+    (CB10, blocked on which cash-settlement model gets picked) -- this
+    reports cash_collected/online_collected instead, the honest names for
+    what's actually computable today.
+    """
+    permission_classes = [IsOwner]
+
+    def get(self, request):
+        from datetime import timedelta
+        from django.db.models import Sum, Count
+        from backend.apps.fleet.models import Vehicle, Owner
+        from backend.apps.ticketing.models import Ticket
+        from backend.apps.dispatch.models import DailyAllocation
+        from backend.apps.staff.models import ConductorShift
+        from backend.apps.platform.models import Route
+
+        try:
+            owner = Owner.objects.get(user_id=request.user.id)
+        except Owner.DoesNotExist:
+            return api_response(
+                success=False, message="No owner profile is linked to this account yet.", status_code=403,
+            )
+
+        vehicle_ids = list(Vehicle.objects.filter(owner=owner, is_deleted=False).values_list("id", flat=True))
+        empty = {
+            "owner_name": owner.name, "vehicle_count": 0,
+            "per_bus": [], "cash_vs_online": [], "revenue_by_route": [],
+            "today": {"rides": 0, "revenue": 0.0},
+            "this_week": {"rides": 0, "revenue": 0.0},
+            "this_month": {"rides": 0, "revenue": 0.0},
+            "cash_collected": 0.0, "online_collected": 0.0,
+        }
+        if not vehicle_ids:
+            return api_response(data=empty)
+
+        today = timezone.now().date()
+        week_start = today - timedelta(days=today.weekday())
+        month_start = today.replace(day=1)
+
+        base_qs = Ticket.objects.filter(vehicle_id__in=vehicle_ids, is_deleted=False)
+
+        def totals(qs):
+            agg = qs.aggregate(rides=Count("id"), revenue=Sum("fare_paid"))
+            return {"rides": agg["rides"] or 0, "revenue": float(agg["revenue"] or 0)}
+
+        # Per-bus breakdown
+        per_bus_agg = {
+            row["vehicle_id"]: row
+            for row in base_qs.values("vehicle_id").annotate(revenue=Sum("fare_paid"), rides=Count("id"))
+        }
+        bus_numbers = {v.id: (v.bus_number or v.registration_no) for v in Vehicle.objects.filter(id__in=vehicle_ids)}
+        per_bus = [
+            {
+                "vehicle_id": str(vid),
+                "bus_number": bus_numbers.get(vid, str(vid)[:8]),
+                "rides": per_bus_agg.get(vid, {}).get("rides", 0),
+                "revenue": float(per_bus_agg.get(vid, {}).get("revenue") or 0),
+            }
+            for vid in vehicle_ids
+        ]
+
+        # Cash vs online split -- every non-CASH payment_method bucketed as "Online"
+        by_method = list(base_qs.values("payment_method").annotate(total=Sum("fare_paid")))
+        cash_total = sum(float(r["total"] or 0) for r in by_method if r["payment_method"] == "CASH")
+        online_total = sum(float(r["total"] or 0) for r in by_method if r["payment_method"] != "CASH")
+        cash_vs_online = [
+            {"label": "Cash", "revenue": cash_total},
+            {"label": "Online", "revenue": online_total},
+        ]
+
+        # Revenue by route -- via DailyAllocation (date-accurate: which route this
+        # vehicle actually ran that day), not Vehicle.assigned_route_id (current
+        # assignment only, would misattribute history after any reassignment).
+        allocations = DailyAllocation.objects.filter(vehicle_id__in=vehicle_ids).values("vehicle_id", "date", "route_id")
+        route_by_vehicle_date = {(a["vehicle_id"], a["date"]): a["route_id"] for a in allocations}
+        route_revenue = {}
+        for t in base_qs.values("vehicle_id", "fare_paid", "issued_at"):
+            route_id = route_by_vehicle_date.get((t["vehicle_id"], t["issued_at"].date()))
+            if route_id:
+                route_revenue[route_id] = route_revenue.get(route_id, 0) + float(t["fare_paid"] or 0)
+        route_codes = (
+            {r.id: r.route_code for r in Route.objects.filter(id__in=list(route_revenue.keys()))}
+            if route_revenue else {}
+        )
+        revenue_by_route = [
+            {"route_id": str(rid), "route_code": route_codes.get(rid, str(rid)[:8]), "revenue": rev}
+            for rid, rev in route_revenue.items()
+        ]
+
+        # Cash collected (from CB7's shift cash ledger) vs online collected (from
+        # Ticket rows directly) -- see class docstring on why these, not "settled".
+        cash_collected = ConductorShift.objects.filter(
+            vehicle_id__in=vehicle_ids
+        ).aggregate(t=Sum("system_cash_total"))["t"] or 0
+
+        return api_response(data={
+            "owner_name": owner.name,
+            "vehicle_count": len(vehicle_ids),
+            "per_bus": per_bus,
+            "cash_vs_online": cash_vs_online,
+            "revenue_by_route": revenue_by_route,
+            "today": totals(base_qs.filter(issued_at__date=today)),
+            "this_week": totals(base_qs.filter(issued_at__date__gte=week_start)),
+            "this_month": totals(base_qs.filter(issued_at__date__gte=month_start)),
+            "cash_collected": float(cash_collected),
+            "online_collected": online_total,
+        })
+
+
+class OwnerDashboardTrendView(views.APIView):
+    """
+    GET /analytics/owner/trend/?days=30
+    Daily rides + revenue for the calling owner's own buses -- same TruncDate
+    + dense-day-fill pattern as TenantTripTrendView above, just scoped to one
+    owner's vehicle_ids instead of the whole tenant.
+    """
+    permission_classes = [IsOwner]
+
+    def get(self, request):
+        from datetime import timedelta
+        from django.db.models import Count, Sum
+        from django.db.models.functions import TruncDate
+        from backend.apps.fleet.models import Vehicle, Owner
+        from backend.apps.ticketing.models import Ticket
+
+        try:
+            owner = Owner.objects.get(user_id=request.user.id)
+        except Owner.DoesNotExist:
+            return api_response(
+                success=False, message="No owner profile is linked to this account yet.", status_code=403,
+            )
+
+        vehicle_ids = list(Vehicle.objects.filter(owner=owner, is_deleted=False).values_list("id", flat=True))
+
+        days = min(int(request.query_params.get("days", 30)), 90)
+        today = timezone.now().date()
+        from_date = today - timedelta(days=days - 1)
+
+        tickets_qs = (
+            Ticket.objects.filter(vehicle_id__in=vehicle_ids, issued_at__date__gte=from_date, is_deleted=False)
+            .annotate(day=TruncDate("issued_at"))
+            .values("day")
+            .annotate(count=Count("id"), revenue=Sum("fare_paid"))
+        )
+        tickets_by_day = {
+            item["day"]: {"count": item["count"], "revenue": float(item["revenue"] or 0)}
+            for item in tickets_qs
+        }
+
+        trend = []
+        for i in range(days):
+            day = from_date + timedelta(days=i)
+            td = tickets_by_day.get(day, {"count": 0, "revenue": 0.0})
+            trend.append({"date": day.isoformat(), "rides": td["count"], "revenue": td["revenue"]})
 
         return api_response(data=trend)
 

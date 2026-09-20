@@ -5,7 +5,7 @@ from django.utils import timezone
 from .models import (
     Vehicle, VehicleDocument, VehicleInsurance, VehicleGPS,
     VehicleCategory, VehicleGroup, GroupMember, GroupCompositionRule,
-    GroupDriverAssignment, GroupConductorAssignment,
+    GroupDriverAssignment, GroupConductorAssignment, Owner,
 )
 
 
@@ -38,6 +38,7 @@ class VehicleSerializer(serializers.ModelSerializer):
     is_available_for_trip = serializers.ReadOnlyField()
     category_code = serializers.CharField(source="category.code", read_only=True, default=None)
     category_name = serializers.CharField(source="category.name_en", read_only=True, default=None)
+    owner_display_name = serializers.CharField(source="owner.name", read_only=True, default=None)
 
     # ── Write-only: Insurance (creates VehicleInsurance on save) ──────────────
     insurance_policy_no = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -53,7 +54,7 @@ class VehicleSerializer(serializers.ModelSerializer):
             # identifiers
             "id", "registration_no", "bus_number",
             # ownership
-            "owner_name", "owner_phone",
+            "owner_name", "owner_phone", "owner", "owner_display_name",
             # basic info
             "vehicle_type", "make", "model", "year", "color",
             # vehicle identification
@@ -421,3 +422,15 @@ class GroupCompositionRuleSerializer(serializers.ModelSerializer):
             "capacity_spread_limit", "permit_class_match", "required_composition", "spares_allowed",
         ]
         read_only_fields = ["id"]
+
+
+class OwnerSerializer(serializers.ModelSerializer):
+    vehicle_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Owner
+        fields = ["id", "name", "phone", "email", "user_id", "is_active", "created_at", "vehicle_count"]
+        read_only_fields = ["id", "created_at", "vehicle_count"]
+
+    def get_vehicle_count(self, obj):
+        return obj.vehicles.filter(is_deleted=False).count()

@@ -42,6 +42,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         DRIVER = "DRIVER", "Driver"
         CONDUCTOR = "CONDUCTOR", "Conductor"
         INSPECTOR = "INSPECTOR", "Inspector"
+        OWNER = "OWNER", "Bus Owner"
         # Public
         PASSENGER = "PASSENGER", "Passenger"
         STUDENT = "STUDENT", "Student"

@@ -7,6 +7,8 @@ import RosterPeriodsPage from './pages/RosterPeriodsPage'
 import RosterGridPage from './pages/RosterGridPage'
 import DriverRosterPage from './pages/DriverRosterPage'
 import MyShiftPage from './pages/MyShiftPage'
+import OwnersPage from './pages/OwnersPage'
+import MyEarningsPage from './pages/MyEarningsPage'
 import DriversPage from './pages/DriversPage'
 import ConductorsPage from './pages/ConductorsPage'
 import SchedulingPage from './pages/SchedulingPage'
@@ -40,6 +42,8 @@ export default function TenantApp() {
         <Route path="roster/:periodId/grid" element={<RosterGridPage />} />
         <Route path="my-roster" element={<DriverRosterPage />} />
         <Route path="my-shift" element={<MyShiftPage />} />
+        <Route path="owners" element={<OwnersPage />} />
+        <Route path="my-earnings" element={<MyEarningsPage />} />
         <Route path="drivers" element={<DriversPage />} />
         <Route path="conductors" element={<ConductorsPage />} />
 

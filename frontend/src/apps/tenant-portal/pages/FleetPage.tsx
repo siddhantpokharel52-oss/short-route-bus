@@ -11,6 +11,7 @@ import { NepaliDateInput } from '@components/shared/NepaliDateInput'
 import { usePagination } from '@hooks/usePagination'
 import fleetService, { Vehicle, VehicleCreatePayload, VehicleUpdatePayload } from '@services/fleetService'
 import vehicleCategoryService from '@services/vehicleCategoryService'
+import ownerService from '@services/ownerService'
 import apiClient from '@services/api'
 import toast from 'react-hot-toast'
 import { useForm, Controller } from 'react-hook-form'
@@ -90,6 +91,7 @@ export default function FleetPage() {
   const [editType, setEditType] = useState('')
   const [editStatus, setEditStatus] = useState('')
   const [editCategory, setEditCategory] = useState('')
+  const [editOwner, setEditOwner] = useState('')
   const [editColor, setEditColor] = useState('')
   const [editSeated, setEditSeated] = useState('')
   const [editStanding, setEditStanding] = useState('')
@@ -115,6 +117,12 @@ export default function FleetPage() {
   const { data: categories = [] } = useQuery({
     queryKey: ['vehicle-categories'],
     queryFn: () => vehicleCategoryService.list(),
+  })
+
+  // Owner dropdown -- Team Implementation Guide §3.7
+  const { data: owners = [] } = useQuery({
+    queryKey: ['owners-dropdown'],
+    queryFn: () => ownerService.list(),
   })
 
   // Routes dropdown
@@ -196,6 +204,7 @@ export default function FleetPage() {
     setEditType(editTarget.vehicle_type)
     setEditStatus(editTarget.status)
     setEditCategory(editTarget.category ?? '')
+    setEditOwner(editTarget.owner ?? '')
     setEditColor(editTarget.color ?? '')
     setEditSeated(String(editTarget.capacity_seated))
     setEditStanding(String(editTarget.capacity_standing ?? 0))
@@ -212,6 +221,7 @@ export default function FleetPage() {
     mutationFn: async (id: string) => {
       const payload: VehicleUpdatePayload = {
         category: editCategory || null,
+        owner: editOwner || null,
         vehicle_type: editType as Vehicle['vehicle_type'],
         status: editStatus as Vehicle['status'],
         color: editColor,
@@ -470,6 +480,16 @@ export default function FleetPage() {
                   <option value="">— No category —</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>{c.code} — {c.name_en}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block text-sm font-medium text-gray-700">{t('fleet.labels.owner', { defaultValue: 'Owner' })}</label>
+                <select value={editOwner} onChange={(e) => setEditOwner(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                  <option value="">— No owner —</option>
+                  {owners.map((o) => (
+                    <option key={o.id} value={o.id}>{o.name}</option>
                   ))}
                 </select>
               </div>

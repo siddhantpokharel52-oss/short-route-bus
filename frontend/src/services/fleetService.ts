@@ -27,6 +27,8 @@ export interface Vehicle {
   category: string | null
   category_code: string | null
   category_name: string | null
+  owner: string | null
+  owner_display_name: string | null
   status: 'ACTIVE' | 'AVAILABLE' | 'ASSIGNED' | 'IN_SERVICE' | 'IN_MAINTENANCE' | 'INACTIVE' | 'RETIRED' | 'BREAKDOWN'
   assigned_route_id: string | null
   odometer_km: number

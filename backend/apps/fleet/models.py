@@ -51,8 +51,15 @@ class Vehicle(models.Model):
     engine_capacity_cc = models.PositiveIntegerField(null=True, blank=True)
 
     # ── Ownership ────────────────────────────────────────────────
+    # owner_name/owner_phone stay as free-text display fallback for existing
+    # data; `owner` is the real, structured link -- nullable so existing
+    # fleets keep working unassigned until an admin links one, same reasoning
+    # `category` below already uses on this exact model.
     owner_name = models.CharField(max_length=255, blank=True)
     owner_phone = models.CharField(max_length=20, blank=True)
+    owner = models.ForeignKey(
+        "Owner", null=True, blank=True, on_delete=models.SET_NULL, related_name="vehicles"
+    )
 
     # ── Category ─────────────────────────────────────────────────
     # Nullable so existing fleets keep working uncategorised until an admin
@@ -105,6 +112,31 @@ class Vehicle(models.Model):
             vehicle_id=self.id, status=MaintenanceSchedule.Status.OVERDUE
         ).exists()
         return not overdue_maintenance
+
+
+class Owner(models.Model):
+    """A bus owner -- Team Implementation Guide §3.7. A tenant's fleet can include
+    buses belonging to several different owners; this is what a bus owner's own
+    dashboard is scoped by. Deliberately separate from Vehicle.owner_name/
+    owner_phone (kept as free-text display fallback) -- this is the real,
+    structured link, and the thing an owner's own login is tied to."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=20, blank=True)
+    email = models.EmailField(blank=True)
+    # Links to the shared-schema User who can log in and see this owner's own
+    # dashboard -- bare UUID, not FK, matching staff.Driver/Conductor's own
+    # established convention for referencing a User from a tenant-scoped model.
+    user_id = models.UUIDField(null=True, blank=True, unique=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by_id = models.UUIDField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
 
 
 class VehicleDocument(models.Model):
