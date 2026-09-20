@@ -867,7 +867,7 @@ class FareMatrixViewSet(ModelViewSet):
         FareMatrix row per stop pair.
 
         Body: {"route": "<id or route_code>", "ticket_type": "<id or code>",
-        "fares": [{"zone_from", "zone_to", "base_fare", "peak_fare"?, "student_fare"?, "senior_citizen_fare"?}, ...]}
+        "fares": [{"zone_from", "zone_to", "base_fare", "peak_fare"?, "student_fare"?, "senior_citizen_fare"?, "child_fare"?}, ...]}
         route/ticket_type may also be set per-row, overriding the top-level default.
         Upserts on (route, ticket_type, zone_from, zone_to); re-uploading a
         revised chart updates existing rows instead of duplicating them.
@@ -916,6 +916,7 @@ class FareMatrixViewSet(ModelViewSet):
             peak_fare = row["peak_fare"] if row.get("peak_fare") is not None else base_fare
             student_fare = row["student_fare"] if row.get("student_fare") is not None else base_fare
             senior_citizen_fare = row["senior_citizen_fare"] if row.get("senior_citizen_fare") is not None else base_fare
+            child_fare = row["child_fare"] if row.get("child_fare") is not None else base_fare
 
             existing = FareMatrix.objects.filter(
                 route=route, ticket_type=ticket_type, zone_from=zone_from, zone_to=zone_to,
@@ -926,6 +927,7 @@ class FareMatrixViewSet(ModelViewSet):
                 "ticket_type": str(ticket_type.id),
                 "base_fare": base_fare, "peak_fare": peak_fare,
                 "student_fare": student_fare, "senior_citizen_fare": senior_citizen_fare,
+                "child_fare": child_fare,
             })
             if not serializer.is_valid():
                 errors.append({"row": i, "error": serializer.errors})
@@ -1029,6 +1031,7 @@ class FareMatrixViewSet(ModelViewSet):
                         zone_from=from_stop.name_en, zone_to=to_stop.name_en,
                         base_fare=fare_value, peak_fare=fare_value,
                         student_fare=fare_value, senior_citizen_fare=fare_value,
+                        child_fare=fare_value,
                         updated_by=updated_by,
                     )
                     created += 1

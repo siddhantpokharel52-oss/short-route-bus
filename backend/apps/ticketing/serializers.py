@@ -61,7 +61,7 @@ class TicketSerializer(serializers.ModelSerializer):
         fields = [
             "id", "ticket_uid",
             "ticket_type_id", "trip_id", "vehicle_id", "passenger_id", "passenger_name",
-            "conductor_id", "issued_at", "issued_by", "valid_until",
+            "conductor_id", "issued_at", "paid_at", "issued_by", "valid_until",
             "fare_paid", "payment_method",
             "qr_code", "status",
             "from_stop_id", "to_stop_id",
@@ -69,7 +69,7 @@ class TicketSerializer(serializers.ModelSerializer):
             "vehicle_bus_number",
         ]
         read_only_fields = [
-            "id", "ticket_uid", "issued_at", "valid_until", "qr_code",
+            "id", "ticket_uid", "issued_at", "paid_at", "valid_until", "qr_code",
             "from_stop_name", "to_stop_name", "vehicle_bus_number",
         ]
 
@@ -91,6 +91,10 @@ class TicketSerializer(serializers.ModelSerializer):
         return Ticket.objects.create(
             ticket_uid=ticket_uid,
             qr_code=qr_b64,
+            # Payment is already confirmed by the time this row exists in
+            # this codebase's current architecture -- see paid_at's own
+            # docstring on the model.
+            paid_at=timezone.now(),
             **validated_data,
         )
 
@@ -109,6 +113,8 @@ class TicketVerifySerializer(serializers.Serializer):
             raise serializers.ValidationError("Ticket has expired.")
         if ticket.status == Ticket.Status.CANCELLED:
             raise serializers.ValidationError("Ticket is cancelled.")
+        if ticket.paid_at is None:
+            raise serializers.ValidationError("Ticket has not been paid yet.")
         return value
 
 
@@ -155,6 +161,7 @@ class BookingCreateSerializer(serializers.Serializer):
                 **validated_data,
             )
             valid_until = _default_valid_until()
+            paid_at = timezone.now()
             for passenger in passengers:
                 ticket_uid, qr_b64 = _generate_ticket_uid_and_qr()
                 Ticket.objects.create(
@@ -162,6 +169,7 @@ class BookingCreateSerializer(serializers.Serializer):
                     qr_code=qr_b64,
                     booking=booking,
                     valid_until=valid_until,
+                    paid_at=paid_at,
                     from_stop_id=validated_data.get("from_stop_id"),
                     to_stop_id=passenger.get("to_stop_id"),
                     payment_method=validated_data["payment_method"],

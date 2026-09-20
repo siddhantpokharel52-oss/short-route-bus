@@ -101,6 +101,12 @@ def _update_balances(journal_entry):
 def on_ticket_created(sender, instance, created, **kwargs):
     if not created or instance.is_deleted:
         return
+    # Every current ticket-creation path sets paid_at immediately (see
+    # Ticket.paid_at's own docstring), so this is a no-op today -- but it
+    # means a future flow that creates a Ticket before payment is
+    # confirmed won't prematurely recognize revenue for it.
+    if instance.paid_at is None:
+        return
 
     # Choose debit account based on payment method
     payment_map = {

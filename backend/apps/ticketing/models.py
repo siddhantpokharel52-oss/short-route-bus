@@ -36,6 +36,15 @@ class Ticket(models.Model):
     passenger_name = models.CharField(max_length=255, blank=True)
     conductor_id = models.UUIDField(null=True, blank=True)
     issued_at = models.DateTimeField(auto_now_add=True)
+    # ISSUED/PAID scaffolding for Team Implementation Guide §3.6's ticket
+    # state machine -- kept a separate, independently-set timestamp (not
+    # derived from issued_at) so that whichever way open item #2 (does
+    # payment happen before or after issuance?) resolves, no rework is
+    # needed. Every ticket-creation path today sets this equal to
+    # issued_at -- payment is already confirmed by the time a Ticket row
+    # exists in this codebase -- but a future flow is free to leave it
+    # null until a real confirmation happens.
+    paid_at = models.DateTimeField(null=True, blank=True)
     issued_by = models.CharField(max_length=10, choices=IssuedBy.choices, default=IssuedBy.POS)
     valid_until = models.DateTimeField()
     fare_paid = models.DecimalField(max_digits=8, decimal_places=2)
