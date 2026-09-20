@@ -12,7 +12,7 @@ from .serializers import (
     TimetableSerializer, TripSerializer, DriverShiftSerializer,
     AutoScheduleConfigSerializer,
 )
-from backend.apps.users.permissions import IsOperationsRole, IsFleetRole
+from backend.apps.users.permissions import IsOperationsRole, IsFleetRole, IsTenantStaff
 
 
 def api_response(data=None, message="Success", success=True, errors=None, status_code=200):
@@ -659,7 +659,7 @@ class PlaybackView(views.APIView):
     Return historical GPS positions stored in Redis time-series.
     The FastAPI GPS ingest stores the last 1000 events per vehicle.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsTenantStaff]
 
     def get(self, request):
         vehicle_id = request.query_params.get("vehicle_id")
@@ -695,7 +695,7 @@ class LivePositionsView(views.APIView):
     Return snapshot of all current vehicle positions from Redis.
     Alternative to FastAPI endpoint for environments where only Django is exposed.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsTenantStaff]
 
     def get(self, request):
         r = get_redis()

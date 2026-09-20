@@ -89,6 +89,24 @@ class IsOwner(BasePermission):
                     request.user.role == User.Role.OWNER)
 
 
+class IsTenantStaff(BasePermission):
+    """Any tenant staff role doing day-to-day desk work (ticketing, cash
+    shifts) -- deliberately excludes OWNER and the public-facing passenger
+    roles. Several views were gated only by IsAuthenticated, which meant an
+    authenticated Bus Owner could reach tenant-wide data (every ticket,
+    every conductor's cash shifts) meant only for staff -- a violation of
+    Team Implementation Guide §3.7 ("an owner sees their earnings, nothing
+    else"). Written as a short deny-list rather than this file's usual
+    allow-list on purpose: an allow-list has to be remembered and updated
+    for every new staff role, which is exactly the omission bug that broke
+    OWNER's login earlier this session in three other places."""
+    _excluded_roles = {User.Role.OWNER, User.Role.PASSENGER, User.Role.STUDENT, User.Role.TOURIST}
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and
+                    request.user.role not in self._excluded_roles)
+
+
 class CanViewVehicles(BasePermission):
     """Read access to the vehicle list for anyone who needs it to do their
     job -- fleet roles who own the data, plus dispatchers who need to pick

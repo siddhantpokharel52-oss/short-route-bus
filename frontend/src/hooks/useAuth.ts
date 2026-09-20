@@ -102,10 +102,15 @@ function redirectByRole(role: string, navigate: (path: string) => void) {
      'COMPLIANCE_OFFICER', 'PLATFORM_SUPPORT'].includes(role)
   ) {
     navigate('/super-admin/dashboard')
+  } else if (role === 'OWNER') {
+    // An owner's only real page is My Earnings (Team Implementation Guide
+    // §3.7) -- landing them on Live Tracking would put a fleet-wide GPS map
+    // in front of them before they've clicked anything.
+    navigate('/tenant/my-earnings')
   } else if (
     ['COMPANY_ADMIN', 'OPERATIONS_MANAGER', 'DISPATCHER', 'FLEET_MANAGER',
      'MAINTENANCE_MANAGER', 'STATION_MANAGER', 'DRIVER', 'CONDUCTOR',
-     'INSPECTOR', 'OWNER', 'FINANCE_OFFICER', 'HR_OFFICER'].includes(role)
+     'INSPECTOR', 'FINANCE_OFFICER', 'HR_OFFICER'].includes(role)
   ) {
     navigate('/tenant/live-tracking')
   } else {

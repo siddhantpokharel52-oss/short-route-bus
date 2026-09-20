@@ -18,7 +18,7 @@ from .serializers import (
     NamastePayConfigSerializer,
     NamastePayCheckoutCreateSerializer, NamastePayCheckoutSerializer,
 )
-from backend.apps.users.permissions import IsConductor, IsOperationsRole, IsCompanyAdmin, IsFinanceRole
+from backend.apps.users.permissions import IsConductor, IsOperationsRole, IsCompanyAdmin, IsFinanceRole, IsTenantStaff
 
 
 def api_response(data=None, message="Success", success=True, errors=None, status_code=200):
@@ -56,7 +56,7 @@ class TicketViewSet(ModelViewSet):
     GET  /ticketing/tickets/{id}/     → retrieve single ticket
     """
     serializer_class = TicketSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsTenantStaff]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["ticket_uid", "passenger_name"]
     ordering_fields = ["issued_at", "fare_paid"]
@@ -132,7 +132,7 @@ class BookingViewSet(ModelViewSet):
     GET  /ticketing/bookings/{id}/     -> retrieve a booking + its tickets
     """
     serializer_class = BookingSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsTenantStaff]
     http_method_names = ["get", "post", "head", "options"]
 
     def get_queryset(self):

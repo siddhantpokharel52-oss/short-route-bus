@@ -1,6 +1,5 @@
 from rest_framework import generics, status, views
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 from django.db.models import Sum
@@ -17,7 +16,7 @@ from .serializers import (
     ConductorShiftSerializer, ConductorShiftOpenSerializer, ConductorShiftCloseSerializer,
     BusCompanySerializer, CompanyLicenseSerializer,
 )
-from backend.apps.users.permissions import IsHRRole, IsOperationsRole, IsFinanceRole, IsConductor, CanViewStaff
+from backend.apps.users.permissions import IsHRRole, IsOperationsRole, IsFinanceRole, IsConductor, CanViewStaff, IsTenantStaff
 
 
 def api_response(data=None, message="Success", success=True, errors=None, status_code=200):
@@ -177,7 +176,7 @@ class ConductorShiftViewSet(ModelViewSet):
     GET  /staff/shifts/current/    -> the caller's own currently-open shift, if any
     """
     serializer_class = ConductorShiftSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsTenantStaff]
     http_method_names = ["get", "post", "head", "options"]
 
     def get_queryset(self):

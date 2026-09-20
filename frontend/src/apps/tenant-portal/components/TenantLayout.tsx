@@ -41,36 +41,41 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type NavItem = { to: string; icon: any; label: string }
-  const navItems: NavItem[] = [
-    { to: '/tenant/live-tracking', icon: LayoutDashboard, label: t('nav.dashboard') },
-    { to: '/tenant/operations', icon: Activity, label: t('nav.todaysTrips') },
-    { to: '/tenant/dispatch', icon: Zap, label: t('nav.scheduler') },
-    { to: '/tenant/routes', icon: Route, label: t('nav.routes') },
-    { to: '/tenant/stops', icon: MapPin, label: t('nav.busStops') },
-    { to: '/tenant/fares', icon: Wallet, label: t('nav.fares') },
-    { to: '/tenant/fleet', icon: Bus, label: t('nav.fleetManagement') },
-    { to: '/tenant/vehicle-categories', icon: Layers, label: t('nav.vehicleCategories', { defaultValue: 'Vehicle Categories' }) },
-    { to: '/tenant/vehicle-groups', icon: Users2, label: t('nav.vehicleGroups', { defaultValue: 'Vehicle Groups' }) },
-    { to: '/tenant/owners', icon: Wallet2, label: t('nav.owners', { defaultValue: 'Owners' }) },
-    ...(user?.role === 'DRIVER'
-      ? [{ to: '/tenant/my-roster', icon: CalendarDays, label: t('nav.myRoster', { defaultValue: 'My Roster' }) }]
-      : [{ to: '/tenant/roster-periods', icon: CalendarRange, label: t('nav.rosterPeriods', { defaultValue: 'Roster Periods' }) }]),
-    ...(user?.role === 'CONDUCTOR'
-      ? [{ to: '/tenant/my-shift', icon: Wallet, label: t('nav.myShift', { defaultValue: 'My Shift' }) }]
-      : []),
-    ...(user?.role === 'OWNER'
-      ? [{ to: '/tenant/my-earnings', icon: Wallet, label: t('nav.myEarnings', { defaultValue: 'My Earnings' }) }]
-      : []),
-    { to: '/tenant/drivers', icon: UserCheck, label: t('nav.drivers') },
-    { to: '/tenant/conductors', icon: Users, label: t('nav.collectors') },
-    { to: '/tenant/ticketing', icon: Ticket, label: t('nav.ticketing') },
-    { to: '/tenant/maintenance', icon: Wrench, label: t('nav.maintenance') },
-    { to: '/tenant/analytics', icon: BarChart3, label: t('nav.analytics') },
-    { to: '/tenant/accounting', icon: BookOpen, label: t('nav.accounting') },
-    { to: '/tenant/payment-integration', icon: CreditCard, label: t('nav.paymentIntegration', { defaultValue: 'Payment Integration' }) },
-    { to: '/tenant/roles', icon: ShieldCheck, label: t('nav.rolesPermissions') },
-    { to: '/tenant/settings', icon: Settings, label: t('nav.settings') },
-  ]
+  // Owner Dashboard (Team Implementation Guide §3.7): an owner sees "their
+  // earnings, their trends, nothing else" -- so unlike every other role,
+  // OWNER gets a dedicated one-item nav rather than flowing through the
+  // general admin/ops array below (which is otherwise shown unfiltered to
+  // every tenant role -- backend permission_classes are what actually gate
+  // page-level data access, this array is nav-visibility only).
+  const navItems: NavItem[] = user?.role === 'OWNER'
+    ? [{ to: '/tenant/my-earnings', icon: Wallet, label: t('nav.myEarnings', { defaultValue: 'My Earnings' }) }]
+    : [
+        { to: '/tenant/live-tracking', icon: LayoutDashboard, label: t('nav.dashboard') },
+        { to: '/tenant/operations', icon: Activity, label: t('nav.todaysTrips') },
+        { to: '/tenant/dispatch', icon: Zap, label: t('nav.scheduler') },
+        { to: '/tenant/routes', icon: Route, label: t('nav.routes') },
+        { to: '/tenant/stops', icon: MapPin, label: t('nav.busStops') },
+        { to: '/tenant/fares', icon: Wallet, label: t('nav.fares') },
+        { to: '/tenant/fleet', icon: Bus, label: t('nav.fleetManagement') },
+        { to: '/tenant/vehicle-categories', icon: Layers, label: t('nav.vehicleCategories', { defaultValue: 'Vehicle Categories' }) },
+        { to: '/tenant/vehicle-groups', icon: Users2, label: t('nav.vehicleGroups', { defaultValue: 'Vehicle Groups' }) },
+        { to: '/tenant/owners', icon: Wallet2, label: t('nav.owners', { defaultValue: 'Owners' }) },
+        ...(user?.role === 'DRIVER'
+          ? [{ to: '/tenant/my-roster', icon: CalendarDays, label: t('nav.myRoster', { defaultValue: 'My Roster' }) }]
+          : [{ to: '/tenant/roster-periods', icon: CalendarRange, label: t('nav.rosterPeriods', { defaultValue: 'Roster Periods' }) }]),
+        ...(user?.role === 'CONDUCTOR'
+          ? [{ to: '/tenant/my-shift', icon: Wallet, label: t('nav.myShift', { defaultValue: 'My Shift' }) }]
+          : []),
+        { to: '/tenant/drivers', icon: UserCheck, label: t('nav.drivers') },
+        { to: '/tenant/conductors', icon: Users, label: t('nav.collectors') },
+        { to: '/tenant/ticketing', icon: Ticket, label: t('nav.ticketing') },
+        { to: '/tenant/maintenance', icon: Wrench, label: t('nav.maintenance') },
+        { to: '/tenant/analytics', icon: BarChart3, label: t('nav.analytics') },
+        { to: '/tenant/accounting', icon: BookOpen, label: t('nav.accounting') },
+        { to: '/tenant/payment-integration', icon: CreditCard, label: t('nav.paymentIntegration', { defaultValue: 'Payment Integration' }) },
+        { to: '/tenant/roles', icon: ShieldCheck, label: t('nav.rolesPermissions') },
+        { to: '/tenant/settings', icon: Settings, label: t('nav.settings') },
+      ]
 
   // Company info — same query key as Settings page so it's served from cache
   const { data: companyInfo } = useQuery({
