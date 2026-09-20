@@ -16,24 +16,38 @@ def _resolve_stop_name(stop_id):
         return str(stop_id)
 
 
+def _resolve_vehicle_bus_number(vehicle_id):
+    """Resolve a vehicle UUID to its display bus number via fleet.Vehicle."""
+    if not vehicle_id:
+        return None
+    try:
+        from backend.apps.fleet.models import Vehicle
+        vehicle = Vehicle.objects.filter(id=vehicle_id).first()
+        return vehicle.bus_number if vehicle else None
+    except Exception:
+        return None
+
+
 class TicketSerializer(serializers.ModelSerializer):
     from_stop_name = serializers.SerializerMethodField()
     to_stop_name = serializers.SerializerMethodField()
+    vehicle_bus_number = serializers.SerializerMethodField()
 
     class Meta:
         model = Ticket
         fields = [
             "id", "ticket_uid",
-            "ticket_type_id", "trip_id", "passenger_id", "passenger_name",
+            "ticket_type_id", "trip_id", "vehicle_id", "passenger_id", "passenger_name",
             "conductor_id", "issued_at", "issued_by", "valid_until",
             "fare_paid", "payment_method",
             "qr_code", "status",
             "from_stop_id", "to_stop_id",
             "from_stop_name", "to_stop_name",
+            "vehicle_bus_number",
         ]
         read_only_fields = [
             "id", "ticket_uid", "issued_at", "valid_until", "qr_code",
-            "from_stop_name", "to_stop_name",
+            "from_stop_name", "to_stop_name", "vehicle_bus_number",
         ]
 
     def get_from_stop_name(self, obj):
@@ -41,6 +55,9 @@ class TicketSerializer(serializers.ModelSerializer):
 
     def get_to_stop_name(self, obj):
         return _resolve_stop_name(obj.to_stop_id)
+
+    def get_vehicle_bus_number(self, obj):
+        return _resolve_vehicle_bus_number(obj.vehicle_id)
 
     def create(self, validated_data):
         # Auto-generate ticket UID

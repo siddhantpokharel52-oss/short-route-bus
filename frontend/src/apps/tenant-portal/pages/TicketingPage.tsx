@@ -28,6 +28,8 @@ interface TicketRecord {
   to_stop_id: string | null
   from_stop_name: string | null
   to_stop_name: string | null
+  vehicle_id: string | null
+  vehicle_bus_number: string | null
   fare_paid: number
   payment_method: string
   issued_by: 'POS' | 'MOBILE' | 'CONDUCTOR'
@@ -184,6 +186,7 @@ function ETicket({
             { label: t('ticketing.dateTime'), value: fmtDate(ticket.issued_at) },
             { label: t('ticketing.payment'), value: ticket.payment_method },
             { label: t('ticketing.source'), value: ticket.issued_by },
+            ...(ticket.vehicle_bus_number ? [{ label: t('ticketing.bus'), value: ticket.vehicle_bus_number }] : []),
           ].map(({ label, value }) => (
             <div key={label}>
               <p className="text-[10px] uppercase tracking-widest text-gray-400">{label}</p>

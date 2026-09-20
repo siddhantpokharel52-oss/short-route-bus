@@ -28,6 +28,7 @@ class Ticket(models.Model):
     ticket_uid = models.CharField(max_length=30, unique=True)
     ticket_type_id = models.UUIDField(null=True, blank=True)
     trip_id = models.UUIDField(null=True, blank=True)
+    vehicle_id = models.UUIDField(null=True, blank=True)
     passenger_id = models.UUIDField(null=True, blank=True)
     passenger_name = models.CharField(max_length=255, blank=True)
     conductor_id = models.UUIDField(null=True, blank=True)

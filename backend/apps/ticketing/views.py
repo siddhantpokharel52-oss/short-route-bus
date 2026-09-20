@@ -68,6 +68,22 @@ class TicketViewSet(ModelViewSet):
         serializer = self.get_serializer(qs, many=True)
         return api_response(data={"results": serializer.data, "count": qs.count()})
 
+    def _resolve_conductor_vehicle_id(self, conductor_user_id):
+        """Which bus a conductor is on right now, from today's dispatch
+        allocation -- dynamic and dispatcher-adjustable, unlike a static
+        assigned-vehicle field. Returns None (never blocks issuance) if no
+        active allocation is found for today."""
+        try:
+            from backend.apps.dispatch.models import DailyAllocation
+            allocation = DailyAllocation.objects.filter(
+                date=timezone.localdate(),
+                conductor_id=conductor_user_id,
+                status="ACTIVE",
+            ).values_list("vehicle_id", flat=True).first()
+            return str(allocation) if allocation else None
+        except Exception:
+            return None
+
     def create(self, request, *args, **kwargs):
         data = {
             **request.data,
@@ -78,6 +94,8 @@ class TicketViewSet(ModelViewSet):
         if hasattr(request.user, "role") and request.user.role == "CONDUCTOR":
             data.setdefault("conductor_id", str(request.user.id))
             data["issued_by"] = "CONDUCTOR"
+            if not data.get("vehicle_id"):
+                data["vehicle_id"] = self._resolve_conductor_vehicle_id(request.user.id)
 
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)

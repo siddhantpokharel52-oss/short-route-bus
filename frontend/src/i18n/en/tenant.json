@@ -709,6 +709,7 @@
     "passenger": "Passenger",
     "payment": "Payment",
     "source": "Source",
+    "bus": "Bus",
     "todayTickets": "Today's Tickets",
     "todayRevenue": "Today's Revenue",
     "busTicket": "BUS TICKET",

@@ -919,6 +919,11 @@ async def issue_ticket(
         # caller's own identity, never trusted from the passenger-supplied payload.
         django_payload["trip_id"] = trip_id_override
         django_payload["passenger_id"] = passenger_id
+        # The trip's vehicle is known server-side the moment the trip is -- resolve it
+        # here so the created ticket carries which bus it was actually issued on.
+        trip_details = await tenant_db.fetch_trip_details(schema, trip_id_override)
+        if trip_details and trip_details.get("vehicle_id"):
+            django_payload["vehicle_id"] = trip_details["vehicle_id"]
     if issued_by_override is not None:
         # Self-service purchase: passenger_id is the caller's own identity, never trusted
         # from the payload; issued_by is forced to MOBILE regardless of what (if anything)
