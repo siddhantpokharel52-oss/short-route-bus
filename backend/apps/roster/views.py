@@ -152,6 +152,33 @@ def _compute_conflicts(period):
                         ),
                     })
 
+    # Cross-period double-booking (RG-063): the check above only looks within
+    # this period. A group can't hold a duty on the same service_date in any
+    # other (non-deleted) period either -- reuses the same
+    # roster_period__is_deleted=False / .exclude(roster_period=period) shape
+    # _repair_period's cross_history query already uses, re-keyed by
+    # (group_id, service_date) instead of (group_id, route_id).
+    assigned_dates = {(d.group_id, d.service_date) for d in duties if d.group_id}
+    if assigned_dates:
+        cross_period_hits = defaultdict(list)
+        for r in Duty.objects.filter(
+            group_id__in={g for g, _ in assigned_dates},
+            service_date__in={dt for _, dt in assigned_dates},
+            roster_period__is_deleted=False,
+        ).exclude(roster_period=period).values("group_id", "service_date", "route_id"):
+            cross_period_hits[(r["group_id"], r["service_date"])].append(r)
+
+        for d in duties:
+            if d.group_id and (d.group_id, d.service_date) in cross_period_hits:
+                for hit in cross_period_hits[(d.group_id, d.service_date)]:
+                    conflicts.append({
+                        "duty_id": str(d.id), "severity": "hard",
+                        "message": (
+                            f"{d.group.code} is also assigned on {d.service_date} in another "
+                            f"roster period (route {hit['route_id']})."
+                        ),
+                    })
+
     # Doc section 8's two P1 rotation rules -- checked across every period
     # in the tenant, not just this one, since the constraint is about
     # calendar weeks/days, not period boundaries.
@@ -298,8 +325,12 @@ class RosterPeriodViewSet(ModelViewSet):
         duties or ones a previous rotate itself produced (GENERATED).
         """
         period = self.get_object()
-        if period.status == RosterPeriod.Status.CLOSED:
-            return api_response(success=False, message="Closed periods can't be rotated.", status_code=400)
+        if period.status != RosterPeriod.Status.DRAFT:
+            return api_response(
+                success=False,
+                message="Auto-Rotate can only run on a draft period -- publish freezes the chart.",
+                status_code=400,
+            )
 
         from backend.apps.fleet.models import VehicleGroup
         from django_tenants.utils import schema_context
@@ -483,6 +514,19 @@ class RosterPeriodViewSet(ModelViewSet):
         group_ids = {r["group_id"] for r in rows}
         route_ids = {r["route_id"] for r in rows}
 
+        # RG-081: the repair pass must never trade a same-weekday violation for
+        # an eligibility one -- preload real objects once so swap_is_safe can
+        # re-check eligibility (spec 4.8's "forbidden pairing = infinite cost")
+        # on every candidate, not just double-booking.
+        from backend.apps.fleet.models import VehicleGroup
+        from backend.apps.fleet.services import check_group_route_eligibility
+        from django_tenants.utils import schema_context
+        from backend.apps.platform.models import Route
+
+        groups_by_id = {g.id: g for g in VehicleGroup.objects.filter(id__in=group_ids)}
+        with schema_context("public"):
+            routes_by_id = {r.id: r for r in Route.objects.filter(id__in=route_ids).select_related("requirement")}
+
         cross_history = defaultdict(list)
         for r in Duty.objects.filter(
             group_id__in=group_ids, route_id__in=route_ids,
@@ -519,11 +563,21 @@ class RosterPeriodViewSet(ModelViewSet):
 
         def swap_is_safe(duty_a_id, duty_b_id):
             a, b = assignments[duty_a_id], assignments[duty_b_id]
-            if a["service_date"] == b["service_date"]:
-                return True  # same-day permutation -- can never double-book
-            if a["service_date"] in (by_group_date[b["group_id"]] - {b["service_date"]}):
+            if a["service_date"] != b["service_date"]:
+                # Double-booking only needs checking across different dates --
+                # a same-day permutation can never double-book. Eligibility
+                # below still applies either way: even a same-day swap between
+                # two different routes can create a new forbidden pairing.
+                if a["service_date"] in (by_group_date[b["group_id"]] - {b["service_date"]}):
+                    return False
+                if b["service_date"] in (by_group_date[a["group_id"]] - {a["service_date"]}):
+                    return False
+
+            route_a, route_b = routes_by_id.get(a["route_id"]), routes_by_id.get(b["route_id"])
+            group_a, group_b = groups_by_id.get(a["group_id"]), groups_by_id.get(b["group_id"])
+            if route_a and group_b and not check_group_route_eligibility(group_b, route_a, allow_reserve=True)[0]:
                 return False
-            if b["service_date"] in (by_group_date[a["group_id"]] - {a["service_date"]}):
+            if route_b and group_a and not check_group_route_eligibility(group_a, route_b, allow_reserve=True)[0]:
                 return False
             return True
 
@@ -589,6 +643,15 @@ class DutyViewSet(ModelViewSet):
 
     def get_queryset(self):
         return Duty.objects.filter(roster_period_id=self.kwargs["period_pk"]).select_related("group", "roster_period")
+
+    def list(self, request, *args, **kwargs):
+        # No pagination -- a period's duty count is inherently bounded (routes x
+        # slots x days), and the roster grid needs every duty at once to render
+        # one column per date. The global 20/page default silently truncated
+        # this and hid entire days (RG-033).
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        return api_response(data=serializer.data)
 
     def create(self, request, *args, **kwargs):
         # Duties only ever come from period generation or the surge action --

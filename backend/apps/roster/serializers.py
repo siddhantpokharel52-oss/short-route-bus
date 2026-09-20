@@ -8,6 +8,23 @@ class RosterPeriodSerializer(serializers.ModelSerializer):
         fields = ["id", "start_date", "end_date", "status", "version", "created_at", "updated_at"]
         read_only_fields = ["id", "status", "version", "created_at", "updated_at"]
 
+    def validate(self, attrs):
+        start = attrs.get("start_date", getattr(self.instance, "start_date", None))
+        end = attrs.get("end_date", getattr(self.instance, "end_date", None))
+        if start and end:
+            if start > end:
+                raise serializers.ValidationError("start_date must be before end_date.")
+            overlapping = RosterPeriod.objects.filter(
+                is_deleted=False, start_date__lte=end, end_date__gte=start,
+            )
+            if self.instance:
+                overlapping = overlapping.exclude(pk=self.instance.pk)
+            if overlapping.exists():
+                raise serializers.ValidationError(
+                    "This date range overlaps an existing roster period. Close or adjust it first."
+                )
+        return attrs
+
 
 class RotationPolicySerializer(serializers.ModelSerializer):
     class Meta:

@@ -143,6 +143,36 @@ class VehicleGroupViewSet(ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by_id=self.request.user.id)
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        from backend.apps.roster.models import Duty, RosterPeriod
+
+        published_count = Duty.objects.filter(
+            group=instance, roster_period__is_deleted=False,
+            roster_period__status__in=[RosterPeriod.Status.PUBLISHED, RosterPeriod.Status.CLOSED],
+        ).count()
+        if published_count:
+            return api_response(
+                success=False,
+                message=(
+                    f"Cannot delete '{instance.code}' -- {published_count} published/closed duty(ies) "
+                    "still reference it. Reassign or wait for those periods to close first."
+                ),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Draft-only references are cleaned up rather than left dangling --
+        # unassign, don't leave a ghost pointer (RG-074/RG-041).
+        Duty.objects.filter(
+            group=instance, roster_period__is_deleted=False, roster_period__status=RosterPeriod.Status.DRAFT,
+        ).update(group=None, source=Duty.Source.MANUAL, locked=False)
+
+        # Free the buses -- same close-membership pattern GroupMemberViewSet.
+        # perform_destroy already uses for a single membership (RG-042).
+        instance.members.filter(valid_to__isnull=True).update(valid_to=timezone.now().date())
+
+        return super().destroy(request, *args, **kwargs)
+
     def perform_destroy(self, instance):
         instance.is_deleted = True
         instance.deleted_at = timezone.now()
