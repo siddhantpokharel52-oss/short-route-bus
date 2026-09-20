@@ -37,6 +37,7 @@ interface FareRow {
   peak_fare: string
   student_fare: string
   senior_citizen_fare: string
+  child_fare: string
   created_at: string
 }
 
@@ -156,6 +157,9 @@ export default function FaresPage() {
             <div className="flex justify-between"><span className="text-gray-500">Ticket Type</span><span className="font-medium">{ticketTypeById[viewTarget.ticket_type]?.name_en ?? '—'}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Fare</span><span className="font-medium">Rs. {viewTarget.base_fare}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Peak Fare</span><span className="font-medium">Rs. {viewTarget.peak_fare}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Student Fare</span><span className="font-medium">Rs. {viewTarget.student_fare}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Senior Citizen Fare</span><span className="font-medium">Rs. {viewTarget.senior_citizen_fare}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Child Fare</span><span className="font-medium">Rs. {viewTarget.child_fare}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Created</span><span className="font-medium">{new Date(viewTarget.created_at).toLocaleString()}</span></div>
             <div className="flex justify-end border-t pt-4">
               <Button variant="secondary" onClick={() => setViewTarget(null)}>Close</Button>

@@ -177,7 +177,7 @@ class FareMatrixSerializer(serializers.ModelSerializer):
         model = FareMatrix
         fields = [
             "id", "route", "zone_from", "zone_to", "ticket_type",
-            "base_fare", "peak_fare", "student_fare", "senior_citizen_fare", "created_at",
+            "base_fare", "peak_fare", "student_fare", "senior_citizen_fare", "child_fare", "created_at",
         ]
         read_only_fields = ["id", "created_at"]
 

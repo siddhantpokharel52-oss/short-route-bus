@@ -352,6 +352,10 @@ class FareMatrix(models.Model):
     peak_fare = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
     student_fare = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
     senior_citizen_fare = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
+    # Default 0 (unlike its siblings) so this applies cleanly to every existing
+    # FareMatrix row without forcing an immediate re-save -- operators can set a
+    # real value whenever they choose to start offering a child concession.
+    child_fare = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("0"), validators=[MinValueValidator(Decimal("0"))])
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
