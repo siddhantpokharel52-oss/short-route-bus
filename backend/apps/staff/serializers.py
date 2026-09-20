@@ -1,8 +1,9 @@
+from decimal import Decimal
 from rest_framework import serializers
 from .models import (
     Driver, DriverTraining, DriverMedical, DriverAttendance,
     DriverViolation, DriverPerformance,
-    Conductor, ConductorAttendance, TicketCollection,
+    Conductor, ConductorAttendance, TicketCollection, ConductorShift,
     BusCompany, CompanyLicense,
 )
 
@@ -81,6 +82,32 @@ class TicketCollectionSerializer(serializers.ModelSerializer):
             "cash_collected", "card_collected", "submitted_at", "is_verified",
         ]
         read_only_fields = ["id", "submitted_at", "is_verified"]
+
+
+class ConductorShiftSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConductorShift
+        fields = [
+            "id", "conductor_user_id", "vehicle_id", "date",
+            "opening_float", "opened_at", "closed_at",
+            "declared_cash", "system_cash_total", "variance",
+            "closed_by_id", "notes", "status",
+        ]
+        read_only_fields = [
+            "id", "conductor_user_id", "vehicle_id", "date", "opened_at", "closed_at",
+            "declared_cash", "system_cash_total", "variance", "closed_by_id", "status",
+        ]
+
+
+class ConductorShiftOpenSerializer(serializers.Serializer):
+    opening_float = serializers.DecimalField(
+        max_digits=8, decimal_places=2, min_value=Decimal("0"), required=False, default=Decimal("0")
+    )
+
+
+class ConductorShiftCloseSerializer(serializers.Serializer):
+    declared_cash = serializers.DecimalField(max_digits=9, decimal_places=2, min_value=Decimal("0"))
+    notes = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 class ConductorSerializer(serializers.ModelSerializer):

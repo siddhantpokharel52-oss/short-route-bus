@@ -286,6 +286,36 @@ class TicketCollection(models.Model):
         indexes = [models.Index(fields=["conductor", "trip_id"])]
 
 
+class ConductorShift(models.Model):
+    """An open/close cash session a conductor drives themselves -- CB7. Ticket rows
+    already record conductor_id/payment_method/fare_paid/issued_at (see ticketing.Ticket),
+    so they double as the cash ledger: system_cash_total is computed from them at close
+    time rather than needing a separate per-fare ledger-entry table."""
+    class Status(models.TextChoices):
+        OPEN = "OPEN", "Open"
+        CLOSED = "CLOSED", "Closed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    conductor_user_id = models.UUIDField()
+    vehicle_id = models.UUIDField(null=True, blank=True)
+    date = models.DateField()
+    opening_float = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    opened_at = models.DateTimeField(auto_now_add=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    declared_cash = models.DecimalField(max_digits=9, decimal_places=2, null=True, blank=True)
+    system_cash_total = models.DecimalField(max_digits=9, decimal_places=2, null=True, blank=True)
+    variance = models.DecimalField(max_digits=9, decimal_places=2, null=True, blank=True)
+    closed_by_id = models.UUIDField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    status = models.CharField(max_length=6, choices=Status.choices, default=Status.OPEN)
+
+    class Meta:
+        ordering = ["-opened_at"]
+
+    def __str__(self):
+        return f"{self.conductor_user_id} shift {self.date} ({self.status})"
+
+
 class BusCompany(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     company_name = models.CharField(max_length=255)

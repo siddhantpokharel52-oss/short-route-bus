@@ -54,6 +54,9 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
     ...(user?.role === 'DRIVER'
       ? [{ to: '/tenant/my-roster', icon: CalendarDays, label: t('nav.myRoster', { defaultValue: 'My Roster' }) }]
       : [{ to: '/tenant/roster-periods', icon: CalendarRange, label: t('nav.rosterPeriods', { defaultValue: 'Roster Periods' }) }]),
+    ...(user?.role === 'CONDUCTOR'
+      ? [{ to: '/tenant/my-shift', icon: Wallet, label: t('nav.myShift', { defaultValue: 'My Shift' }) }]
+      : []),
     { to: '/tenant/drivers', icon: UserCheck, label: t('nav.drivers') },
     { to: '/tenant/conductors', icon: Users, label: t('nav.collectors') },
     { to: '/tenant/ticketing', icon: Ticket, label: t('nav.ticketing') },
