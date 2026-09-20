@@ -1333,6 +1333,22 @@ async def validate_ticket(
                 errors={"expected_boarding_stop_id": expected_stop_id},
             )
 
+    if ticket.get("vehicle_id"):
+        # Only enforced when both sides are actually known: a self-service ticket has no
+        # vehicle_id yet (nothing to mismatch against), and a conductor with no active
+        # dispatch allocation today has no vehicle to compare either -- never block
+        # validation on missing dispatch data, same principle as every other rule this
+        # session that reads from DailyAllocation.
+        conductor_vehicle_id = await tenant_db.fetch_conductor_active_vehicle_id(
+            schema, user.get("user_id")
+        )
+        if conductor_vehicle_id and str(ticket["vehicle_id"]) != conductor_vehicle_id:
+            return _error(
+                "This ticket was issued for a different bus.",
+                403,
+                errors={"expected_vehicle_id": conductor_vehicle_id},
+            )
+
     domain = await tenant_db.get_domain_for_schema(schema)
     if not domain:
         return _error(f"No domain configured for tenant '{schema}'.", 500)

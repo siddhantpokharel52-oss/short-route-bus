@@ -53,6 +53,15 @@ class TicketViewSet(ModelViewSet):
         if source:
             qs = qs.filter(issued_by=source.upper())
 
+        # Optional bus filter: ?my_bus=true -- only this conductor's current bus's
+        # tickets, resolved from today's active dispatch allocation. An explicit
+        # empty result (not the unfiltered list) when no vehicle can be resolved,
+        # since silently falling back would defeat the point of the toggle.
+        my_bus = request.query_params.get("my_bus")
+        if my_bus and my_bus.lower() in ("1", "true", "yes"):
+            vehicle_id = self._resolve_conductor_vehicle_id(request.user.id)
+            qs = qs.filter(vehicle_id=vehicle_id) if vehicle_id else qs.none()
+
         page = self.paginate_queryset(qs)
         if page is not None:
             serializer = self.get_serializer(page, many=True)

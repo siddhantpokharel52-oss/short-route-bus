@@ -14,6 +14,7 @@ import apiClient from '@services/api'
 import publicService, { FareMatch } from '@services/publicService'
 import { formatNPR } from '@utils/nepaliDate'
 import { useUiStore } from '@store/uiStore'
+import { useAuthStore } from '@store/authStore'
 import { useDateFormatter } from '@hooks/useDateFormatter'
 import { useTranslation } from 'react-i18next'
 import toast from 'react-hot-toast'
@@ -233,8 +234,10 @@ export default function TicketingPage() {
   const fmtDate = useDateFormatter()
   const { language } = useUiStore()
   const qc = useQueryClient()
+  const { user } = useAuthStore()
   const [search, setSearch] = useState('')
   const sourceFilter = 'POS' as const
+  const [myBus, setMyBus] = useState(false)
   const [showPos, setShowPos] = useState(false)
   const [showVerify, setShowVerify] = useState(false)
   const [issuedTicket, setIssuedTicket] = useState<TicketRecord | null>(null)
@@ -267,11 +270,12 @@ export default function TicketingPage() {
 
   // ── Queries ──────────────────────────────────────────────────────────────
   const { data, isLoading } = useQuery({
-    queryKey: ['tickets', pagination.page, search, sourceFilter],
+    queryKey: ['tickets', pagination.page, search, sourceFilter, myBus],
     queryFn: async () => {
       const params: Record<string, string | number> = { ...pagination.queryParams }
       if (search) params.search = search
       params.source = sourceFilter
+      if (myBus) params.my_bus = 'true'
       const { data } = await apiClient.get('/ticketing/tickets/', { params })
       setTotalCount(data.data?.count ?? 0)
       return data.data?.results ?? []
@@ -624,6 +628,18 @@ export default function TicketingPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-sm"
         />
+        {user?.role === 'CONDUCTOR' && (
+          <label htmlFor="my_bus" className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+            <input
+              type="checkbox"
+              id="my_bus"
+              checked={myBus}
+              onChange={(e) => setMyBus(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-primary-600"
+            />
+            {t('ticketing.myBus')}
+          </label>
+        )}
       </div>
 
       {/* Table */}

@@ -688,7 +688,7 @@ async def fetch_timetable_for_route(route_id: str, day_type: str) -> list[dict]:
 # migration adds one, do not add it to this column list without checking
 # whether it belongs in a passenger-facing response.
 _TICKET_COLUMNS = """
-    id, ticket_uid, ticket_type_id, trip_id, passenger_id, passenger_name,
+    id, ticket_uid, ticket_type_id, trip_id, vehicle_id, passenger_id, passenger_name,
     conductor_id, issued_at, issued_by, valid_until, fare_paid,
     payment_method, qr_code, status, from_stop_id, to_stop_id
 """
@@ -1089,6 +1089,32 @@ async def fetch_trip_details(schema: str, trip_id: str) -> Optional[dict]:
             )
             row = result.first()
             return _row_to_dict(row) if row else None
+        except Exception:
+            return None
+
+
+async def fetch_conductor_active_vehicle_id(schema: str, conductor_user_id: str) -> Optional[str]:
+    """Which bus a conductor is on right now, from today's dispatch allocation -- the
+    FastAPI-side twin of apps.ticketing.views.TicketViewSet._resolve_conductor_vehicle_id()
+    (same table, same date/status filter), needed here since validate_ticket() has no
+    Django ORM access. Returns None (never raises) if no active allocation exists today."""
+    safe = _safe_schema(schema)
+    engine = get_engine()
+    async with engine.connect() as conn:
+        try:
+            result = await conn.execute(
+                text(
+                    f"""
+                    SELECT vehicle_id
+                    FROM "{safe}".dispatch_dailyallocation
+                    WHERE conductor_id = :conductor_id AND date = CURRENT_DATE AND status = 'ACTIVE'
+                    LIMIT 1
+                    """
+                ),
+                {"conductor_id": conductor_user_id},
+            )
+            row = result.first()
+            return str(row[0]) if row and row[0] else None
         except Exception:
             return None
 
