@@ -1234,51 +1234,66 @@ async def issue_group_tickets(
 async def start_namastepay_checkout(
     payload: dict,
     user: dict = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ):
-    """Starts a NamastePay hosted checkout (CB9) — passenger self-service, same
-    schema-resolution/per-passenger `ticket_type` handling as issue_group_tickets()
-    above, duplicated for the same reason stated there. Nothing is issued here —
-    only `namastepay_return()` below actually creates a Ticket, and only once the
-    payment is independently confirmed server-side.
+    """Starts a NamastePay hosted checkout (CB9/CB4) — either passenger self-service
+    or a conductor creating one for a walk-in passenger (CB4/C2's "dynamic QR" case:
+    the conductor's device renders the returned `payment_url` as a QR locally — no
+    separate QR-generation API is needed). Same schema-resolution/per-passenger
+    `ticket_type` handling as issue_group_tickets() above, duplicated for the same
+    reason stated there. Nothing is issued here — only `namastepay_return()` below
+    (passenger path) or CB4's own lookup+confirm (conductor path) actually creates a
+    Ticket, and only once the payment is independently confirmed server-side.
 
-    `return_to` is required: where the passenger's app wants to land once payment
-    is confirmed (or fails) — NamastePay's own return_url is fixed per tenant with
-    no per-request override, so this is stored against the checkout and used by
-    namastepay_return() to redirect there afterward."""
-    if user.get("role") != PASSENGER_ROLE:
-        raise HTTPException(status_code=403, detail="Only a passenger token can start a checkout.")
-
-    passenger_id = user.get("user_id")
-    if not passenger_id:
-        return _error("Invalid token.", 401)
-
+    `return_to` is where the passenger's app wants to land once payment is confirmed
+    (or fails) — required for the passenger path; meaningless for a conductor's own
+    device, which is never redirected anywhere, so it's optional there."""
+    role = user.get("role")
+    passenger_id = None
     route_id = payload.get("route_id")
-    if not isinstance(route_id, str) or not route_id.strip():
-        return _error("route_id is required.", 400)
 
-    return_to = payload.get("return_to")
-    if not isinstance(return_to, str) or not return_to.strip():
-        return _error("return_to is required.", 400)
+    if role == CONDUCTOR_ROLE:
+        schema = user.get("tenant_schema")
+        if not schema:
+            raise HTTPException(status_code=400, detail="This conductor account has no tenant assigned.")
+        return_to = payload.get("return_to") or None
+        bearer_token = credentials.credentials
+    elif role == PASSENGER_ROLE:
+        passenger_id = user.get("user_id")
+        if not passenger_id:
+            return _error("Invalid token.", 401)
+
+        if not isinstance(route_id, str) or not route_id.strip():
+            return _error("route_id is required.", 400)
+
+        return_to = payload.get("return_to")
+        if not isinstance(return_to, str) or not return_to.strip():
+            return _error("return_to is required.", 400)
+
+        operator_schemas = await tenant_db.get_route_operator_schemas(route_id)
+        if not operator_schemas:
+            return _error("Route not found or not currently served by any operator.", 404)
+        if len(operator_schemas) == 1:
+            schema = operator_schemas[0]
+        else:
+            requested_schema = payload.get("tenant_schema")
+            if not isinstance(requested_schema, str) or requested_schema not in operator_schemas:
+                return _error(
+                    "This route is served by more than one operator — specify which one via "
+                    "`tenant_schema`.",
+                    400,
+                    errors={"operators": operator_schemas},
+                )
+            schema = requested_schema
+
+        account_id = await tenant_db.get_or_create_self_service_account(schema)
+        bearer_token = _mint_self_service_token(account_id, schema)
+    else:
+        raise HTTPException(status_code=403, detail="Only a passenger or conductor token can start a checkout.")
 
     passengers = payload.get("passengers")
     if not isinstance(passengers, list) or not passengers:
         return _error("passengers must be a non-empty list.", 400)
-
-    operator_schemas = await tenant_db.get_route_operator_schemas(route_id)
-    if not operator_schemas:
-        return _error("Route not found or not currently served by any operator.", 404)
-    if len(operator_schemas) == 1:
-        schema = operator_schemas[0]
-    else:
-        requested_schema = payload.get("tenant_schema")
-        if not isinstance(requested_schema, str) or requested_schema not in operator_schemas:
-            return _error(
-                "This route is served by more than one operator — specify which one via "
-                "`tenant_schema`.",
-                400,
-                errors={"operators": operator_schemas},
-            )
-        schema = requested_schema
 
     resolved_passengers = []
     for passenger in passengers:
@@ -1291,9 +1306,6 @@ async def start_namastepay_checkout(
             entry["ticket_type_id"] = ticket_type_id
         resolved_passengers.append(entry)
 
-    account_id = await tenant_db.get_or_create_self_service_account(schema)
-    bearer_token = _mint_self_service_token(account_id, schema)
-
     domain = await tenant_db.get_domain_for_schema(schema)
     if not domain:
         return _error(f"No domain configured for tenant '{schema}'.", 500)
@@ -1302,6 +1314,7 @@ async def start_namastepay_checkout(
         "route_id": route_id,
         "from_stop_id": payload.get("from_stop_id"),
         "to_stop_id": payload.get("to_stop_id"),
+        "vehicle_id": payload.get("vehicle_id"),
         "return_to": return_to,
         "passenger_id": passenger_id,
         "passengers": resolved_passengers,

@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     FEDERATED_LOGIN_TIMESTAMP_WINDOW_SECONDS: int = 120
     FEDERATED_LOGIN_NONCE_TTL_SECONDS: int = 300
 
+    # NamastePay merchant-profile ticket lookup (see namastepay_api/router.py) — CB4.
+    # A single static shared secret is proportionate here (a stateless read, no
+    # identity/token minting), unlike Yatroo's heavier HMAC+timestamp+nonce scheme
+    # above. Deliberately its own value, never INTERNAL_SERVICE_KEY (documented as
+    # "our own FastAPI service... never an external partner") or YATROO_HMAC_SECRET,
+    # so rotating one never affects the others.
+    NAMASTEPAY_LOOKUP_SECRET: str = "change-me-in-production"
+
     class Config:
         env_file = ".env"
 

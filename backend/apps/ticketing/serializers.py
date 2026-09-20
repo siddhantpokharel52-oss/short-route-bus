@@ -179,7 +179,11 @@ class NamastePayCheckoutCreateSerializer(serializers.Serializer):
     route_id = serializers.UUIDField(required=False, allow_null=True)
     from_stop_id = serializers.UUIDField(required=False, allow_null=True)
     to_stop_id = serializers.UUIDField(required=False, allow_null=True)
-    return_to = serializers.URLField(max_length=500)
+    vehicle_id = serializers.UUIDField(required=False, allow_null=True)
+    # Required for a passenger-initiated self-service checkout; optional for a
+    # conductor-initiated walk-in one (CB4) -- enforced in the view, not here,
+    # since which case applies depends on the caller's role.
+    return_to = serializers.URLField(max_length=500, required=False, allow_null=True, allow_blank=True)
     passengers = BookingPassengerSerializer(many=True, min_length=1, max_length=20)
 
 
@@ -190,7 +194,7 @@ class NamastePayCheckoutSerializer(serializers.ModelSerializer):
         model = NamastePayCheckout
         fields = [
             "id", "checkout_id", "reference_id", "passenger_id",
-            "route_id", "from_stop_id", "to_stop_id", "amount", "return_to",
+            "route_id", "from_stop_id", "to_stop_id", "vehicle_id", "amount", "return_to",
             "status", "booking", "created_at", "confirmed_at",
         ]
         read_only_fields = fields

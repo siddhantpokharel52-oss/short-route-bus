@@ -6,6 +6,7 @@ from .gps.router import router as gps_router
 from .live_ops.router import router as live_ops_router
 from .public_api.router import router as public_router
 from .partner_api.router import router as partner_router
+from .namastepay_api.router import router as namastepay_router
 
 # Explicit order for the Swagger/ReDoc tag sections (no description text — see
 # docs/API.md for the real reference instead). Without this, tags default to
@@ -16,6 +17,7 @@ from .partner_api.router import router as partner_router
 openapi_tags = [
     {"name": "Public API"},
     {"name": "Partner Integration"},
+    {"name": "NamastePay Merchant Lookup"},
 ]
 
 app = FastAPI(
@@ -46,6 +48,10 @@ app.include_router(public_router, prefix="/public-api/v1", tags=["Public API"])
 # module docstring for why (avoids an nginx change to expose a second path shape).
 # Separate tag keeps it visually distinct in /docs from the consumer-facing surface.
 app.include_router(partner_router, prefix="/public-api/v1/partner", tags=["Partner Integration"])
+# CB4 -- Namaste Pay's own server-to-server ticket lookup, see
+# namastepay_api/router.py's module docstring for why this is a separate
+# module rather than an addition to partner_api or public_api.
+app.include_router(namastepay_router, prefix="/public-api/v1/namastepay", tags=["NamastePay Merchant Lookup"])
 app.include_router(gps_router, prefix="/api/v1/live", tags=["GPS & Live Operations"], include_in_schema=False)
 app.include_router(live_ops_router, prefix="/api/v1/live", tags=["Live Operations"], include_in_schema=False)
 

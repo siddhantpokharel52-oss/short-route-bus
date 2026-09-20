@@ -161,9 +161,16 @@ class NamastePayCheckout(models.Model):
     route_id = models.UUIDField(null=True, blank=True)
     from_stop_id = models.UUIDField(null=True, blank=True)
     to_stop_id = models.UUIDField(null=True, blank=True)
+    # Unset for a self-service checkout (no bus known until boarding, same rule
+    # CB1 already established for Ticket.vehicle_id) -- auto-filled for a
+    # conductor-initiated walk-in checkout (CB4) from their active allocation.
+    vehicle_id = models.UUIDField(null=True, blank=True)
     passengers = models.JSONField()
     amount = models.DecimalField(max_digits=9, decimal_places=2)
-    return_to = models.URLField(max_length=500)
+    # Null for a conductor-initiated walk-in checkout (CB4) -- there's no app on
+    # the conductor's own device for NamastePay to redirect back to; only a
+    # passenger-initiated self-service checkout needs a real return_to.
+    return_to = models.URLField(max_length=500, blank=True, null=True)
     booking = models.ForeignKey(Booking, null=True, blank=True, on_delete=models.SET_NULL)
     status = models.CharField(max_length=9, choices=Status.choices, default=Status.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)

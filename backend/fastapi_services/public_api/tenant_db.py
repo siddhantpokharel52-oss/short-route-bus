@@ -1295,3 +1295,55 @@ async def get_or_create_self_service_account(schema: str) -> str:
         result = await conn.execute(text("SELECT id FROM public.users_user WHERE email = :email"), {"email": email})
         row = result.first()
         return str(row[0])
+
+
+# Mirrors apps.ticketing.models.NamastePayCheckout (table ticketing_namastepaycheckout,
+# tenant-scoped) — CB4. Namaste Pay's own call carries no tenant context, only the
+# reference_id the payer typed, so this needs the same cross-schema fan-out as
+# find_ticket_by_id above (same O(n)-schemas scaling note applies).
+async def find_namastepay_checkout_by_reference(reference_id: str) -> Optional[tuple[str, dict]]:
+    schemas = await list_tenant_schemas()
+    engine = get_engine()
+    async with engine.connect() as conn:
+        for schema in schemas:
+            safe = _safe_schema(schema)
+            query = text(
+                f"""
+                SELECT id, checkout_id, reference_id, passenger_id, route_id,
+                       vehicle_id, amount, status, passengers
+                FROM "{safe}".ticketing_namastepaycheckout
+                WHERE reference_id = :reference_id
+                """
+            )
+            try:
+                result = await conn.execute(query, {"reference_id": reference_id})
+                row = result.first()
+            except Exception:
+                continue
+            if row:
+                d = _row_to_dict(row)
+                d["tenant_schema"] = schema
+                return schema, d
+    return None
+
+
+# Mirrors apps.fleet.models.Vehicle.bus_number (table fleet_vehicle, tenant-scoped) —
+# CB4's own "display bus number" need. Deliberately a separate query from
+# fetch_vehicle_for_eticket above (which selects registration_no/owner_name for an
+# unrelated, already-working display path) rather than widening that helper's column
+# set and risking a regression there.
+async def fetch_vehicle_bus_number(schema: str, vehicle_id: str) -> Optional[str]:
+    safe = _safe_schema(schema)
+    engine = get_engine()
+    async with engine.connect() as conn:
+        try:
+            result = await conn.execute(
+                text(f'SELECT bus_number, registration_no FROM "{safe}".fleet_vehicle WHERE id = :vehicle_id'),
+                {"vehicle_id": vehicle_id},
+            )
+            row = result.first()
+        except Exception:
+            return None
+    if not row:
+        return None
+    return row.bus_number or row.registration_no

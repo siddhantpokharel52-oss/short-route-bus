@@ -414,6 +414,15 @@ class NamastePayCheckoutCreateView(views.APIView):
         passengers = data["passengers"]
         amount = sum(p["fare_paid"] for p in passengers)
 
+        is_conductor = hasattr(request.user, "role") and request.user.role == "CONDUCTOR"
+        vehicle_id = data.get("vehicle_id")
+        if is_conductor and not vehicle_id:
+            vehicle_id = resolve_conductor_vehicle_id(request.user.id)
+        if not is_conductor and not data.get("return_to"):
+            return api_response(
+                success=False, message="return_to is required for a self-service checkout.", status_code=400,
+            )
+
         from . import namastepay
         import uuid as uuid_lib
 
@@ -438,6 +447,7 @@ class NamastePayCheckoutCreateView(views.APIView):
             route_id=data.get("route_id"),
             from_stop_id=data.get("from_stop_id"),
             to_stop_id=data.get("to_stop_id"),
+            vehicle_id=vehicle_id,
             passengers=[
                 {
                     "ticket_type_id": str(p["ticket_type_id"]) if p.get("ticket_type_id") else None,
@@ -447,7 +457,7 @@ class NamastePayCheckoutCreateView(views.APIView):
                 for p in passengers
             ],
             amount=amount,
-            return_to=data["return_to"],
+            return_to=data.get("return_to") or None,
         )
         return api_response(
             data={
@@ -514,7 +524,11 @@ class NamastePayCheckoutConfirmView(views.APIView):
                     "payment_method": Ticket.PaymentMethod.NAMASTEPAY,
                     "passengers": checkout.passengers,
                 },
-                context={"ticket_defaults": {"passenger_id": checkout.passenger_id, "issued_by": "MOBILE"}},
+                context={"ticket_defaults": {
+                    "passenger_id": checkout.passenger_id,
+                    "vehicle_id": checkout.vehicle_id,
+                    "issued_by": "MOBILE",
+                }},
             )
             booking_serializer.is_valid(raise_exception=True)
             booking = booking_serializer.save()
