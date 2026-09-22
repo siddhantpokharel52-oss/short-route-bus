@@ -501,7 +501,32 @@ def _serialize_timetable_slot(s: dict) -> dict:
 # Routes / Stops — apps.platform.RouteViewSet, RouteStop (public reference data)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.get("/routes/")
+@router.get(
+    "/routes/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": [{
+            "id": "826b8836-8621-44a0-82f2-96aaee86f728",
+            "route_code": "6767",
+            "name_en": "Balkhu — Kamal Pokhari",
+            "name_ne": "बल्खु — कमल पोखरी",
+            "start_stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
+            "end_stop_id": "87caeef9-fbb9-48d9-a66e-5674ccbf16bf",
+            "distance_km": "11.13",
+            "route_type": "EXCLUSIVE",
+            "status": "APPROVED",
+            "geojson_path": "{\"type\":\"Feature\",\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[85.216,27.692]]}}",
+            "description": "Runs via Kalimati and Tripureshwor",
+            "created_at": "2026-09-03T07:26:02.372892Z",
+            "updated_at": "2026-09-03T07:26:10.821895Z",
+            "nearest_stop_distance_km": None,
+            "from_sequence_no": None,
+            "to_sequence_no": None,
+        }],
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
 async def list_routes(
     status: Optional[str] = Query(None, description="Filter by Route.status, e.g. APPROVED"),
     route_type: Optional[str] = Query(None, description="EXCLUSIVE or SHARED"),
@@ -548,7 +573,51 @@ async def list_routes(
     return _ok(data=[_serialize_route(r) for r in routes])
 
 
-@router.get("/routes/{route_id}/")
+@router.get(
+    "/routes/{route_id}/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "id": "826b8836-8621-44a0-82f2-96aaee86f728",
+            "route_code": "6767",
+            "name_en": "Balkhu — Kamal Pokhari",
+            "name_ne": "बल्खु — कमल पोखरी",
+            "start_stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
+            "end_stop_id": "87caeef9-fbb9-48d9-a66e-5674ccbf16bf",
+            "distance_km": "11.13",
+            "route_type": "EXCLUSIVE",
+            "status": "APPROVED",
+            "geojson_path": "{\"type\":\"Feature\",\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[85.216,27.692]]}}",
+            "description": "Runs via Kalimati and Tripureshwor",
+            "created_at": "2026-09-03T07:26:02.372892Z",
+            "updated_at": "2026-09-03T07:26:10.821895Z",
+            "nearest_stop_distance_km": None,
+            "from_sequence_no": None,
+            "to_sequence_no": None,
+            "stops": [{
+                "route_stop_id": "32095b98-208a-4599-857b-4cd3eafdd987",
+                "sequence_no": 1,
+                "estimated_time_from_start": 0,
+                "distance_from_start_km": 0.0,
+                "stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
+                "stop_code": "KV0F7874",
+                "name_en": "Balkhu",
+                "name_ne": "बल्खु",
+                "latitude": "27.6928572",
+                "longitude": "85.2158935",
+            }],
+            "total_stops": 6,
+            "estimated_duration_minutes": 35,
+            "first_bus": "06:00:00",
+            "last_bus": "20:30:00",
+            "frequency_minutes_min": 10,
+            "frequency_minutes_max": 20,
+            "total_buses": 4,
+        },
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
 async def get_route(route_id: str):
     """Single route detail, with its ordered stop list embedded as `stops` and route
     geometry as `geojson_path`. Also bundles the summary fields a route-detail screen
@@ -588,7 +657,26 @@ async def get_route(route_id: str):
     return _ok(data=data)
 
 
-@router.get("/routes/{route_id}/stops/")
+@router.get(
+    "/routes/{route_id}/stops/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": [{
+            "route_stop_id": "32095b98-208a-4599-857b-4cd3eafdd987",
+            "sequence_no": 1,
+            "estimated_time_from_start": 0,
+            "distance_from_start_km": 0.0,
+            "stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
+            "stop_code": "KV0F7874",
+            "name_en": "Balkhu",
+            "name_ne": "बल्खु",
+            "latitude": "27.6928572",
+            "longitude": "85.2158935",
+        }],
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
 async def get_route_stops(route_id: str):
     """Ordered stop list for a route. `404` if the route doesn't exist."""
     route = await tenant_db.fetch_route(route_id)
@@ -615,7 +703,23 @@ def _serialize_stop(s: dict) -> dict:
     return data
 
 
-@router.get("/stops/autocomplete/")
+@router.get(
+    "/stops/autocomplete/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": [{
+            "id": "484d042d-f919-4a7d-8595-2371f3557ef5",
+            "stop_code": "KV0F7874",
+            "name_en": "Balkhu",
+            "name_ne": "बल्खु",
+            "latitude": "27.6928572",
+            "longitude": "85.2158935",
+            "distance_km": 0.42,
+        }],
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
 async def autocomplete_stops(
     q: str = Query(..., min_length=1, description="Partial stop name (English or Nepali) or stop code"),
     limit: int = Query(10, gt=0, le=20, description="Max results to return"),
@@ -638,7 +742,30 @@ async def autocomplete_stops(
 # Fares — apps.platform.FareMatrix (public reference data)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.get("/fares/")
+@router.get(
+    "/fares/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": [{
+            "id": "3f1b2c4d-5678-90ab-cdef-1234567890ab",
+            "route_id": "826b8836-8621-44a0-82f2-96aaee86f728",
+            "zone_from": "Balkhu",
+            "zone_to": "Kalimati",
+            "base_fare": "25.00",
+            "peak_fare": "30.00",
+            "student_fare": "15.00",
+            "senior_citizen_fare": "15.00",
+            "child_fare": "10.00",
+            "ticket_type_id": "14e05061-78fe-4ed8-af60-bb02e78d139f",
+            "ticket_type_code": "ADULT",
+            "ticket_type_name": "Adult",
+            "distance_km": 3.2,
+            "time_minutes": 12,
+        }],
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
 async def get_fares(
     route_id: Optional[str] = Query(None),
     from_stop: Optional[str] = Query(None, description="Stop code, e.g. KV0A1B2C"),
@@ -669,7 +796,28 @@ def _resolve_day_type(explicit: Optional[str], on_date: Optional[str]) -> str:
     return "WEEKDAY"
 
 
-@router.get("/routes/{route_id}/timetable/")
+@router.get(
+    "/routes/{route_id}/timetable/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "day_type": "WEEKDAY",
+            "slots": [{
+                "timetable_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "day_type": "WEEKDAY",
+                "version": 1,
+                "effective_date": "2026-01-01",
+                "slot_id": "f1e2d3c4-b5a6-9876-5432-10fedcba9876",
+                "departure_time": "06:00:00",
+                "arrival_time": "06:35:00",
+                "frequency_minutes": 15,
+                "tenant_schema": "mayurbus",
+            }],
+        },
+        "message": "Scheduled timetable (not live — for real-time position use a live-tracking endpoint).",
+        "errors": None,
+    }}}}},
+)
 async def get_route_timetable(
     route_id: str,
     date: Optional[str] = Query(None, description="ISO date; defaults to today"),
@@ -746,7 +894,20 @@ def _serialize_ticket(t: dict) -> dict:
     }
 
 
-@router.get("/trips/{trip_id}/qr/")
+@router.get(
+    "/trips/{trip_id}/qr/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "trip_qr_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmlwX2lkIjoiNmIyYzNkNGUifQ.abc123",
+            "expires_in": 300,
+            "trip_id": "6b2c3d4e-5f60-7890-abcd-ef1234567890",
+            "trip_code": "TRIP-A1B2C3",
+        },
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
 async def get_trip_qr(trip_id: str, user: dict = Depends(get_current_user)):
     """Conductor-only. Mints a short-lived token to render as a QR code for this trip —
     a passenger scans it and passes it as `trip_qr_token` to `POST /tickets/` to
@@ -774,7 +935,38 @@ async def get_trip_qr(trip_id: str, user: dict = Depends(get_current_user)):
     )
 
 
-@router.post("/tickets/")
+@router.post(
+    "/tickets/",
+    responses={201: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+            "ticket_uid": "TKT-A1B2C3D4E5F6",
+            "ticket_type_id": "14e05061-78fe-4ed8-af60-bb02e78d139f",
+            "trip_id": None,
+            "vehicle_id": None,
+            "passenger_id": "11111111-2222-3333-4444-555555555555",
+            "passenger_name": "",
+            "conductor_id": None,
+            "issued_at": "2026-09-21T08:00:00Z",
+            "paid_at": "2026-09-21T08:00:00Z",
+            "issued_by": "MOBILE",
+            "valid_until": "2026-09-21T23:59:59Z",
+            "fare_paid": "25.00",
+            "payment_method": "ESEWA",
+            "qr_code": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAAAAAB...",
+            "status": "VALID",
+            "from_stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
+            "to_stop_id": "87caeef9-fbb9-48d9-a66e-5674ccbf16bf",
+            "from_stop_name": None,
+            "to_stop_name": None,
+            "vehicle_bus_number": None,
+        },
+        "message": "Ticket issued successfully.",
+        "errors": None,
+        "meta": {"timestamp": "2026-09-21T08:00:00.000000+00:00"},
+    }}}}},
+)
 async def issue_ticket(
     payload: dict,
     user: dict = Depends(get_current_user),
@@ -1065,7 +1257,73 @@ async def issue_ticket(
     return _passthrough(resp)
 
 
-@router.post("/tickets/group/")
+@router.post(
+    "/tickets/group/",
+    responses={201: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "id": "5c4b3a29-1807-4665-9524-13f0e2d1c0b9",
+            "passenger_id": "11111111-2222-3333-4444-555555555555",
+            "route_id": "826b8836-8621-44a0-82f2-96aaee86f728",
+            "from_stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
+            "total_fare": "65.00",
+            "payment_method": "ESEWA",
+            "booked_at": "2026-09-21T08:00:00Z",
+            "status": "VALID",
+            "tickets": [
+                {
+                    "id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+                    "ticket_uid": "TKT-A1B2C3D4E5F6",
+                    "ticket_type_id": "14e05061-78fe-4ed8-af60-bb02e78d139f",
+                    "trip_id": None,
+                    "vehicle_id": None,
+                    "passenger_id": "11111111-2222-3333-4444-555555555555",
+                    "passenger_name": "Hari Prasad",
+                    "conductor_id": None,
+                    "issued_at": "2026-09-21T08:00:00Z",
+                    "paid_at": "2026-09-21T08:00:00Z",
+                    "issued_by": "MOBILE",
+                    "valid_until": "2026-09-21T23:59:59Z",
+                    "fare_paid": "25.00",
+                    "payment_method": "ESEWA",
+                    "qr_code": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAAAAAB...",
+                    "status": "VALID",
+                    "from_stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
+                    "to_stop_id": "87caeef9-fbb9-48d9-a66e-5674ccbf16bf",
+                    "from_stop_name": None,
+                    "to_stop_name": None,
+                    "vehicle_bus_number": None,
+                },
+                {
+                    "id": "1a2b3c4d-5e6f-7890-abcd-ef1234567890",
+                    "ticket_uid": "TKT-B2C3D4E5F6A1",
+                    "ticket_type_id": "23f16172-89gf-5fe1-cb71-cc13f89f240g",
+                    "trip_id": None,
+                    "vehicle_id": None,
+                    "passenger_id": "11111111-2222-3333-4444-555555555555",
+                    "passenger_name": "Sita Kumari",
+                    "conductor_id": None,
+                    "issued_at": "2026-09-21T08:00:00Z",
+                    "paid_at": "2026-09-21T08:00:00Z",
+                    "issued_by": "MOBILE",
+                    "valid_until": "2026-09-21T23:59:59Z",
+                    "fare_paid": "40.00",
+                    "payment_method": "ESEWA",
+                    "qr_code": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAAAAAC...",
+                    "status": "VALID",
+                    "from_stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
+                    "to_stop_id": "f7e77517-eeff-4054-b4a8-1179cebc6291",
+                    "from_stop_name": None,
+                    "to_stop_name": None,
+                    "vehicle_bus_number": None,
+                },
+            ],
+        },
+        "message": "Success",
+        "errors": None,
+        "meta": {"timestamp": "2026-09-21T08:00:00.000000+00:00"},
+    }}}}},
+)
 async def issue_group_tickets(
     payload: dict,
     user: dict = Depends(get_current_user),
@@ -1248,7 +1506,20 @@ async def issue_group_tickets(
     return _passthrough(resp)
 
 
-@router.post("/tickets/namastepay/checkout/")
+@router.post(
+    "/tickets/namastepay/checkout/",
+    responses={201: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "checkout_id": "npc_8f3a1b2c9d4e5f60",
+            "payment_url": "https://checkout.namastepay.com/pay/npc_8f3a1b2c9d4e5f60",
+            "expires_at": "2026-09-21T08:15:00Z",
+        },
+        "message": "Success",
+        "errors": None,
+        "meta": {"timestamp": "2026-09-21T08:00:00.000000+00:00"},
+    }}}}},
+)
 async def start_namastepay_checkout(
     payload: dict,
     user: dict = Depends(get_current_user),
@@ -1399,7 +1670,44 @@ async def namastepay_return(checkout_id: str, tenant_schema: str):
     return RedirectResponse(url=redirect_url, status_code=302)
 
 
-@router.get("/tickets/my/")
+@router.get(
+    "/tickets/my/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": [{
+            "id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+            "ticket_uid": "TKT-A1B2C3D4E5F6",
+            "qr_code": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAAAAAB...",
+            "operator_schema": "mayurbus",
+            "ticket_type_id": "14e05061-78fe-4ed8-af60-bb02e78d139f",
+            "trip_id": None,
+            "booking_id": None,
+            "vehicle_id": "8924bdb4-6953-4e8a-bdce-b7c7e8c7e8dc",
+            "bus_number": "Bus 26",
+            "route_id": "826b8836-8621-44a0-82f2-96aaee86f728",
+            "route_code": "6767",
+            "route_name": "Balkhu — Kamal Pokhari",
+            "passenger_id": "11111111-2222-3333-4444-555555555555",
+            "passenger_name": "Hari Prasad",
+            "passenger_phone": None,
+            "document_id": None,
+            "conductor_id": None,
+            "issued_at": "2026-09-21T08:00:00Z",
+            "issued_by": "MOBILE",
+            "valid_until": "2026-09-21T23:59:59Z",
+            "fare_paid": "25.00",
+            "payment_method": "ESEWA",
+            "payment_reference": "yatroo-txn-8f3a1b2c",
+            "status": "VALID",
+            "from_stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
+            "to_stop_id": "87caeef9-fbb9-48d9-a66e-5674ccbf16bf",
+            "from_stop_name": "Balkhu",
+            "to_stop_name": "Kamal Pokhari",
+        }],
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
 async def my_tickets(
     user: dict = Depends(get_current_user),
     since: Optional[str] = Query(
@@ -1519,7 +1827,56 @@ async def _eticket_response(ticket_id: str, user: dict, by_uid: bool = False):
     return _ok(data=_serialize_eticket(ticket, company, domain, crew))
 
 
-@router.get("/tickets/uid/{ticket_uid}/eticket/")
+@router.get(
+    "/tickets/uid/{ticket_uid}/eticket/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+            "ticket_uid": "TKT-A1B2C3D4E5F6",
+            "qr_code": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAAAAAB...",
+            "operator_schema": "mayurbus",
+            "ticket_type_id": "14e05061-78fe-4ed8-af60-bb02e78d139f",
+            "trip_id": None,
+            "booking_id": None,
+            "vehicle_id": "8924bdb4-6953-4e8a-bdce-b7c7e8c7e8dc",
+            "bus_number": "Bus 26",
+            "route_id": "826b8836-8621-44a0-82f2-96aaee86f728",
+            "route_code": "6767",
+            "route_name": "Balkhu — Kamal Pokhari",
+            "passenger_id": "11111111-2222-3333-4444-555555555555",
+            "passenger_name": "Hari Prasad",
+            "passenger_phone": None,
+            "document_id": None,
+            "conductor_id": None,
+            "issued_at": "2026-09-21T08:00:00Z",
+            "issued_by": "MOBILE",
+            "valid_until": "2026-09-21T23:59:59Z",
+            "fare_paid": "25.00",
+            "payment_method": "ESEWA",
+            "payment_reference": "yatroo-txn-8f3a1b2c",
+            "status": "VALID",
+            "from_stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
+            "to_stop_id": "87caeef9-fbb9-48d9-a66e-5674ccbf16bf",
+            "from_stop_name": "Balkhu",
+            "to_stop_name": "Kamal Pokhari",
+            "operator": {
+                "schema": "mayurbus",
+                "domain": "mayurbus.citybus.com.np",
+                "company_name": "Mayur Bus Pvt. Ltd.",
+                "logo_url": "https://mayurbus.citybus.com.np/media/company_logos/mayur.png",
+            },
+            "crew": {
+                "vehicle_no": "BA-1-KHA-2345",
+                "driver_name": "Ram Bahadur",
+                "conductor_name": "Shyam Kumar",
+                "owner_name": "Ganesh Thapa",
+            },
+        },
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
 async def get_eticket_by_uid(ticket_uid: str, user: dict = Depends(get_current_user)):
     """E-ticket for a ticket looked up by its human-readable **ticket_uid** (e.g.
     `KV-XXXXXXXX`) instead of the internal UUID. Useful when the mobile app only
@@ -1529,7 +1886,44 @@ async def get_eticket_by_uid(ticket_uid: str, user: dict = Depends(get_current_u
     return await _eticket_response(ticket_uid, user, by_uid=True)
 
 
-@router.get("/tickets/{ticket_id}/")
+@router.get(
+    "/tickets/{ticket_id}/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+            "ticket_uid": "TKT-A1B2C3D4E5F6",
+            "qr_code": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAAAAAB...",
+            "operator_schema": "mayurbus",
+            "ticket_type_id": "14e05061-78fe-4ed8-af60-bb02e78d139f",
+            "trip_id": None,
+            "booking_id": None,
+            "vehicle_id": "8924bdb4-6953-4e8a-bdce-b7c7e8c7e8dc",
+            "bus_number": "Bus 26",
+            "route_id": "826b8836-8621-44a0-82f2-96aaee86f728",
+            "route_code": "6767",
+            "route_name": "Balkhu — Kamal Pokhari",
+            "passenger_id": "11111111-2222-3333-4444-555555555555",
+            "passenger_name": "Hari Prasad",
+            "passenger_phone": None,
+            "document_id": None,
+            "conductor_id": None,
+            "issued_at": "2026-09-21T08:00:00Z",
+            "issued_by": "MOBILE",
+            "valid_until": "2026-09-21T23:59:59Z",
+            "fare_paid": "25.00",
+            "payment_method": "ESEWA",
+            "payment_reference": "yatroo-txn-8f3a1b2c",
+            "status": "VALID",
+            "from_stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
+            "to_stop_id": "87caeef9-fbb9-48d9-a66e-5674ccbf16bf",
+            "from_stop_name": "Balkhu",
+            "to_stop_name": "Kamal Pokhari",
+        },
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
 async def get_ticket(ticket_id: str, user: dict = Depends(get_current_user)):
     """Single ticket lookup by ID — for support/dispute handling. Restricted to the
     ticket's own passenger or staff of the issuing operator; `403`/`404` otherwise."""
@@ -1549,7 +1943,38 @@ async def get_ticket(ticket_id: str, user: dict = Depends(get_current_user)):
     return _ok(data=_serialize_ticket(ticket))
 
 
-@router.post("/tickets/{ticket_id}/cancel/")
+@router.post(
+    "/tickets/{ticket_id}/cancel/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+            "ticket_uid": "TKT-A1B2C3D4E5F6",
+            "ticket_type_id": "14e05061-78fe-4ed8-af60-bb02e78d139f",
+            "trip_id": None,
+            "vehicle_id": None,
+            "passenger_id": "11111111-2222-3333-4444-555555555555",
+            "passenger_name": "Hari Prasad",
+            "conductor_id": None,
+            "issued_at": "2026-09-21T08:00:00Z",
+            "paid_at": "2026-09-21T08:00:00Z",
+            "issued_by": "MOBILE",
+            "valid_until": "2026-09-21T23:59:59Z",
+            "fare_paid": "25.00",
+            "payment_method": "ESEWA",
+            "qr_code": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAAAAAB...",
+            "status": "CANCELLED",
+            "from_stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
+            "to_stop_id": "87caeef9-fbb9-48d9-a66e-5674ccbf16bf",
+            "from_stop_name": None,
+            "to_stop_name": None,
+            "vehicle_bus_number": None,
+        },
+        "message": "Ticket cancelled successfully.",
+        "errors": None,
+        "meta": {"timestamp": "2026-09-21T08:00:00.000000+00:00"},
+    }}}}},
+)
 async def cancel_ticket(
     ticket_id: str,
     user: dict = Depends(get_current_user),
@@ -1626,7 +2051,56 @@ async def cancel_ticket(
     return _passthrough(resp)
 
 
-@router.get("/tickets/{ticket_id}/eticket/")
+@router.get(
+    "/tickets/{ticket_id}/eticket/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+            "ticket_uid": "TKT-A1B2C3D4E5F6",
+            "qr_code": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAAAAAB...",
+            "operator_schema": "mayurbus",
+            "ticket_type_id": "14e05061-78fe-4ed8-af60-bb02e78d139f",
+            "trip_id": None,
+            "booking_id": None,
+            "vehicle_id": "8924bdb4-6953-4e8a-bdce-b7c7e8c7e8dc",
+            "bus_number": "Bus 26",
+            "route_id": "826b8836-8621-44a0-82f2-96aaee86f728",
+            "route_code": "6767",
+            "route_name": "Balkhu — Kamal Pokhari",
+            "passenger_id": "11111111-2222-3333-4444-555555555555",
+            "passenger_name": "Hari Prasad",
+            "passenger_phone": None,
+            "document_id": None,
+            "conductor_id": None,
+            "issued_at": "2026-09-21T08:00:00Z",
+            "issued_by": "MOBILE",
+            "valid_until": "2026-09-21T23:59:59Z",
+            "fare_paid": "25.00",
+            "payment_method": "ESEWA",
+            "payment_reference": "yatroo-txn-8f3a1b2c",
+            "status": "VALID",
+            "from_stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
+            "to_stop_id": "87caeef9-fbb9-48d9-a66e-5674ccbf16bf",
+            "from_stop_name": "Balkhu",
+            "to_stop_name": "Kamal Pokhari",
+            "operator": {
+                "schema": "mayurbus",
+                "domain": "mayurbus.citybus.com.np",
+                "company_name": "Mayur Bus Pvt. Ltd.",
+                "logo_url": "https://mayurbus.citybus.com.np/media/company_logos/mayur.png",
+            },
+            "crew": {
+                "vehicle_no": "BA-1-KHA-2345",
+                "driver_name": "Ram Bahadur",
+                "conductor_name": "Shyam Kumar",
+                "owner_name": "Ganesh Thapa",
+            },
+        },
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
 async def get_eticket(ticket_id: str, user: dict = Depends(get_current_user)):
     """E-ticket view for a ticket by its internal **UUID**. Returns all ticket fields
     from `GET /tickets/{ticket_id}/` plus an `operator` object containing the issuing
@@ -1637,7 +2111,38 @@ async def get_eticket(ticket_id: str, user: dict = Depends(get_current_user)):
     return await _eticket_response(ticket_id, user)
 
 
-@router.post("/tickets/{ticket_id}/validate/")
+@router.post(
+    "/tickets/{ticket_id}/validate/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+            "ticket_uid": "TKT-A1B2C3D4E5F6",
+            "ticket_type_id": "14e05061-78fe-4ed8-af60-bb02e78d139f",
+            "trip_id": None,
+            "vehicle_id": "8924bdb4-6953-4e8a-bdce-b7c7e8c7e8dc",
+            "passenger_id": "11111111-2222-3333-4444-555555555555",
+            "passenger_name": "Hari Prasad",
+            "conductor_id": "22222222-3333-4444-5555-666666666666",
+            "issued_at": "2026-09-21T08:00:00Z",
+            "paid_at": "2026-09-21T08:00:00Z",
+            "issued_by": "MOBILE",
+            "valid_until": "2026-09-21T23:59:59Z",
+            "fare_paid": "25.00",
+            "payment_method": "ESEWA",
+            "qr_code": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAAAAAB...",
+            "status": "USED",
+            "from_stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
+            "to_stop_id": "87caeef9-fbb9-48d9-a66e-5674ccbf16bf",
+            "from_stop_name": None,
+            "to_stop_name": None,
+            "vehicle_bus_number": "Bus 26",
+        },
+        "message": "Ticket valid and marked as used.",
+        "errors": None,
+        "meta": {"timestamp": "2026-09-21T08:00:00.000000+00:00"},
+    }}}}},
+)
 async def validate_ticket(
     ticket_id: str,
     payload: dict = Body(default_factory=dict),
