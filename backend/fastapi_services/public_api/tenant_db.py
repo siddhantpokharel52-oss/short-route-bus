@@ -147,20 +147,31 @@ async def get_domain_for_schema(schema_name: str) -> Optional[str]:
 # joined to apps.tenants.models.Tenant. If RouteAssignment's status choices or
 # its route_id/tenant_id FK columns change, update the WHERE/JOIN below.
 async def get_route_operator_schemas(route_id: str) -> list[str]:
-    """Tenant schemas with an ACTIVE RouteAssignment for this route (apps.platform.RouteAssignment)."""
+    """Tenant schemas with an ACTIVE RouteAssignment for this route (apps.platform.RouteAssignment).
+
+    route_id is caller-supplied (issue_ticket()'s self-service path takes it straight from the
+    request body, no format check first) -- a value that isn't a real UUID used to reach asyncpg
+    unguarded and raise a raw DataError, 500ing instead of the clean "Route not found" 404 every
+    caller already handles for the "no such route" case. Caught live: POST /tickets/ with
+    route_id="bogus-route-not-real" crashed with "invalid UUID ... length must be between 32..36
+    characters" before this fix. Treating "not a UUID at all" the same as "no matching row" is
+    exactly right here -- both mean the same thing to every caller: no operator serves this route_id."""
     engine = get_engine()
     async with engine.connect() as conn:
-        result = await conn.execute(
-            text(
-                """
-                SELECT t.schema_name
-                FROM public.platform_routeassignment ra
-                JOIN public.tenants_tenant t ON t.id = ra.tenant_id
-                WHERE ra.route_id = :route_id AND ra.status = 'ACTIVE'
-                """
-            ),
-            {"route_id": route_id},
-        )
+        try:
+            result = await conn.execute(
+                text(
+                    """
+                    SELECT t.schema_name
+                    FROM public.platform_routeassignment ra
+                    JOIN public.tenants_tenant t ON t.id = ra.tenant_id
+                    WHERE ra.route_id = :route_id AND ra.status = 'ACTIVE'
+                    """
+                ),
+                {"route_id": route_id},
+            )
+        except Exception:
+            return []
         return [row[0] for row in result.fetchall()]
 
 
