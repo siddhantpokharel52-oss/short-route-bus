@@ -7,7 +7,7 @@ NamastePay payment system, the CityBus Team Implementation Guide gaps, and
 the Route & Group Rotation QA fix series) plus current production
 deployment status.
 
-**Last updated:** 2026-09-22
+**Last updated:** 2026-09-23
 
 ---
 
@@ -17,9 +17,9 @@ deployment status.
 |---|---|
 | **Yatroo integration** (§2) | Feature-complete. A partner-reported complaint (no ticket API, slow fares) was investigated and found factually incorrect on the ticket-API claim; the fare-speed claim has no visible code cause. A newer Namaste Pay "Partner/Subscriber App" integration model was also analyzed against the codebase — mostly not built yet (§2.5). |
 | **NamastePay payment system** (§3) | 7 of 10 spec items (CB1–CB4, CB6, CB7, CB9) done and committed. 3 items (CB5, CB8's remainder, CB10) are blocked on NamastePay/product decisions, not code work. |
-| **Team Implementation Guide gaps** (§4) | All 3 original code-fixable gaps closed (per-passenger destinations, Bus Owner Dashboard, ticket history API), plus a follow-up pass that found and closed a real access-control gap — the Owner Dashboard's own endpoints and nav had no real role scoping. Also added: ISSUED/PAID timestamp scaffolding for §3.6, a `child_fare` bulk-tooling fix for §3.3, and (§4.5) a full real-device testing pass across owner/conductor/admin that found and fixed six more UX/access gaps, including a hard requirement that a conductor open a shift before issuing tickets. 2 items (§3.6's actual state machine, §3.3's real concession rates) still need a team decision or external numbers, not code. |
+| **Team Implementation Guide gaps** (§4) | All 3 original code-fixable gaps closed (per-passenger destinations, Bus Owner Dashboard, ticket history API), plus a follow-up pass that found and closed a real access-control gap — the Owner Dashboard's own endpoints and nav had no real role scoping. Also added: ISSUED/PAID timestamp scaffolding for §3.6, a `child_fare` bulk-tooling fix for §3.3, (§4.5) a full real-device testing pass across owner/conductor/admin that found and fixed six more UX/access gaps, including a hard requirement that a conductor open a shift before issuing tickets, and (§4.6) a real regression that same lockdown introduced — self-service/group ticket purchase would have 403'd in production — caught live and fixed before shipping. 2 items (§3.6's actual state machine, §3.3's real concession rates) still need a team decision or external numbers, not code. |
 | **Route & Group Rotation QA report** (§5) | All 94 issues triaged; every issue that was a real, scopeable bug is fixed and verified live (Critical 5/5, High 21/24, Medium/Low 29/65). The rest (39 issues) are explicitly "Clarify"-status or large standalone features needing a product decision first — not oversights. |
-| **Production deployment** (§6) | Everything through commit `ef413128` is confirmed live in production as of 2026-09-21. §4.5's testing-pass fixes (2026-09-22) are built and verified in dev but **not yet deployed** — see git status. |
+| **Production deployment** (§6) | Everything through commit `ef413128` is confirmed live in production as of 2026-09-21. §4.5/§4.6's fixes are committed and pushed (`c3374338`) but **not yet confirmed deployed** — deploy commands are ready, see §6. |
 
 ---
 
@@ -388,8 +388,30 @@ QR actually gets generated), so their `qr_code` was empty. Confirmed real
 ticket issuance (via the actual POS UI) always produces a genuine QR;
 backfilled the seed data to match rather than leave it looking broken.
 
-`npx tsc --noEmit` and `python manage.py check` clean throughout. Not yet
-committed — see git status.
+`npx tsc --noEmit` and `python manage.py check` clean throughout. Committed
+(`c3374338`), pushed. Not yet confirmed deployed to production — see §6.
+
+### 4.6 Self-service ticket regression + payment_reference echo fix (2026-09-23)
+
+Found while implementing an unrelated, small fix — Yatroo's ticket-issuance
+response was silently storing `payment_reference` but never returning it
+in the same call, forcing a second request just to confirm it stuck.
+Verifying that fix live (not just by reading the code) surfaced something
+much bigger:
+
+| Finding | Fix | Commit |
+|---|---|---|
+| **A real regression, not yet shipped.** §4.2's `IsTenantStaff` lockdown (applied to `TicketViewSet`/`BookingViewSet` to stop an owner seeing tenant-wide ticket data) excludes `PASSENGER` from its deny-list. But every self-service ticket, scan-to-book ticket, and group booking — Yatroo's entire ticket flow — is created via an internal system account that is always `role=PASSENGER` (`get_or_create_self_service_account`). Had this shipped as originally written, the very first real self-service purchase would have 403'd. Reproduced live against the running dev stack before fixing, not assumed from reading the code. | New `IsTicketIssuer` permission class (`backend/apps/users/permissions.py`) — allows anyone except `OWNER` to create a ticket/booking, while `list`/`retrieve` stay on `IsTenantStaff`. Wired in via a `get_permissions()` override on both viewsets so create() and list()/retrieve() can have different gates. | `c3374338` |
+| `payment_reference` sent by Yatroo was stored server-side (`tenant_db.store_payment_reference`) but never echoed back in the same response — `issue_ticket()`/`issue_group_tickets()` both ended with a fresh, unmutated re-parse of Django's raw response. | Both functions now inject `payment_reference` into the response body right after storing it, and return that mutated body instead of re-parsing `resp.json()` a second time. Swagger examples updated to match. | `c3374338` |
+
+Verified live end-to-end against the running dev stack: self-service
+ticket purchase and a 2-passenger group booking both now return the exact
+`payment_reference` sent. Full regression matrix re-run after the
+permission fix — `OWNER` still 403 on both `list` and `create` (the
+original §4.2 intent preserved), `CONDUCTOR`/`COMPANY_ADMIN` unaffected
+(`list` 200, `create` 200/expected-400), self-service `PASSENGER` account
+`create` now 201 where it would have been 403. `python manage.py check`
+and `npx tsc --noEmit` clean. All test fixtures cleaned up.
 
 ---
 
@@ -501,6 +523,31 @@ stack with empty volumes). Repo lives at `~/short-route-bus`, but the
 compose files themselves are one level down at `~/short-route-bus/docker/`
 (run `cd ~/short-route-bus/docker` first — same gotcha as the `.env` file
 below).
+
+**Ready to deploy, not yet confirmed live — commit `c3374338`.** Covers
+§4.5's real-device testing-pass fixes and §4.6's ticket-issuance
+regression fix. No new migrations in this commit — a straight rebuild,
+no `migrate_schemas` step needed:
+
+```bash
+ssh citybus@172.19.0.246
+cd ~/short-route-bus && git pull
+cd ~/short-route-bus/docker
+docker compose -f docker-compose.prod.yml build django fastapi frontend
+docker compose -f docker-compose.prod.yml up -d django fastapi frontend
+docker compose -f docker-compose.prod.yml restart nginx
+```
+
+Then smoke-test from an external client (not the server itself, per
+gotcha #4 below):
+
+```bash
+curl -w "\nHTTP_STATUS:%{http_code}\n" https://citybus.com.np/
+curl -w "\nHTTP_STATUS:%{http_code}\n" https://mobile-api.citybus.com.np/api/openapi.json
+```
+
+Both should return `HTTP_STATUS:200`; a `502` on either means nginx
+didn't pick up the rebuilt containers — re-run the `restart nginx` step.
 
 **2026-09-21 deploy — confirmed live.** Everything through commit
 `da4a7128` (65 files, 10 new migrations across `fleet`/`platform`/`staff`/
@@ -641,6 +688,8 @@ the user, but hasn't been confirmed sent yet.
 | Suppressible error toast (`suppressErrorToast`) | `frontend/src/services/api.ts`; applied in `TenantLayout.tsx`, `TicketingPage.tsx`, `AccountingPage.tsx` |
 | Revenue-by-route name display | `backend/apps/analytics/views.py` (`OwnerDashboardSummaryView`), `frontend/.../services/ownerService.ts`, `MyEarningsPage.tsx` |
 | Conductor must-have-open-shift requirement | `backend/apps/ticketing/views.py` (`TicketViewSet.create()`, hard block), `frontend/.../pages/TicketingPage.tsx` (client-side popup) |
+| Ticket-create permission for the self-service system account (`IsTicketIssuer`) | `backend/apps/users/permissions.py`; wired via `get_permissions()` override in `backend/apps/ticketing/views.py` (`TicketViewSet`/`BookingViewSet`) |
+| `payment_reference` echoed back in the ticket-issuance response | `backend/fastapi_services/public_api/router.py` (`issue_ticket()`/`issue_group_tickets()`) |
 | Local-dev demo accounts (persistent, for manual testing) | `demo.owner@kvbms.local`, `demo.admin@kvbms.local`, `demo.conductor@kvbms.local` — all `DemoX@2026`, tenant `mayurbus` |
 | Route & Group Rotation — fleet/roster/rotation | `backend/apps/fleet/`, `backend/apps/roster/`, `backend/apps/platform/` |
 | Route & Group Rotation — tenant-portal UI | `frontend/src/apps/tenant-portal/pages/` |
@@ -694,10 +743,10 @@ the user, but hasn't been confirmed sent yet.
 - Phase 2/3 items are the same blocked list as CB5/CB8/CB10 above; this
   doc doesn't add anything new there.
 - §4.5's testing-pass fixes (owner route guard, conductor nav, toast
-  fixes, revenue-by-route name, shift-required ticket issuance) are built
-  and verified in dev but **not yet committed or deployed** — next
-  action is a commit + push, then the same prod deploy sequence used
-  for `ef413128`.
+  fixes, revenue-by-route name, shift-required ticket issuance) and
+  §4.6's regression/payment_reference fixes are committed and pushed
+  (`c3374338`) but **not yet confirmed deployed** — deploy commands are
+  in §6, same sequence used for `ef413128`.
 
 **Also still open, unrelated to any specific doc:** whether one owner's
 buses can span more than one tenant (§3.7's own open item — a business
