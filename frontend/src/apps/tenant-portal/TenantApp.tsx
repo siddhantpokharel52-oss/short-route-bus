@@ -26,6 +26,7 @@ import LiveTrackingPage from './pages/LiveTrackingPage'
 import DispatchPage from './pages/DispatchPage'
 import OperationsDashboardPage from './pages/OperationsDashboardPage'
 import RolesPermissionsPage from './pages/RolesPermissionsPage'
+import TripsPage from './pages/TripsPage'
 
 
 export default function TenantApp() {
@@ -71,6 +72,7 @@ export default function TenantApp() {
 
         {/* Scheduling */}
         <Route path="scheduling" element={<SchedulingPage />} />
+        <Route path="trips" element={<TripsPage />} />
 
         {/* Other modules */}
         <Route path="ticketing" element={<TicketingPage />} />

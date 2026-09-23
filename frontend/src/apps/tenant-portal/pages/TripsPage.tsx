@@ -7,7 +7,7 @@ import { Table, Column } from '@components/shared/Table'
 import { Modal } from '@components/shared/Modal'
 import { Input } from '@components/shared/Input'
 import { TripStatusBadge } from '@components/domain/TripStatusBadge'
-import schedulingService, { Trip } from '@services/schedulingService'
+import schedulingService, { Trip, CreateTripPayload } from '@services/schedulingService'
 import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
 import apiClient from '@services/api'
@@ -23,6 +23,9 @@ interface CreateTripForm {
   vehicle_id: string
   driver_id: string
   conductor_id?: string
+  // datetime-local values (e.g. "2026-09-24T14:30") -- split into
+  // date/scheduled_departure_time/scheduled_arrival_time on submit to match
+  // what TripSerializer actually accepts.
   scheduled_departure: string
   scheduled_arrival: string
 }
@@ -91,7 +94,7 @@ export default function TripsPage() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (payload: CreateTripForm) => schedulingService.trips.create(payload),
+    mutationFn: (payload: CreateTripPayload) => schedulingService.trips.create(payload),
     onSuccess: () => {
       toast.success('Trip created!')
       setShowCreate(false)
@@ -101,18 +104,37 @@ export default function TripsPage() {
     onError: (err: Error) => toast.error(err.message),
   })
 
+  const onCreateSubmit = (d: CreateTripForm) => {
+    const [date, departureTime] = d.scheduled_departure.split('T')
+    const arrivalTime = d.scheduled_arrival.split('T')[1]
+    createMutation.mutate({
+      route_id: d.route_id,
+      vehicle_id: d.vehicle_id,
+      driver_id: d.driver_id,
+      conductor_id: d.conductor_id || undefined,
+      date,
+      scheduled_departure_time: departureTime,
+      scheduled_arrival_time: arrivalTime,
+    })
+  }
+
   const columns: Column<Trip>[] = [
     {
-      key: 'route_number',
+      key: 'route_name',
       header: 'Route',
-      render: (trip) => <span className="font-mono font-bold text-primary-600">{trip.route_number}</span>,
+      render: (trip) => <span className="font-mono font-bold text-primary-600">{trip.route_name}</span>,
     },
-    { key: 'vehicle_plate', header: 'Vehicle' },
-    { key: 'driver_name', header: 'Driver' },
     {
+      key: 'vehicle_registration',
+      header: 'Vehicle',
+      render: (trip) => trip.vehicle_registration ?? trip.vehicle_bus_number ?? '—',
+    },
+    {
+      // TripSerializer.get_scheduled_departure() already returns an "HH:MM"
+      // string, not an ISO datetime -- new Date("HH:MM") is an Invalid Date.
       key: 'scheduled_departure',
       header: 'Departure',
-      render: (trip) => new Date(trip.scheduled_departure).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      render: (trip) => trip.scheduled_departure || '—',
     },
     {
       key: 'actual_departure',
@@ -187,7 +209,7 @@ export default function TripsPage() {
 
       {/* Create trip modal */}
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create Trip" size="lg">
-        <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-4 p-6">
+        <form onSubmit={handleSubmit(onCreateSubmit)} className="space-y-4 p-6">
           <p className="text-sm text-gray-500">
             ⚠️ Max 8 hours/day per driver (Nepal Labour Act 2074)
           </p>
@@ -227,7 +249,7 @@ export default function TripsPage() {
       <Modal open={!!completeTarget} onClose={() => setCompleteTarget(null)} title="Complete Trip" size="sm">
         <div className="space-y-4 p-6">
           <p className="text-sm text-gray-600">
-            Complete trip on route <strong>{completeTarget?.route_number}</strong>?
+            Complete trip on route <strong>{completeTarget?.route_name}</strong>?
           </p>
           <Input
             label="Passenger Count"
@@ -256,7 +278,7 @@ export default function TripsPage() {
       <Modal open={!!cancelTarget} onClose={() => setCancelTarget(null)} title="Cancel Trip" size="sm">
         <div className="space-y-4 p-6">
           <p className="text-sm text-gray-600">
-            Cancel trip on route <strong>{cancelTarget?.route_number}</strong>?
+            Cancel trip on route <strong>{cancelTarget?.route_name}</strong>?
           </p>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">

@@ -5,6 +5,7 @@ import {
   Wrench, UserCheck, BarChart3, Settings, Menu, X,
   Bell, LogOut, Route, MapPin, BookOpen,
   Zap, Activity, ShieldCheck, Wallet, Wallet2, Layers, Users2, CalendarRange, CalendarDays, CreditCard,
+  CalendarPlus,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -63,6 +64,7 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
     : [
         { to: '/tenant/live-tracking', icon: LayoutDashboard, label: t('nav.dashboard') },
         { to: '/tenant/operations', icon: Activity, label: t('nav.todaysTrips') },
+        { to: '/tenant/trips', icon: CalendarPlus, label: t('scheduling.trips') },
         { to: '/tenant/dispatch', icon: Zap, label: t('nav.scheduler') },
         { to: '/tenant/routes', icon: Route, label: t('nav.routes') },
         { to: '/tenant/stops', icon: MapPin, label: t('nav.busStops') },

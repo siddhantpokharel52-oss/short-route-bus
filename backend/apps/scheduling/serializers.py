@@ -44,10 +44,17 @@ class TripSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "created_at", "updated_at",
+            "id", "trip_code", "created_at", "updated_at",
             "route_name", "vehicle_registration", "vehicle_bus_number",
             "scheduled_departure", "scheduled_arrival",
         ]
+
+    def create(self, validated_data):
+        # Auto-generate trip_code: TRP-0001, TRP-0002, … (mirrors
+        # ConductorSerializer/DriverSerializer's own employee_id pattern)
+        count = Trip.objects.count() + 1
+        validated_data["trip_code"] = f"TRP-{count:04d}"
+        return super().create(validated_data)
 
     def get_route_name(self, obj):
         try:

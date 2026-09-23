@@ -25,6 +25,8 @@ export interface Trip {
   route_name: string
   vehicle_id: string
   vehicle_plate: string
+  vehicle_registration: string | null
+  vehicle_bus_number: string | null
   driver_id: string
   driver_name: string
   conductor_id: string | null
@@ -37,6 +39,21 @@ export interface Trip {
   cancellation_reason: string | null
   passenger_count: number
   created_at: string
+}
+
+// Writable fields TripSerializer.create() actually accepts -- trip_code is
+// server-generated (see TripSerializer.create() in
+// backend/apps/scheduling/serializers.py), and date/scheduled_*_time are the
+// real schedule fields (scheduled_departure/scheduled_arrival on Trip above
+// are read-only SerializerMethodFields).
+export interface CreateTripPayload {
+  route_id: string
+  vehicle_id: string
+  driver_id: string
+  conductor_id?: string
+  date: string
+  scheduled_departure_time: string
+  scheduled_arrival_time: string
 }
 
 export interface Timetable {
@@ -74,7 +91,7 @@ const schedulingService = {
       return data.data
     },
 
-    create: async (payload: Partial<Trip>): Promise<Trip> => {
+    create: async (payload: CreateTripPayload): Promise<Trip> => {
       const { data } = await apiClient.post<ApiResponse<Trip>>('/scheduling/trips/', payload)
       if (!data.success) throw new Error(data.message)
       return data.data
