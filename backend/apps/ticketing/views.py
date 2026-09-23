@@ -96,12 +96,17 @@ class TicketViewSet(ModelViewSet):
         if page is not None:
             serializer = self.get_serializer(page, many=True)
             paginated = self.get_paginated_response(serializer.data)
+            # StandardResultsPagination nests count/next/previous inside
+            # "meta" (as total_count/next/previous), not at the top level --
+            # reading paginated.data["count"] directly always silently fell
+            # back to the 0 default, breaking the "Showing X to Y of Z" UI.
+            meta = paginated.data.get("meta", {})
             return api_response(
                 data={
                     "results": serializer.data,
-                    "count": paginated.data.get("count", 0),
-                    "next": paginated.data.get("next"),
-                    "previous": paginated.data.get("previous"),
+                    "count": meta.get("total_count", 0),
+                    "next": meta.get("next"),
+                    "previous": meta.get("previous"),
                 },
             )
         serializer = self.get_serializer(qs, many=True)
@@ -161,12 +166,13 @@ class BookingViewSet(ModelViewSet):
         if page is not None:
             serializer = self.get_serializer(page, many=True)
             paginated = self.get_paginated_response(serializer.data)
+            meta = paginated.data.get("meta", {})
             return api_response(
                 data={
                     "results": serializer.data,
-                    "count": paginated.data.get("count", 0),
-                    "next": paginated.data.get("next"),
-                    "previous": paginated.data.get("previous"),
+                    "count": meta.get("total_count", 0),
+                    "next": meta.get("next"),
+                    "previous": meta.get("previous"),
                 },
             )
         serializer = self.get_serializer(qs, many=True)
