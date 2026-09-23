@@ -496,6 +496,30 @@ async def search_stops(
 # apps.ticketing.Ticket actually stores. Returns None for an unknown code
 # rather than raising, so the caller can turn that into a normal 400 instead
 # of a 500.
+#
+# "STUDENT"/"SENIOR"/"CHILD" are NOT real TicketType rows on this platform --
+# by design there is only ever one (apps.platform.views.FareMatrixViewSet.
+# generate_from_formula's own docstring calls it "the platform's one ticket
+# type"), and concession pricing lives as sibling columns on that one
+# FareMatrix row (student_fare/senior_citizen_fare/child_fare, already
+# surfaced on GET /fares/) rather than as separate ticket types. A caller
+# integrating against this API has no way to know that -- the field names on
+# GET /fares/ read exactly like separate purchasable ticket types, and this
+# function's own docstring above even listed "STUDENT" as an example before
+# this fix -- caught during integration review, before Yatroo built against
+# it: passing ticket_type="STUDENT" 400'd with "Unknown ticket_type" on
+# every real tenant, even though CityBus's own GET /fares/ had just
+# advertised a real student_fare amount for that same route. Resolve these
+# known concession aliases to the platform's one real type instead of
+# erroring -- the
+# concession amount itself is already correctly charged via the
+# client-supplied fare_paid (pulled from GET /fares/'s student_fare/
+# senior_citizen_fare/child_fare), never by anything keyed off
+# ticket_type_id. A genuinely unknown code (a typo, not one of these) still
+# 400s exactly as before.
+_CONCESSION_TICKET_TYPE_ALIASES = {"STUDENT", "SENIOR", "SENIOR_CITIZEN", "CHILD"}
+
+
 async def resolve_ticket_type_id(code: str) -> Optional[str]:
     engine = get_engine()
     async with engine.connect() as conn:
@@ -504,7 +528,18 @@ async def resolve_ticket_type_id(code: str) -> Optional[str]:
             {"code": code},
         )
         row = result.first()
-        return str(row[0]) if row else None
+        if row:
+            return str(row[0])
+        if code not in _CONCESSION_TICKET_TYPE_ALIASES:
+            return None
+        default = await conn.execute(
+            text(
+                "SELECT id FROM public.platform_tickettype "
+                "WHERE is_active = true ORDER BY created_at LIMIT 1"
+            ),
+        )
+        default_row = default.first()
+        return str(default_row[0]) if default_row else None
 
 
 # Mirrors apps.platform.models.FareMatrix joined to apps.platform.models.
