@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, User, Briefcase, Bus, Heart, Wallet, Trash2, Eye, Pencil, AlertTriangle } from 'lucide-react'
+import { Plus, Search, User, Briefcase, Bus, Heart, Wallet, Trash2, Eye, Pencil, AlertTriangle, KeyRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
@@ -40,6 +40,7 @@ interface Collector {
   assigned_route_id: string | null
   basic_salary: string
   status: string
+  user_id: string | null
 }
 
 interface CollectorForm {
@@ -132,6 +133,9 @@ export default function ConductorsPage() {
   const [viewTarget, setViewTarget] = useState<Collector | null>(null)
   const [editTarget, setEditTarget] = useState<Collector | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Collector | null>(null)
+  const [loginTarget, setLoginTarget] = useState<Collector | null>(null)
+  const [loginEmail, setLoginEmail] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
 
   // ── Edit form state ───────────────────────────────────────────────────────────
   const [editStatus, setEditStatus] = useState('')
@@ -281,6 +285,25 @@ export default function ConductorsPage() {
     },
   })
 
+  // Pokhara QA report: a Collector created via Add Collector has no linked
+  // login, so it can never appear in a vehicle group's conductor picker --
+  // this lets an admin create one after the fact.
+  const createLoginMutation = useMutation({
+    mutationFn: ({ id, email, password }: { id: string; email: string; password: string }) =>
+      apiClient.post(`/operator/conductors/${id}/create-login/`, { email, password }),
+    onSuccess: () => {
+      toast.success('Login created.')
+      setLoginTarget(null)
+      setLoginEmail('')
+      setLoginPassword('')
+      qc.invalidateQueries({ queryKey: ['conductors'] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || 'Failed to create login.')
+    },
+  })
+
   const handleUpdate = () => {
     updateMutation.mutate({
       status: editStatus,
@@ -377,6 +400,15 @@ export default function ConductorsPage() {
           >
             <Pencil className="h-4 w-4" />
           </button>
+          {!c.user_id && (
+            <button
+              onClick={() => setLoginTarget(c)}
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
+              title="Create Login"
+            >
+              <KeyRound className="h-4 w-4" />
+            </button>
+          )}
           <button
             onClick={() => setDeleteTarget(c)}
             className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
@@ -643,6 +675,47 @@ export default function ConductorsPage() {
                 leftIcon={<Trash2 className="h-4 w-4" />}
               >
                 {t('common:common.delete')} {t('staff.conductors.title')}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Create Login Modal ────────────────────────────────────────────── */}
+      <Modal
+        open={!!loginTarget}
+        onClose={() => { setLoginTarget(null); setLoginEmail(''); setLoginPassword('') }}
+        title={`Create Login — ${loginTarget?.full_name_en ?? ''}`}
+        size="sm"
+      >
+        {loginTarget && (
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-gray-600">
+              Lets {loginTarget.full_name_en} sign in, and makes them selectable when staffing a vehicle group.
+            </p>
+            <Input
+              label="Email" type="email" required
+              placeholder="e.g. ramesh.gurung@example.com"
+              value={loginEmail}
+              onChange={(e) => setLoginEmail(e.target.value)}
+            />
+            <Input
+              label="Password" type="password" required
+              placeholder="Temporary password"
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+            />
+            <div className="flex justify-end gap-3 border-t pt-4">
+              <Button variant="secondary" onClick={() => { setLoginTarget(null); setLoginEmail(''); setLoginPassword('') }}>
+                {t('common:common.cancel')}
+              </Button>
+              <Button
+                loading={createLoginMutation.isPending}
+                disabled={!loginEmail || !loginPassword}
+                leftIcon={<KeyRound className="h-4 w-4" />}
+                onClick={() => createLoginMutation.mutate({ id: loginTarget.id, email: loginEmail, password: loginPassword })}
+              >
+                Create Login
               </Button>
             </div>
           </div>

@@ -45,6 +45,16 @@ interface VehicleForm {
   fitness_expiry_date: string
 }
 
+// The create form's only fields registered with a client-side `required`
+// rule -- setError() is only safe to use for these (react-hook-form
+// re-validates and clears them on the next handleSubmit() call). Every
+// other field has no rule to re-run, so a manually-set error on one of
+// them never clears and silently blocks all further submit attempts.
+const FIELDS_WITH_CLIENT_RULES = new Set([
+  'category', 'registration_no', 'vehicle_type', 'make', 'model',
+  'year', 'chassis_no', 'capacity_seated', 'fuel_type',
+])
+
 // ─── Section heading ──────────────────────────────────────────────────────────
 function Section({ icon: Icon, title }: { icon: React.ElementType; title: string }) {
   return (
@@ -190,7 +200,18 @@ export default function FleetPage() {
       if (firstKey) {
         const val = fieldErrors[firstKey]
         const msg = Array.isArray(val) ? String(val[0]) : String(val)
-        setError(firstKey as keyof VehicleForm, { type: 'server', message: msg })
+        // Pokhara QA report: setError() on a field with no client-side
+        // `rules`/`Controller rules` (e.g. assigned_route_id, insurance/
+        // fitness fields) never gets re-validated/cleared by react-hook-
+        // form on the next handleSubmit() call, permanently blocking
+        // resubmission on the same open modal -- no further network
+        // request, no visible disabled state, until the modal is closed
+        // and reopened. Only set the inline field error for fields that
+        // actually have a rule to re-run; every other key still gets the
+        // toast (which is never at risk of getting stuck).
+        if (FIELDS_WITH_CLIENT_RULES.has(firstKey)) {
+          setError(firstKey as keyof VehicleForm, { type: 'server', message: msg })
+        }
         toast.error(`${firstKey}: ${msg}`)
       } else {
         toast.error((res as { message?: string }).message || (err as Error).message || 'Failed to add vehicle')

@@ -47,6 +47,53 @@ class DriverViewSet(ModelViewSet):
         instance.deleted_at = timezone.now()
         instance.save(update_fields=["is_deleted", "deleted_at"])
 
+    @action(detail=True, methods=["post"], url_path="create-login")
+    def create_login(self, request, pk=None):
+        """
+        POST /staff/drivers/{id}/create-login/
+        Pokhara QA report: a Driver record created via the normal Add Driver
+        form has no linked user_id, so it can never appear in a vehicle
+        group's driver picker -- GroupDriverAssignment.driver_user_id is a
+        required field, not optional, since that's what lets the driver's
+        own future login resolve "my group" (see that model's docstring).
+        Nothing in the product ever created that login until now.
+        """
+        driver = self.get_object()
+        if driver.user_id:
+            return api_response(
+                success=False, message="This driver already has a login.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        email = (request.data.get("email") or "").strip().lower()
+        password = request.data.get("password") or ""
+        if not email or not password:
+            return api_response(
+                success=False, message="email and password are required.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from backend.apps.users.models import User
+        if User.objects.filter(email=email).exists():
+            return api_response(
+                success=False, message=f"'{email}' is already in use by another account.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = User(
+            email=email, full_name_en=driver.full_name_en, phone=driver.phone,
+            role=User.Role.DRIVER, tenant_schema=request.user.tenant_schema, is_active=True,
+        )
+        user.set_password(password)
+        user.save()
+
+        driver.user_id = user.id
+        driver.save(update_fields=["user_id"])
+
+        return api_response(
+            data={"user_id": str(user.id), "email": user.email},
+            message="Login created.", status_code=status.HTTP_201_CREATED,
+        )
+
     @action(detail=True, methods=["get"])
     def performance(self, request, pk=None):
         driver = self.get_object()
@@ -123,6 +170,52 @@ class ConductorViewSet(ModelViewSet):
 
     def get_queryset(self):
         return Conductor.objects.filter(is_deleted=False)
+
+    @action(detail=True, methods=["post"], url_path="create-login")
+    def create_login(self, request, pk=None):
+        """
+        POST /staff/conductors/{id}/create-login/
+        Pokhara QA report: same gap and same fix as DriverViewSet's
+        create_login() -- a Conductor created via Add Collector has no
+        linked user_id, so it can never appear in a vehicle group's
+        conductor picker (GroupConductorAssignment.conductor_user_id is
+        required, not optional).
+        """
+        conductor = self.get_object()
+        if conductor.user_id:
+            return api_response(
+                success=False, message="This conductor already has a login.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        email = (request.data.get("email") or "").strip().lower()
+        password = request.data.get("password") or ""
+        if not email or not password:
+            return api_response(
+                success=False, message="email and password are required.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from backend.apps.users.models import User
+        if User.objects.filter(email=email).exists():
+            return api_response(
+                success=False, message=f"'{email}' is already in use by another account.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = User(
+            email=email, full_name_en=conductor.full_name_en, phone=conductor.phone,
+            role=User.Role.CONDUCTOR, tenant_schema=request.user.tenant_schema, is_active=True,
+        )
+        user.set_password(password)
+        user.save()
+
+        conductor.user_id = user.id
+        conductor.save(update_fields=["user_id"])
+
+        return api_response(
+            data={"user_id": str(user.id), "email": user.email},
+            message="Login created.", status_code=status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=["post"], url_path="attendance/check-in")
     def check_in(self, request, pk=None):

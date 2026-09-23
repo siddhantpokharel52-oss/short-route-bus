@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, AlertTriangle, User, FileText, Briefcase, Bus, Heart, Wallet, Trash2, Eye, Pencil } from 'lucide-react'
+import { Plus, Search, AlertTriangle, User, FileText, Briefcase, Bus, Heart, Wallet, Trash2, Eye, Pencil, KeyRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
@@ -47,6 +47,7 @@ interface Driver {
   last_medical_checkup_date: string
   basic_salary: string
   status: string
+  user_id: string | null
 }
 
 interface DriverForm {
@@ -76,6 +77,17 @@ interface DriverForm {
   last_medical_checkup_date: string
   basic_salary: string
 }
+
+// Pokhara QA report: setError() is only safe on a field with a client-side
+// `required`/`rules` prop -- react-hook-form re-validates and clears those
+// on the next handleSubmit() call. A manually-set error on a rule-less
+// field never clears, which (in the sibling Add Vehicle bug) permanently
+// blocked resubmission on the same open modal -- same allowlist pattern
+// as FleetPage.tsx's FIELDS_WITH_CLIENT_RULES.
+const FIELDS_WITH_CLIENT_RULES = new Set([
+  'full_name_en', 'gender', 'dob', 'citizenship_no', 'phone', 'address',
+  'license_no', 'license_category', 'license_expiry',
+])
 
 // ─── Section heading ──────────────────────────────────────────────────────────
 function Section({ icon: Icon, title }: { icon: React.ElementType; title: string }) {
@@ -142,6 +154,9 @@ export default function DriversPage() {
   const [viewTarget, setViewTarget] = useState<Driver | null>(null)
   const [editTarget, setEditTarget] = useState<Driver | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Driver | null>(null)
+  const [loginTarget, setLoginTarget] = useState<Driver | null>(null)
+  const [loginEmail, setLoginEmail] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
 
   const [editStatus, setEditStatus] = useState('')
   const [editShift, setEditShift] = useState('')
@@ -188,7 +203,7 @@ export default function DriversPage() {
     staleTime: 5 * 60 * 1000,
   })
 
-  const { register, handleSubmit, reset, control, formState: { errors } } = useForm<DriverForm>({
+  const { register, handleSubmit, reset, control, setError, formState: { errors } } = useForm<DriverForm>({
     defaultValues: {
       gender: 'MALE',
       license_category: '',
@@ -204,10 +219,18 @@ export default function DriversPage() {
         .filter((a) => a.title.trim())
         .map((a) => ({ title: a.title.trim(), amount: parseFloat(a.amount) || 0 }))
 
+      // Pokhara QA report: experience_years is a PositiveSmallIntegerField
+      // with no null=True on the model -- leaving it blank (it has no
+      // required asterisk) sends "" straight to DRF's IntegerField, which
+      // rejects it outright with a silent-feeling 400. Same guard already
+      // used for basic_salary just below, and already applied on the edit
+      // path (see editExperience above) -- create was the one gap.
+      const experienceYears = payload.experience_years ? Number(payload.experience_years) : 0
       if (!photoFile && !licensePhotoFile) {
         return apiClient.post('/operator/drivers/', {
           ...payload,
           basic_salary: payload.basic_salary || null,
+          experience_years: experienceYears,
           allowances: cleanAllowances,
         })
       }
@@ -215,6 +238,7 @@ export default function DriversPage() {
       const fd = new FormData()
       Object.entries(payload).forEach(([key, value]) => fd.append(key, value ?? ''))
       fd.set('basic_salary', payload.basic_salary || '')
+      fd.set('experience_years', String(experienceYears))
       fd.set('allowances', JSON.stringify(cleanAllowances))
       if (photoFile) fd.append('photo', photoFile)
       if (licensePhotoFile) fd.append('license_photo', licensePhotoFile)
@@ -236,7 +260,11 @@ export default function DriversPage() {
       if (res?.errors && typeof res.errors === 'object' && Object.keys(res.errors).length > 0) {
         const firstKey = Object.keys(res.errors)[0]
         const val = res.errors[firstKey]
-        toast.error(`${firstKey}: ${Array.isArray(val) ? String(val[0]) : String(val)}`)
+        const msg = Array.isArray(val) ? String(val[0]) : String(val)
+        if (FIELDS_WITH_CLIENT_RULES.has(firstKey)) {
+          setError(firstKey as keyof DriverForm, { type: 'server', message: msg })
+        }
+        toast.error(`${firstKey}: ${msg}`)
       } else {
         toast.error(res?.message || (err as Error).message || t('staff.drivers.toast.createFailed'))
       }
@@ -283,6 +311,25 @@ export default function DriversPage() {
     onError: (err: unknown) => {
       const e = err as { response?: { data?: { message?: string } } }
       toast.error(e?.response?.data?.message || t('staff.drivers.toast.deleteFailed'))
+    },
+  })
+
+  // Pokhara QA report: a Driver created via Add Driver has no linked
+  // login, so it can never appear in a vehicle group's driver picker --
+  // this lets an admin create one after the fact.
+  const createLoginMutation = useMutation({
+    mutationFn: ({ id, email, password }: { id: string; email: string; password: string }) =>
+      apiClient.post(`/operator/drivers/${id}/create-login/`, { email, password }),
+    onSuccess: () => {
+      toast.success('Login created.')
+      setLoginTarget(null)
+      setLoginEmail('')
+      setLoginPassword('')
+      qc.invalidateQueries({ queryKey: ['drivers'] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || 'Failed to create login.')
     },
   })
 
@@ -372,6 +419,15 @@ export default function DriversPage() {
           >
             <Pencil className="h-4 w-4" />
           </button>
+          {!d.user_id && (
+            <button
+              onClick={() => setLoginTarget(d)}
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
+              title="Create Login"
+            >
+              <KeyRound className="h-4 w-4" />
+            </button>
+          )}
           <button
             onClick={() => setDeleteTarget(d)}
             className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
@@ -656,6 +712,47 @@ export default function DriversPage() {
                 leftIcon={<Trash2 className="h-4 w-4" />}
               >
                 {t('staff.drivers.deleteDriver')}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Create Login Modal ────────────────────────────────────────────── */}
+      <Modal
+        open={!!loginTarget}
+        onClose={() => { setLoginTarget(null); setLoginEmail(''); setLoginPassword('') }}
+        title={`Create Login — ${loginTarget?.full_name_en ?? ''}`}
+        size="sm"
+      >
+        {loginTarget && (
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-gray-600">
+              Lets {loginTarget.full_name_en} sign in, and makes them selectable when staffing a vehicle group.
+            </p>
+            <Input
+              label="Email" type="email" required
+              placeholder="e.g. krishna.thapa@example.com"
+              value={loginEmail}
+              onChange={(e) => setLoginEmail(e.target.value)}
+            />
+            <Input
+              label="Password" type="password" required
+              placeholder="Temporary password"
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+            />
+            <div className="flex justify-end gap-3 border-t pt-4">
+              <Button variant="secondary" onClick={() => { setLoginTarget(null); setLoginEmail(''); setLoginPassword('') }}>
+                {t('common:common.cancel')}
+              </Button>
+              <Button
+                loading={createLoginMutation.isPending}
+                disabled={!loginEmail || !loginPassword}
+                leftIcon={<KeyRound className="h-4 w-4" />}
+                onClick={() => createLoginMutation.mutate({ id: loginTarget.id, email: loginEmail, password: loginPassword })}
+              >
+                Create Login
               </Button>
             </div>
           </div>

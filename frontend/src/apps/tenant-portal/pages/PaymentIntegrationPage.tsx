@@ -130,19 +130,30 @@ export default function PaymentIntegrationPage() {
               </div>
             )}
 
-            <div className="flex gap-2 border-t pt-4">
-              <Button type="submit" leftIcon={<Save className="h-4 w-4" />} loading={saveMutation.isPending}>
-                Save
-              </Button>
-              <Button
-                type="button" variant="outline" leftIcon={<PlugZap className="h-4 w-4" />}
-                loading={testMutation.isPending}
-                disabled={!config?.api_key_set}
-                title={!config?.api_key_set ? 'Save your API key first' : undefined}
-                onClick={() => testMutation.mutate()}
-              >
-                Test Connection
-              </Button>
+            <div className="border-t pt-4">
+              <div className="flex gap-2">
+                <Button type="submit" leftIcon={<Save className="h-4 w-4" />} loading={saveMutation.isPending}>
+                  Save
+                </Button>
+                <Button
+                  type="button" variant="outline" leftIcon={<PlugZap className="h-4 w-4" />}
+                  loading={testMutation.isPending}
+                  disabled={!config?.api_key_set}
+                  title={!config?.api_key_set ? 'Save your API key first' : undefined}
+                  onClick={() => testMutation.mutate()}
+                >
+                  Test Connection
+                </Button>
+              </div>
+              {/* Pokhara QA report: the button's own disabled+title were the
+                  only signal this state existed, and the outline variant had
+                  no visible disabled styling -- a hover-only tooltip on a
+                  button that otherwise looked fully interactive read as a
+                  dead control. A persistent line makes the reason obvious
+                  without hovering. */}
+              {!config?.api_key_set && (
+                <p className="mt-2 text-xs text-gray-500">Save your API key above before testing the connection.</p>
+              )}
             </div>
           </form>
         )}
