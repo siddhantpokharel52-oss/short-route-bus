@@ -222,15 +222,28 @@ class RouteViewSet(ModelViewSet):
 
     def get_queryset(self):
         qs = Route.objects.filter(is_deleted=False)
+        user = self.request.user
         # RG-089: an anonymous caller only ever sees approved routes -- draft/
         # pending-approval routes are a platform-internal review state, not
         # something to leak to an unauthenticated GET.
-        if not (self.request.user and self.request.user.is_authenticated):
+        if not (user and user.is_authenticated):
             qs = qs.filter(status=Route.Status.APPROVED)
         tenant_id = self.request.query_params.get("tenant")
         if tenant_id:
             qs = qs.filter(
                 assignments__tenant_id=tenant_id,
+                assignments__status=RouteAssignment.Status.ACTIVE,
+            ).distinct()
+        elif user and user.is_authenticated and not user.is_platform_role and user.tenant_schema:
+            # Pokhara QA report: a tenant-portal staff/operational account
+            # (not a platform role, not a PASSENGER/STUDENT/TOURIST
+            # self-service account -- those have no tenant_schema and
+            # legitimately need to see every operator's routes) only sees
+            # routes their own tenant is actually assigned to run. Mirrors
+            # FareMatrixViewSet.get_queryset()'s identical, already-proven
+            # pattern above -- this endpoint was just missing it.
+            qs = qs.filter(
+                assignments__tenant__schema_name=user.tenant_schema,
                 assignments__status=RouteAssignment.Status.ACTIVE,
             ).distinct()
         return qs.prefetch_related("assignments__tenant", "route_stops__stop", "demand_profiles").select_related("requirement")

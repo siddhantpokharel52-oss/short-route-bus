@@ -263,10 +263,18 @@ class RosterPeriodViewSet(ModelViewSet):
         SATURDAY/WEEKDAY only -- HOLIDAY stays a manual per-duty call the
         planner can make later."""
         from django_tenants.utils import schema_context
-        from backend.apps.platform.models import Route
+        from backend.apps.platform.models import Route, RouteAssignment
 
+        # Pokhara QA report: scoped to this tenant's own RouteAssignment --
+        # was previously pulling every APPROVED route platform-wide and
+        # writing real Duty rows against other tenants' routes into this
+        # tenant's own roster (data corruption, not just a display leak).
         with schema_context("public"):
-            routes = list(Route.objects.filter(is_deleted=False, status=Route.Status.APPROVED))
+            routes = list(Route.objects.filter(
+                is_deleted=False, status=Route.Status.APPROVED,
+                assignments__tenant__schema_name=self.request.user.tenant_schema,
+                assignments__status=RouteAssignment.Status.ACTIVE,
+            ).distinct())
             demand_by_route_daytype = {}
             for r in routes:
                 for dem in r.demand_profiles.filter(effective_to__isnull=True):

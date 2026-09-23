@@ -262,7 +262,7 @@ class VehicleGroupViewSet(ModelViewSet):
         """
         group = self.get_object()
         from django_tenants.utils import schema_context
-        from backend.apps.platform.models import Route
+        from backend.apps.platform.models import Route, RouteAssignment
         from .services import check_group_route_eligibility
 
         eligible = []
@@ -271,9 +271,16 @@ class VehicleGroupViewSet(ModelViewSet):
         # is a SHARED_APP) -- explicit for the same reason the balance
         # action in platform/views.py explicitly re-asserts its own schema
         # for its cross-schema read, rather than trusting ambient state.
+        # Pokhara QA report: scoped to this tenant's own RouteAssignment --
+        # was previously evaluating a group's eligibility against every
+        # route platform-wide, including other tenants' routes/categories.
         with schema_context("public"):
             routes = list(
-                Route.objects.filter(is_deleted=False, status=Route.Status.APPROVED).select_related("requirement")
+                Route.objects.filter(
+                    is_deleted=False, status=Route.Status.APPROVED,
+                    assignments__tenant__schema_name=request.user.tenant_schema,
+                    assignments__status=RouteAssignment.Status.ACTIVE,
+                ).select_related("requirement").distinct()
             )
 
         for route in routes:
@@ -301,14 +308,19 @@ class VehicleGroupViewSet(ModelViewSet):
         has to be a /fleet/* route like eligibility() above.
         """
         from django_tenants.utils import schema_context
-        from backend.apps.platform.models import RouteDemand
+        from backend.apps.platform.models import RouteDemand, RouteAssignment
         from .services import check_group_route_eligibility
 
         day_type = request.query_params.get("day_type", "WEEKDAY")
+        # Pokhara QA report: scoped to this tenant's own RouteAssignment --
+        # was previously pulling demand for every route platform-wide.
         with schema_context("public"):
             demand_rows = list(
-                RouteDemand.objects.filter(day_type=day_type, effective_to__isnull=True)
-                .select_related("route", "route__requirement")
+                RouteDemand.objects.filter(
+                    day_type=day_type, effective_to__isnull=True,
+                    route__assignments__tenant__schema_name=request.user.tenant_schema,
+                    route__assignments__status=RouteAssignment.Status.ACTIVE,
+                ).select_related("route", "route__requirement").distinct()
             )
         total_slots = sum(d.slot_count for d in demand_rows)
         # RG-030: an empty (0-vehicle) group can never actually run a duty --
