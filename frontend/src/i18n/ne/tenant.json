@@ -1,8 +1,8 @@
 {
   "nav": {
-    "dashboard": "ड्यासबोर्ड",
+    "dashboard": "लाइभ ट्र्याकिङ",
     "todaysTrips": "आजका यात्राहरू",
-    "scheduler": "तालिका",
+    "scheduler": "डिस्प्याच",
     "routes": "मार्गहरू",
     "busStops": "बस स्टपहरू",
     "fares": "भाडादर",

@@ -83,6 +83,24 @@ class TenantSerializer(serializers.ModelSerializer):
         # everywhere instead of an error, which is much harder to notice.
         call_command("seed_coa", schema=schema_name)
 
+        # Pokhara QA report: without this, Settings -> Company Information
+        # showed the literal placeholder "Default Company" and every contact
+        # field blank on first login -- BusCompanyView.get_object() lazily
+        # creates that row with hardcoded defaults the first time anyone
+        # GETs it, never with the name/contact info already given right here
+        # at onboarding. Seed it for real instead of leaving that to chance.
+        from django_tenants.utils import schema_context
+        from backend.apps.staff.models import BusCompany
+        with schema_context(schema_name):
+            BusCompany.objects.create(
+                company_name=tenant.name,
+                registration_no=tenant.pan_vat_number,
+                address=tenant.address,
+                contact_phone=tenant.contact_phone,
+                contact_email=tenant.contact_email,
+                tax_pan=tenant.pan_vat_number,
+            )
+
         # Create a COMPANY_ADMIN user in the public schema for this tenant
         if admin_email:
             user = User(

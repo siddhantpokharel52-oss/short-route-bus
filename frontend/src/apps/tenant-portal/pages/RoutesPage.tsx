@@ -401,6 +401,12 @@ export default function RoutesPage() {
   const [routeEnd, setRouteEnd] = useState<BaatoPlace | null>(null)
   const [nameEdited, setNameEdited] = useState(false)
   const [nameNeEdited, setNameNeEdited] = useState(false)
+  // Pokhara QA report: a click on the map while the Route Start/End search
+  // dropdown is still open silently added a waypoint -- the map's own
+  // click-to-add-waypoint behavior fired regardless of what the click was
+  // actually for. First click while a dropdown is open just closes it now;
+  // a real waypoint needs its own, separate click.
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false)
   const [flyTarget, setFlyTarget] = useState<[number, number] | null>(null)
   const [directionsLoading, setDirectionsLoading] = useState(false)
   const [routeOptions, setRouteOptions] = useState<BaatoDirectionsResult[]>([])
@@ -1156,6 +1162,7 @@ export default function RoutesPage() {
                 biasLat={KATHMANDU[0]}
                 biasLon={KATHMANDU[1]}
                 onSelect={(place) => { setRouteStart(place); setFlyTarget([place.lat, place.lon]) }}
+                onOpenChange={setSearchDropdownOpen}
               />
               <PlaceSearchInput
                 label="Route End *"
@@ -1163,6 +1170,7 @@ export default function RoutesPage() {
                 biasLat={KATHMANDU[0]}
                 biasLon={KATHMANDU[1]}
                 onSelect={(place) => { setRouteEnd(place); setFlyTarget([place.lat, place.lon]) }}
+                onOpenChange={setSearchDropdownOpen}
               />
               {!routeStart || !routeEnd ? (
                 <p className="-mt-2 text-xs text-amber-600">
@@ -1330,6 +1338,10 @@ export default function RoutesPage() {
               mapStyle={BAATO_STYLE_URL}
               cursor="crosshair"
               onClick={(e) => {
+                if (searchDropdownOpen) {
+                  setSearchDropdownOpen(false)
+                  return
+                }
                 setOpenWaypointIdx(null)
                 handleMapClick(e.lngLat.lat, e.lngLat.lng)
               }}

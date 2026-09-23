@@ -15,14 +15,24 @@ interface PlaceSearchInputProps {
   biasLat?: number
   biasLon?: number
   onSelect: (place: BaatoPlace) => void
+  // Lets a parent that also has a click-to-place-something surface (e.g. a
+  // map you can click to drop a waypoint) know a dropdown is open, so a
+  // click meant only to dismiss it doesn't also register as that other
+  // action -- see RoutesPage.tsx's handleMapClick.
+  onOpenChange?: (open: boolean) => void
 }
 
-export function PlaceSearchInput({ label, placeholder, biasLat, biasLon, onSelect }: PlaceSearchInputProps) {
+export function PlaceSearchInput({ label, placeholder, biasLat, biasLon, onSelect, onOpenChange }: PlaceSearchInputProps) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<BaatoSearchResult[]>([])
-  const [open, setOpen] = useState(false)
+  const [open, setOpenState] = useState(false)
   const [loading, setLoading] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+
+  const setOpen = (next: boolean) => {
+    setOpenState(next)
+    onOpenChange?.(next)
+  }
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)

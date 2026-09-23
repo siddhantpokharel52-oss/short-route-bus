@@ -1,8 +1,8 @@
 {
   "nav": {
-    "dashboard": "Dashboard",
+    "dashboard": "Live Tracking",
     "todaysTrips": "Today's Trips",
-    "scheduler": "Scheduler",
+    "scheduler": "Dispatch",
     "routes": "Routes",
     "busStops": "Bus Stops",
     "fares": "Fares",
