@@ -2,10 +2,10 @@
 
 **Purpose:** current, single source of truth for anyone picking this project
 up — what's built, what's deployed, how to operate it, and what's still
-open, across four active workstreams (the Yatroo integration, the
-NamastePay payment system, the CityBus Team Implementation Guide gaps, and
-the Route & Group Rotation QA fix series) plus current production
-deployment status.
+open, across five active workstreams (the Yatroo integration, the
+NamastePay payment system, the CityBus Team Implementation Guide gaps, the
+Route & Group Rotation QA fix series, and the Pokhara tenant QA fix
+series) plus current production deployment status.
 
 **Last updated:** 2026-09-23
 
@@ -19,7 +19,8 @@ deployment status.
 | **NamastePay payment system** (§3) | 6 of 10 spec items (CB1–CB4, CB6, CB9) done and committed. **CB7 (conductor cash-shift ledger) was built, then fully removed by explicit request** (§3.1.1) — no shift tracking exists anywhere in the app today. 3 items (CB5, CB8's remainder, CB10) are blocked on NamastePay/product decisions, not code work; CB8's own remaining half no longer has anything to fall back on now that CB7 is gone. |
 | **Team Implementation Guide gaps** (§4) | All 3 original code-fixable gaps closed (per-passenger destinations, Bus Owner Dashboard, ticket history API), plus a follow-up pass that found and closed a real access-control gap — the Owner Dashboard's own endpoints and nav had no real role scoping. Also added: ISSUED/PAID timestamp scaffolding for §3.6, a `child_fare` bulk-tooling fix for §3.3, (§4.5) a full real-device testing pass across owner/conductor/admin that found and fixed six more UX/access gaps — one of which, a hard requirement that a conductor open a shift before issuing tickets, was **itself removed again days later** along with the rest of shift tracking (§3.1.1) — and (§4.6) a real regression that same lockdown introduced — self-service/group ticket purchase would have 403'd in production — caught live and fixed before shipping. 2 items (§3.6's actual state machine, §3.3's real concession rates) still need a team decision or external numbers, not code. |
 | **Route & Group Rotation QA report** (§5) | All 94 issues triaged; every issue that was a real, scopeable bug is fixed and verified live (Critical 5/5, High 21/24, Medium/Low 29/65). The rest (39 issues) are explicitly "Clarify"-status or large standalone features needing a product decision first — not oversights. |
-| **Production deployment** (§6) | Everything through commit `ef413128` is confirmed live in production as of 2026-09-21. Everything since — §4.5/§4.6's fixes (`c3374338`) and §3.1.1's shift-tracking removal (`57f0efbe`, one new migration) — is committed and pushed but **not yet confirmed deployed**; deploy commands are ready, see §6. |
+| **Pokhara tenant QA report** (§6) | All 11 issues fixed and verified live against a real second tenant. Headline finding: Route/Stop weren't filtered by tenant assignment at all — a cross-tenant data leak that had already **corrupted** a tenant's own roster data (real `Duty` rows written against another tenant's routes), not just a display bug. Also closed: two stuck-submit-button/silent-400 form bugs, a genuinely missing "create a login for this conductor/driver" flow (nothing in the product ever built it), a dead-looking-but-actually-guarded button, mislabeled nav links, unseeded tenant branding, and a stray-waypoint map bug. |
+| **Production deployment** (§7) | Everything through commit `ef413128` is confirmed live in production as of 2026-09-21. Everything since — §4.5/§4.6's fixes (`c3374338`), §3.1.1's shift-tracking removal (`57f0efbe`, one new migration), and all of §6's Pokhara fixes (`1997e392`, `6e230f3b`, `57994545`) — is committed and pushed but **not yet confirmed deployed**; deploy commands are ready, see §7. |
 
 ---
 
@@ -41,7 +42,7 @@ Two separate pieces of work, both done:
 
 **Endpoint:** `POST /partner/federated-login` (also reachable at
 `/public-api/v1/partner/federated-login` — both resolve to the same place;
-see the nginx note in §6).
+see the nginx note in §7).
 
 **Flow:** Yatroo's backend, having already authenticated its own rider,
 signs a request (`external_user_id` + optional `phone`/`email`/`name`) with
@@ -154,7 +155,7 @@ point against the actual code:
 | Money settling into each owner's **own** Namaste Pay account | ❌ Not built | `NamastePayConfig` is one row per **tenant** (company-wide), not per-owner — confirmed via `NamastePayConfig.objects.first()`, an unfiltered singleton lookup, used everywhere the config is read. `fleet.Owner` has no field referencing any Namaste Pay account/wallet/agent ID at all. |
 | Static QR on the bus for a passenger with no app booking | ❌ Not built | Zero matches anywhere in the codebase for any static/owner-linked QR — only the existing per-ticket dynamic QR exists. Same root blocker as CB5. |
 | Passenger paying directly from their Namaste Pay wallet (Subscriber API) | ❌ Not built | The existing NamastePay flow (CB9) is a hosted-checkout redirect, a different mechanism; no Subscriber API integration exists, and we don't have their Subscriber API docs. |
-| Per-company/per-vehicle route availability with times | ⚠️ Partial | `GET /routes/{id}/` returns only an aggregate `total_buses` count across every operator on that route — the per-schema counts are computed internally then discarded, never broken out per company. No live arrival times (GPS tracking is out of scope, §9). |
+| Per-company/per-vehicle route availability with times | ⚠️ Partial | `GET /routes/{id}/` returns only an aggregate `total_buses` count across every operator on that route — the per-schema counts are computed internally then discarded, never broken out per company. No live arrival times (GPS tracking is out of scope, §10). |
 | Namaste Pay's own future interoperability with other PSPs | N/A | Entirely Namaste Pay's own roadmap; not something this codebase would ever implement either way. |
 
 **Bottom line:** this document assumes a fundamentally different money-routing
@@ -180,7 +181,7 @@ search API is slow. Checked directly against the code:
   `POST /tickets/namastepay/checkout/` also exist. All are real, working,
   proxied through to Django's ticket-creation logic. Most likely
   explanation: Yatroo is working off stale/incomplete documentation — see
-  §7, the Reference doc still hasn't been sent to them.
+  §8, the Reference doc still hasn't been sent to them.
 - **"Fares API slow" — no cause found in code, can't rule it out either.**
   Traced the full call chain (`get_fares` → `tenant_db.fetch_fares` →
   `_fetch_fares_exact`): no cross-schema fan-out, no N+1 queries, no
@@ -424,7 +425,7 @@ ticket issuance (via the actual POS UI) always produces a genuine QR;
 backfilled the seed data to match rather than leave it looking broken.
 
 `npx tsc --noEmit` and `python manage.py check` clean throughout. Committed
-(`c3374338`), pushed. Not yet confirmed deployed to production — see §6.
+(`c3374338`), pushed. Not yet confirmed deployed to production — see §7.
 
 ### 4.6 Self-service ticket regression + payment_reference echo fix (2026-09-23)
 
@@ -549,7 +550,124 @@ RosterGridPage, RosterPeriodsPage, Drivers, Conductors).
 
 ---
 
-## 6. Production deployment — operational notes
+## 6. Pokhara tenant — QA fix series (11 issues, all fixed)
+
+Source: `/home/aadarsha/Documents/Sha-requirements/KVBMS-Pokhara-QA-Report.docx`
+— an end-to-end acceptance test of the `pokharayatayat.citybus.com.np`
+tenant performed as a first-time tenant admin, against **live
+production**. 2 Critical, 5 High, 3 Medium, plus a validation-consistency
+review. All 11 real issues fixed and verified live; commits `1997e392`
+(Critical), `6e230f3b` (High), `57994545` (Medium).
+
+### 6.1 Critical — cross-tenant data leak, and it had already corrupted data
+
+**Root cause, not a schema-isolation bug.** `Route`/`Stop` correctly live
+in `SHARED_APPS` — routes are a genuinely platform-wide concept, with
+multiple transport companies assigned to the same physical route via
+`RouteAssignment` (a real `route`↔`tenant` join table). Since
+`TenantSchemaMiddleware` only switches the Postgres schema for
+`TENANT_APPS` tables, a plain `Route.objects.filter(...)` was never scoped
+by tenant — isolation has to come from an explicit `RouteAssignment`
+filter, which was simply missing at 4 query sites, cascading into 6
+screens (Routes list, Scheduler/Ticketing's route dropdowns, Vehicle
+Groups' balance/eligibility, and Roster Generate). The correct pattern
+already existed one class away in the same file
+(`FareMatrixViewSet.get_queryset()`) — reused verbatim rather than
+inventing a new mechanism.
+
+**The severe part**: Roster Periods → Generate had already **written
+real, persisted `Duty` rows** into Pokhara's own roster referencing
+mayurbus's routes — a passive information leak that had become active
+data corruption the first time a real tenant touched scheduling. Fixed at
+the write site (`RosterPeriodViewSet._generate_duties()`) along with the
+3 read sites. **Any tenant that ran Roster Generate before this fix may
+already have phantom `Duty` rows in the live production database** — a
+read-only audit query (find `Duty` rows whose `route_id` isn't in that
+tenant's own `RouteAssignment` set) is ready to hand over, but cleaning up
+already-corrupted production rows needs explicit go-ahead before it's run
+— not something to do as part of routine fix work.
+
+Verified against a real second tenant (`pokhara`, genuinely
+auto-provisioned through django-tenants, not a shortcut): a pokhara-owned
+route and roster no longer reference mayurbus's data at all, and
+generating a roster for pokhara now produces duties against its own route
+only — the exact repro from the report.
+
+### 6.2 High — two form bugs, a dead-looking button, and a missing feature
+
+- **Add Vehicle / Add Driver — stuck submit button after one failed
+  attempt.** `setError()` was being called for any field a 400 landed on,
+  including several with no client-side validation rule — a manually-set
+  error on a rule-less field is never re-validated/cleared by react-hook-
+  form, permanently blocking resubmission on the same open modal. Live-
+  reproduced the report's "silent 400 on fully valid data" first: a
+  complete, valid vehicle submits cleanly (201) through the real API, so
+  that symptom was this same stuck-button bug amplifying whatever the
+  first attempt's real error was, not a separate hidden validation
+  mismatch. Fixed by only calling `setError()` for fields that actually
+  have a client rule.
+- **Add Driver — `experience_years` silent 400.** A
+  `PositiveSmallIntegerField` with no `null=True`; the create form sent
+  `""` when left blank (no asterisk, nothing stopped a real admin from
+  skipping it). Now sends `0`, matching the model's own default — the
+  edit path already did this correctly, only create had the gap.
+- **Payment Integration "Test Connection" — looked dead, was actually a
+  correctly-guarded disabled button.** The `outline` Button variant had no
+  `disabled:` CSS at all, so a real, working guard looked exactly like a
+  dead, fully-interactive control. Fixed the variant's styling (benefits
+  every other use of `outline` too) and added a persistent hint line, not
+  just a hover-only tooltip.
+- **Vehicle Group Conductor/Driver pickers — real, active records never
+  selectable.** Not a naming split ("Collector" and "Conductor" are the
+  same model) and not an API mismatch — the picker correctly filters to
+  records with a linked `user_id`, and `GroupConductorAssignment`/
+  `GroupDriverAssignment` genuinely require one (it's what lets that
+  person's own future login resolve "my group"). Nothing in the product
+  ever created that login — confirmed via `UserSerializer`'s own
+  `read_only_fields` comment, which names "driver/conductor login
+  creation" as an anticipated flow that was apparently never built. Built
+  it: a `create-login` action on `ConductorViewSet`/`DriverViewSet`
+  (reusing the exact `User`-creation pattern already proven in tenant
+  onboarding), plus a "Create Login" UI action shown only when a record
+  has no linked login yet. Verified end to end: create login → picker
+  shows the record → a real `GroupDriverAssignment` was created.
+
+### 6.3 Medium — labels, seeding, and a stray click
+
+- **Sidebar "Dashboard"/"Scheduler" linked to `/tenant/live-tracking`/
+  `/tenant/dispatch`** — real, working pages, just mislabeled, while the
+  URLs the labels implied (`/tenant/dashboard`, `/tenant/scheduler`)
+  render blank. Relabeled to "Live Tracking"/"Dispatch" rather than
+  building two new pages under a "bug fix" banner.
+- **New tenants showed placeholder "Default Company" branding** — the
+  real name/contact info was already collected at Super Admin onboarding
+  time but never propagated; `BusCompanyView.get_object()` only ever
+  lazily created that row with hardcoded defaults. Tenant onboarding now
+  seeds it for real, alongside the existing RBAC/Chart-of-Accounts
+  seeding.
+- **Add Route — a stray waypoint could be added silently** when clicking
+  the map just to dismiss the still-open Route Start/End search dropdown.
+  `PlaceSearchInput` now reports its open state to the parent; a map
+  click while a dropdown is open just closes it, no waypoint added.
+
+### 6.4 Dev-environment note
+
+Same tenant-portal testing gotchas as §5.3 apply here too (mint a JWT
+from the real user's actual `tenant_schema`, drive the browser through
+nginx `:8090`). One addition: `Tenant.delete()` does **not** drop the
+Postgres schema (`auto_drop_schema` is deliberately off) — a deleted test
+tenant leaves an orphaned schema behind unless it's dropped manually.
+
+**Code:** `backend/apps/platform/views.py`, `backend/apps/fleet/views.py`,
+`backend/apps/roster/views.py`, `backend/apps/staff/views.py`,
+`backend/apps/tenants/serializers.py`,
+`frontend/src/apps/tenant-portal/pages/` (Fleet, Drivers, Conductors,
+PaymentIntegrationPage, Routes), `frontend/src/components/shared/`
+(Button, PlaceSearchInput), `frontend/src/i18n/`.
+
+---
+
+## 7. Production deployment — operational notes
 
 **Server access:** SSH `citybus@172.19.0.246`. Production uses
 `docker-compose.prod.yml` **only** — never combine it with the base
@@ -559,17 +677,19 @@ compose files themselves are one level down at `~/short-route-bus/docker/`
 (run `cd ~/short-route-bus/docker` first — same gotcha as the `.env` file
 below).
 
-**Ready to deploy, not yet confirmed live — through commit `57f0efbe`.**
+**Ready to deploy, not yet confirmed live — through commit `57994545`.**
 Covers §4.5's real-device testing-pass fixes, §4.6's ticket-issuance
-regression fix (`c3374338`, no new migrations), and §3.1.1's full removal
+regression fix (`c3374338`, no new migrations), §3.1.1's full removal
 of conductor shift tracking (`57f0efbe`, **one new migration** —
 `staff/migrations/0008_delete_conductorshift.py`, drops the
-`staff_conductorshift` table). No manual migrate step needed — the
+`staff_conductorshift` table), and all of §6's Pokhara QA fixes
+(`1997e392`, `6e230f3b`, `57994545` — no new migrations, all three are
+query/view/frontend changes only). No manual migrate step needed — the
 `django` service's own startup command already runs `manage.py migrate`
-every time it starts (`docker-compose.prod.yml`'s `command:`), so this
-migration applies automatically on the same `up -d django` step used for
-every prior deploy; it just won't be a no-op like the previous commit's
-migrate step was:
+every time it starts (`docker-compose.prod.yml`'s `command:`), so the one
+pending migration applies automatically on the same `up -d django` step
+used for every prior deploy; it just won't be a no-op like the previous
+commit's migrate step was:
 
 ```bash
 ssh citybus@172.19.0.246
@@ -664,7 +784,7 @@ not any API-level test. Keep doing both.
 
 ---
 
-## 7. Documents already sent to / prepared for Yatroo
+## 8. Documents already sent to / prepared for Yatroo
 
 All of the following are **intentionally untracked in git** (never
 committed, never deployed to the server) — they're deliverables to hand
@@ -710,7 +830,7 @@ the user, but hasn't been confirmed sent yet.
 
 ---
 
-## 8. Where things live (quick reference)
+## 9. Where things live (quick reference)
 
 | What | Where |
 |---|---|
@@ -735,6 +855,10 @@ the user, but hasn't been confirmed sent yet.
 | Local-dev demo accounts (persistent, for manual testing) | `demo.owner@kvbms.local`, `demo.admin@kvbms.local`, `demo.conductor@kvbms.local` — all `DemoX@2026`, tenant `mayurbus` |
 | Route & Group Rotation — fleet/roster/rotation | `backend/apps/fleet/`, `backend/apps/roster/`, `backend/apps/platform/` |
 | Route & Group Rotation — tenant-portal UI | `frontend/src/apps/tenant-portal/pages/` |
+| Route/Stop tenant-scoping (`RouteAssignment` filter) | `backend/apps/platform/views.py` (`RouteViewSet.get_queryset()`), `backend/apps/fleet/views.py` (`VehicleGroupViewSet.eligibility()`/`.balance()`), `backend/apps/roster/views.py` (`RosterPeriodViewSet._generate_duties()`) |
+| Conductor/Driver "create login" flow | `backend/apps/staff/views.py` (`ConductorViewSet.create_login()`/`DriverViewSet.create_login()`); UI in `frontend/.../pages/ConductorsPage.tsx`/`DriversPage.tsx` (row action) |
+| New-tenant `BusCompany` seeding | `backend/apps/tenants/serializers.py` (`TenantSerializer.create()`) |
+| Local-dev test tenant (persistent, real second schema) | `pokhara` / `qa.pokhara.admin@kvbms.local` — created for the Pokhara QA cross-tenant fixes, kept around for future tenant-isolation testing |
 | Tests | `tests/backend/test_partner_api/`, `tests/backend/test_public_api/` |
 | Full Master API reference (internal, git-tracked) | `docs/API.md` |
 | This project's own status history (now partly stale) | `docs/YATROO_INTEGRATION_STATUS.md` |
@@ -742,10 +866,10 @@ the user, but hasn't been confirmed sent yet.
 
 ---
 
-## 9. What's genuinely still open, across all four workstreams
+## 10. What's genuinely still open, across all five workstreams
 
 **Yatroo:**
-- Yatroo hasn't been sent the Reference/Recent-Changes docs yet (§7), and
+- Yatroo hasn't been sent the Reference/Recent-Changes docs yet (§8), and
   those docs now trail §4.1's fixes by a few days.
 - Reply to Yatroo's 2026-09-01 complaint (§2.6) still needs to actually be
   sent — a drafted response is ready, clarifying the ticket API does exist
@@ -790,9 +914,17 @@ the user, but hasn't been confirmed sent yet.
   from this same pass was itself removed again in §3.1.1, so it's no
   longer part of what's pending deploy) and §4.6's regression/
   payment_reference fixes are committed and pushed (`c3374338`) but
-  **not yet confirmed deployed** — deploy commands are in §6, same
+  **not yet confirmed deployed** — deploy commands are in §7, same
   sequence used for `ef413128`. §3.1.1's shift-removal commit
   (`57f0efbe`) is also pending the same deploy.
+
+**Pokhara tenant QA report (§6):** everything in §6 (all 11 issues) is
+committed and pushed (`1997e392`, `6e230f3b`, `57994545`) but **not yet
+confirmed deployed** — same pending-deploy batch as everything else in
+this section, see §7. Also still open, not code: a read-only audit for
+already-corrupted `Duty` rows in the live production database (§6.1)
+needs to actually be run, and any rows it finds need explicit
+confirmation before deleting anything.
 
 **Also still open, unrelated to any specific doc:** whether one owner's
 buses can span more than one tenant (§3.7's own open item — a business
