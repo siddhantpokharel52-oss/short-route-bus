@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, User, Briefcase, Bus, Heart, Wallet, Trash2, Eye, Pencil, AlertTriangle, KeyRound } from 'lucide-react'
+import { Plus, Search, User, Briefcase, Bus, Heart, Wallet, Trash2, Eye, Pencil, AlertTriangle, KeyRound, Link2, Unlink } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
@@ -41,6 +41,7 @@ interface Collector {
   basic_salary: string
   status: string
   user_id: string | null
+  partner_linked: { partner: string; external_partner_id: string } | null
 }
 
 interface CollectorForm {
@@ -136,6 +137,8 @@ export default function ConductorsPage() {
   const [loginTarget, setLoginTarget] = useState<Collector | null>(null)
   const [loginEmail, setLoginEmail] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
+  const [linkTarget, setLinkTarget] = useState<Collector | null>(null)
+  const [yatrooExternalId, setYatrooExternalId] = useState('')
 
   // ── Edit form state ───────────────────────────────────────────────────────────
   const [editStatus, setEditStatus] = useState('')
@@ -304,6 +307,36 @@ export default function ConductorsPage() {
     },
   })
 
+  // Yatroo conductor mode: links this conductor's existing login to a
+  // specific Yatroo account, so their federated-login call returns a
+  // CONDUCTOR token for this exact person instead of a fresh passenger.
+  const linkPartnerMutation = useMutation({
+    mutationFn: ({ id, externalPartnerId }: { id: string; externalPartnerId: string }) =>
+      apiClient.post(`/operator/conductors/${id}/link-partner-account/`, { external_partner_id: externalPartnerId }),
+    onSuccess: () => {
+      toast.success('Linked to Yatroo.')
+      setLinkTarget(null)
+      setYatrooExternalId('')
+      qc.invalidateQueries({ queryKey: ['conductors'] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || 'Failed to link.')
+    },
+  })
+
+  const unlinkPartnerMutation = useMutation({
+    mutationFn: (id: string) => apiClient.post(`/operator/conductors/${id}/unlink-partner-account/`),
+    onSuccess: () => {
+      toast.success('Unlinked from Yatroo.')
+      qc.invalidateQueries({ queryKey: ['conductors'] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || 'Failed to unlink.')
+    },
+  })
+
   const handleUpdate = () => {
     updateMutation.mutate({
       status: editStatus,
@@ -407,6 +440,24 @@ export default function ConductorsPage() {
               title="Create Login"
             >
               <KeyRound className="h-4 w-4" />
+            </button>
+          )}
+          {c.user_id && !c.partner_linked && (
+            <button
+              onClick={() => setLinkTarget(c)}
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-sky-50 hover:text-sky-600 transition-colors"
+              title="Link to Yatroo"
+            >
+              <Link2 className="h-4 w-4" />
+            </button>
+          )}
+          {c.partner_linked && (
+            <button
+              onClick={() => unlinkPartnerMutation.mutate(c.id)}
+              className="rounded-lg p-1.5 text-sky-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+              title={`Linked to Yatroo (${c.partner_linked.external_partner_id}) — click to unlink`}
+            >
+              <Unlink className="h-4 w-4" />
             </button>
           )}
           <button
@@ -716,6 +767,42 @@ export default function ConductorsPage() {
                 onClick={() => createLoginMutation.mutate({ id: loginTarget.id, email: loginEmail, password: loginPassword })}
               >
                 Create Login
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Link to Yatroo Modal ──────────────────────────────────────────── */}
+      <Modal
+        open={!!linkTarget}
+        onClose={() => { setLinkTarget(null); setYatrooExternalId('') }}
+        title={`Link to Yatroo — ${linkTarget?.full_name_en ?? ''}`}
+        size="sm"
+      >
+        {linkTarget && (
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-gray-600">
+              When Yatroo's app signs {linkTarget.full_name_en} in with this account id, they'll get a conductor
+              session for this exact login — never a new one created automatically.
+            </p>
+            <Input
+              label="Yatroo external_user_id" required
+              placeholder="e.g. yatroo-driver-4471"
+              value={yatrooExternalId}
+              onChange={(e) => setYatrooExternalId(e.target.value)}
+            />
+            <div className="flex justify-end gap-3 border-t pt-4">
+              <Button variant="secondary" onClick={() => { setLinkTarget(null); setYatrooExternalId('') }}>
+                {t('common:common.cancel')}
+              </Button>
+              <Button
+                loading={linkPartnerMutation.isPending}
+                disabled={!yatrooExternalId.trim()}
+                leftIcon={<Link2 className="h-4 w-4" />}
+                onClick={() => linkPartnerMutation.mutate({ id: linkTarget.id, externalPartnerId: yatrooExternalId.trim() })}
+              >
+                Link
               </Button>
             </div>
           </div>

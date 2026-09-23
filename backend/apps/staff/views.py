@@ -217,6 +217,68 @@ class ConductorViewSet(ModelViewSet):
             message="Login created.", status_code=status.HTTP_201_CREATED,
         )
 
+    @action(detail=True, methods=["post"], url_path="link-partner-account")
+    def link_partner_account(self, request, pk=None):
+        """
+        POST /staff/conductors/{id}/link-partner-account/
+        Lets this bus company vouch that a specific Yatroo account maps to
+        one of their own already-logged-in conductors -- this is the only
+        legitimate way a CONDUCTOR-role federated-login token ever gets
+        minted for someone (see apps.users.views.PartnerProvisionView's own
+        docstring: it only ever looks this mapping up, never creates one).
+        Hardcoded to Yatroo, matching this project's "build concrete for
+        one partner" convention -- generalize only once a second partner is
+        real.
+        """
+        conductor = self.get_object()
+        if not conductor.user_id:
+            return api_response(
+                success=False, message="Create a login for this conductor first.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        external_partner_id = (request.data.get("external_partner_id") or "").strip()
+        if not external_partner_id:
+            return api_response(
+                success=False, message="external_partner_id is required.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from backend.apps.users.models import User
+        partner = "yatroo"
+        if User.objects.filter(partner=partner, external_partner_id=external_partner_id).exclude(id=conductor.user_id).exists():
+            return api_response(
+                success=False, message="This Yatroo account is already linked to a different login.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = User.objects.get(id=conductor.user_id)
+        user.partner = partner
+        user.external_partner_id = external_partner_id
+        user.save(update_fields=["partner", "external_partner_id", "updated_at"])
+
+        return api_response(
+            data={"partner": partner, "external_partner_id": external_partner_id},
+            message="Linked to Yatroo.",
+        )
+
+    @action(detail=True, methods=["post"], url_path="unlink-partner-account")
+    def unlink_partner_account(self, request, pk=None):
+        """POST /staff/conductors/{id}/unlink-partner-account/ -- undoes
+        link_partner_account(). The conductor's own login is untouched;
+        only the Yatroo mapping is removed."""
+        conductor = self.get_object()
+        if not conductor.user_id:
+            return api_response(
+                success=False, message="This conductor has no login.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        from backend.apps.users.models import User
+        user = User.objects.get(id=conductor.user_id)
+        user.partner = ""
+        user.external_partner_id = None
+        user.save(update_fields=["partner", "external_partner_id", "updated_at"])
+        return api_response(message="Unlinked from Yatroo.")
+
     @action(detail=True, methods=["post"], url_path="attendance/check-in")
     def check_in(self, request, pk=None):
         conductor = self.get_object()

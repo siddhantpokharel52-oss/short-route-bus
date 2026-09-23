@@ -84,10 +84,17 @@ class TicketCollectionSerializer(serializers.ModelSerializer):
 
 
 class ConductorSerializer(serializers.ModelSerializer):
+    # Whether this conductor's login (if any) is linked to an external
+    # partner account (e.g. Yatroo conductor mode) -- null if no login yet,
+    # or if the login exists but isn't linked. One extra query per row,
+    # same tradeoff TripSerializer's own SerializerMethodFields already make
+    # in this codebase.
+    partner_linked = serializers.SerializerMethodField()
+
     class Meta:
         model = Conductor
         fields = [
-            "id", "employee_id", "user_id",
+            "id", "employee_id", "user_id", "partner_linked",
             "full_name_en", "full_name_ne", "gender", "dob",
             "citizenship_no", "phone", "address",
             "emergency_contact_name", "emergency_contact_number",
@@ -98,6 +105,15 @@ class ConductorSerializer(serializers.ModelSerializer):
             "status", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "employee_id", "created_at", "updated_at"]
+
+    def get_partner_linked(self, obj):
+        if not obj.user_id:
+            return None
+        from backend.apps.users.models import User
+        user = User.objects.filter(id=obj.user_id).only("partner", "external_partner_id").first()
+        if not user or not user.partner:
+            return None
+        return {"partner": user.partner, "external_partner_id": user.external_partner_id}
 
     def create(self, validated_data):
         count = Conductor.objects.count() + 1
