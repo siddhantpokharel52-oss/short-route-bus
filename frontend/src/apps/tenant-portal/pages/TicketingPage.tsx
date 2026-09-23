@@ -542,13 +542,6 @@ export default function TicketingPage() {
       ),
     },
     {
-      key: 'passenger_name',
-      header: t('ticketing.passenger'),
-      render: (t) => t.passenger_name
-        ? <span className="text-sm text-gray-800">{t.passenger_name}</span>
-        : <span className="text-xs italic text-gray-400">—</span>,
-    },
-    {
       key: 'payment_method',
       header: t('ticketing.payment'),
       render: (t) => <Badge variant="neutral">{t.payment_method}</Badge>,
