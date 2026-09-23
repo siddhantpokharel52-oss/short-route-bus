@@ -51,15 +51,14 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
     ? [{ to: '/tenant/my-earnings', icon: Wallet, label: t('nav.myEarnings', { defaultValue: 'My Earnings' }) }]
     : user?.role === 'CONDUCTOR'
     ? [
-        // A conductor's whole job: see where buses are, sell/verify tickets,
-        // manage their own cash shift. Same reasoning as the OWNER cutout
-        // above -- the general admin/ops array below shows everything to
-        // everyone, which is clutter (not a security issue on its own,
-        // since every one of those pages is still backend-gated to roles
-        // that exclude CONDUCTOR) but not the right nav for this role.
+        // A conductor's whole job: see where buses are, sell/verify tickets.
+        // Same reasoning as the OWNER cutout above -- the general admin/ops
+        // array below shows everything to everyone, which is clutter (not a
+        // security issue on its own, since every one of those pages is still
+        // backend-gated to roles that exclude CONDUCTOR) but not the right
+        // nav for this role.
         { to: '/tenant/live-tracking', icon: LayoutDashboard, label: t('nav.dashboard') },
         { to: '/tenant/ticketing', icon: Ticket, label: t('nav.ticketing') },
-        { to: '/tenant/my-shift', icon: Wallet, label: t('nav.myShift', { defaultValue: 'My Shift' }) },
       ]
     : [
         { to: '/tenant/live-tracking', icon: LayoutDashboard, label: t('nav.dashboard') },

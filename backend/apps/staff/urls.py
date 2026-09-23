@@ -6,7 +6,6 @@ router = DefaultRouter()
 router.register("drivers", views.DriverViewSet, basename="driver")
 router.register("conductors", views.ConductorViewSet, basename="conductor")
 router.register("licenses", views.CompanyLicenseViewSet, basename="company-license")
-router.register("shifts", views.ConductorShiftViewSet, basename="conductor-shift")
 
 urlpatterns = [
     path("", include(router.urls)),

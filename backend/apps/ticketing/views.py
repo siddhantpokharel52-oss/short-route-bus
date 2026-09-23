@@ -118,20 +118,6 @@ class TicketViewSet(ModelViewSet):
         }
         # If the request comes from a conductor, record conductor_id automatically
         if hasattr(request.user, "role") and request.user.role == "CONDUCTOR":
-            # A conductor must have an open cash shift before issuing a ticket --
-            # otherwise that ticket's cash would never fall inside any shift's
-            # reconciliation window (CB7's whole point). Only enforced for an
-            # actual CONDUCTOR-role caller; a generic POS/station-staff issuance
-            # has no shift concept at all and is untouched.
-            from backend.apps.staff.models import ConductorShift
-            if not ConductorShift.objects.filter(
-                conductor_user_id=request.user.id, status=ConductorShift.Status.OPEN
-            ).exists():
-                return api_response(
-                    success=False,
-                    message="Open a shift before issuing tickets.",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                )
             data.setdefault("conductor_id", str(request.user.id))
             data["issued_by"] = "CONDUCTOR"
             if not data.get("vehicle_id"):

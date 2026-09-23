@@ -175,7 +175,6 @@ class OwnerDashboardSummaryView(views.APIView):
         from backend.apps.fleet.models import Vehicle, Owner
         from backend.apps.ticketing.models import Ticket
         from backend.apps.dispatch.models import DailyAllocation
-        from backend.apps.staff.models import ConductorShift
         from backend.apps.platform.models import Route
 
         try:
@@ -256,12 +255,6 @@ class OwnerDashboardSummaryView(views.APIView):
             for rid, rev in route_revenue.items()
         ]
 
-        # Cash collected (from CB7's shift cash ledger) vs online collected (from
-        # Ticket rows directly) -- see class docstring on why these, not "settled".
-        cash_collected = ConductorShift.objects.filter(
-            vehicle_id__in=vehicle_ids
-        ).aggregate(t=Sum("system_cash_total"))["t"] or 0
-
         return api_response(data={
             "owner_name": owner.name,
             "vehicle_count": len(vehicle_ids),
@@ -271,7 +264,7 @@ class OwnerDashboardSummaryView(views.APIView):
             "today": totals(base_qs.filter(issued_at__date=today)),
             "this_week": totals(base_qs.filter(issued_at__date__gte=week_start)),
             "this_month": totals(base_qs.filter(issued_at__date__gte=month_start)),
-            "cash_collected": float(cash_collected),
+            "cash_collected": cash_total,
             "online_collected": online_total,
         })
 

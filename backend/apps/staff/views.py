@@ -2,21 +2,19 @@ from rest_framework import generics, status, views
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
-from django.db.models import Sum
 from django.utils import timezone
 from datetime import timedelta
 from .models import (
     Driver, DriverTraining, DriverMedical, DriverAttendance,
-    Conductor, ConductorAttendance, TicketCollection, ConductorShift, BusCompany, CompanyLicense,
+    Conductor, ConductorAttendance, TicketCollection, BusCompany, CompanyLicense,
 )
 from .serializers import (
     DriverSerializer, DriverTrainingSerializer, DriverMedicalSerializer,
     DriverAttendanceSerializer, DriverPerformanceSerializer,
     ConductorSerializer, ConductorAttendanceSerializer, TicketCollectionSerializer,
-    ConductorShiftSerializer, ConductorShiftOpenSerializer, ConductorShiftCloseSerializer,
     BusCompanySerializer, CompanyLicenseSerializer,
 )
-from backend.apps.users.permissions import IsHRRole, IsOperationsRole, IsFinanceRole, IsConductor, CanViewStaff, IsTenantStaff
+from backend.apps.users.permissions import IsHRRole, IsOperationsRole, IsConductor, CanViewStaff
 
 
 def api_response(data=None, message="Success", success=True, errors=None, status_code=200):
@@ -165,113 +163,6 @@ class ConductorViewSet(ModelViewSet):
             return self.get_paginated_response(serializer.data)
         serializer = TicketCollectionSerializer(collections, many=True)
         return api_response(data=serializer.data)
-
-
-class ConductorShiftViewSet(ModelViewSet):
-    """
-    A conductor's own open/close cash session -- CB7.
-    GET  /staff/shifts/            -> own shifts (conductor) or all (ops/finance)
-    POST /staff/shifts/            -> open a shift (conductor only)
-    POST /staff/shifts/{id}/close/ -> close a shift, computing the cash variance
-    GET  /staff/shifts/current/    -> the caller's own currently-open shift, if any
-    """
-    serializer_class = ConductorShiftSerializer
-    permission_classes = [IsTenantStaff]
-    http_method_names = ["get", "post", "head", "options"]
-
-    def get_queryset(self):
-        qs = ConductorShift.objects.all()
-        if hasattr(self.request.user, "role") and self.request.user.role == "CONDUCTOR":
-            return qs.filter(conductor_user_id=self.request.user.id)
-        return qs
-
-    def create(self, request, *args, **kwargs):
-        if not hasattr(request.user, "role") or request.user.role != "CONDUCTOR":
-            return api_response(
-                success=False,
-                message="Only a conductor can open their own shift.",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
-        if ConductorShift.objects.filter(conductor_user_id=request.user.id, status=ConductorShift.Status.OPEN).exists():
-            return api_response(
-                success=False,
-                message="You already have an open shift -- close it before opening a new one.",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-
-        open_serializer = ConductorShiftOpenSerializer(data=request.data)
-        open_serializer.is_valid(raise_exception=True)
-
-        from backend.apps.ticketing.views import resolve_conductor_vehicle_id
-        vehicle_id = resolve_conductor_vehicle_id(request.user.id)
-
-        shift = ConductorShift.objects.create(
-            conductor_user_id=request.user.id,
-            vehicle_id=vehicle_id,
-            date=timezone.localdate(),
-            opening_float=open_serializer.validated_data["opening_float"],
-        )
-        return api_response(
-            data=ConductorShiftSerializer(shift).data,
-            message="Shift opened.",
-            status_code=status.HTTP_201_CREATED,
-        )
-
-    @action(detail=True, methods=["post"], url_path="close")
-    def close(self, request, pk=None):
-        shift = self.get_object()
-        is_own_conductor = (
-            hasattr(request.user, "role") and request.user.role == "CONDUCTOR"
-            and str(request.user.id) == str(shift.conductor_user_id)
-        )
-        is_ops_or_finance = (
-            IsOperationsRole().has_permission(request, self) or IsFinanceRole().has_permission(request, self)
-        )
-        if not (is_own_conductor or is_ops_or_finance):
-            return api_response(
-                success=False,
-                message="You can only close your own shift.",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
-        if shift.status != ConductorShift.Status.OPEN:
-            return api_response(
-                success=False,
-                message="Only an open shift can be closed.",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-
-        close_serializer = ConductorShiftCloseSerializer(data=request.data)
-        close_serializer.is_valid(raise_exception=True)
-
-        from backend.apps.ticketing.models import Ticket
-        now = timezone.now()
-        system_cash_total = Ticket.objects.filter(
-            conductor_id=shift.conductor_user_id,
-            payment_method=Ticket.PaymentMethod.CASH,
-            issued_at__gte=shift.opened_at,
-            issued_at__lte=now,
-        ).aggregate(total=Sum("fare_paid"))["total"] or 0
-
-        declared_cash = close_serializer.validated_data["declared_cash"]
-        shift.declared_cash = declared_cash
-        shift.system_cash_total = system_cash_total
-        shift.variance = declared_cash - system_cash_total
-        shift.notes = close_serializer.validated_data["notes"]
-        shift.closed_at = now
-        shift.closed_by_id = request.user.id
-        shift.status = ConductorShift.Status.CLOSED
-        shift.save()
-
-        return api_response(data=ConductorShiftSerializer(shift).data, message="Shift closed.")
-
-    @action(detail=False, methods=["get"], url_path="current")
-    def current(self, request):
-        if not hasattr(request.user, "role") or request.user.role != "CONDUCTOR":
-            return api_response(data=None)
-        shift = ConductorShift.objects.filter(
-            conductor_user_id=request.user.id, status=ConductorShift.Status.OPEN
-        ).first()
-        return api_response(data=ConductorShiftSerializer(shift).data if shift else None)
 
 
 class BusCompanyView(generics.RetrieveUpdateAPIView):
