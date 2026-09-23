@@ -894,6 +894,57 @@ def _serialize_ticket(t: dict) -> dict:
     }
 
 
+def _serialize_trip(t: dict) -> dict:
+    return {
+        "id": t["id"],
+        "trip_code": t.get("trip_code"),
+        "route_id": t.get("route_id"),
+        "vehicle_id": t.get("vehicle_id"),
+        "date": t.get("date"),
+        "scheduled_departure_time": t.get("scheduled_departure_time"),
+        "scheduled_arrival_time": t.get("scheduled_arrival_time"),
+        "status": t.get("status"),
+    }
+
+
+@router.get(
+    "/trips/mine/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": [{
+            "id": "0de95bbd-9a1f-4921-8037-c41d39c6a6a8",
+            "trip_code": "TRIP-A1B2C3",
+            "route_id": "826b8836-8621-44a0-82f2-96aaee86f728",
+            "vehicle_id": "b57cd49f-03cb-49ee-b69b-0b86c1b0d702",
+            "date": "2026-09-24",
+            "scheduled_departure_time": "06:00:00",
+            "scheduled_arrival_time": "06:35:00",
+            "status": "SCHEDULED",
+        }],
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
+async def my_trips(user: dict = Depends(get_current_user)):
+    """Conductor-only. Today's trip(s) assigned to the caller. This is the missing
+    piece that made GET /trips/{trip_id}/qr/ practically unreachable for anyone but
+    our own dispatchers: every trip-listing action on apps.scheduling.TripViewSet is
+    Operations-role only (internal Django API our own tenant-portal calls), so a
+    conductor -- ours, or a future Yatroo conductor-mode session -- had no path to
+    discover their own trip_id at all. Same ownership guarantee as GET
+    /trips/{trip_id}/qr/ itself (tenant_db.fetch_trips_for_conductor_today uses the
+    identical conductor_id filter) -- can never return someone else's trip. `403` if
+    not a conductor; empty list (not an error) if nothing's assigned today."""
+    if user.get("role") != CONDUCTOR_ROLE:
+        raise HTTPException(status_code=403, detail="Only a conductor can list their own trips.")
+    schema = user.get("tenant_schema")
+    conductor_id = user.get("user_id")
+    if not schema or not conductor_id:
+        raise HTTPException(status_code=400, detail="This conductor account has no tenant assigned.")
+    trips = await tenant_db.fetch_trips_for_conductor_today(schema, conductor_id)
+    return _ok(data=[_serialize_trip(t) for t in trips])
+
+
 @router.get(
     "/trips/{trip_id}/qr/",
     responses={200: {"content": {"application/json": {"example": {

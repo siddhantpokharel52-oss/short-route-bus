@@ -1132,6 +1132,35 @@ async def fetch_trip_for_conductor(schema: str, trip_id: str, conductor_id: str)
         return _row_to_dict(row) if row else None
 
 
+async def fetch_trips_for_conductor_today(schema: str, conductor_id: str) -> list[dict]:
+    """Every trip assigned to this conductor, today only -- the Master API's own
+    counterpart to backend.apps.scheduling.views.TripViewSet.mine(), which lives on
+    the internal Django API our own tenant-portal calls and which an external
+    partner's conductor-mode app (e.g. a future Yatroo conductor session) has no
+    access to at all. Same ownership filter as fetch_trip_for_conductor above --
+    can never return another conductor's trip, and "today" so a stale trip from a
+    previous day never lingers as if still active."""
+    safe = _safe_schema(schema)
+    engine = get_engine()
+    async with engine.connect() as conn:
+        try:
+            result = await conn.execute(
+                text(
+                    f"""
+                    SELECT id, trip_code, route_id, conductor_id, vehicle_id, date,
+                           scheduled_departure_time, scheduled_arrival_time, status
+                    FROM "{safe}".scheduling_trip
+                    WHERE conductor_id = :conductor_id AND date = CURRENT_DATE AND is_deleted = false
+                    ORDER BY scheduled_departure_time
+                    """
+                ),
+                {"conductor_id": conductor_id},
+            )
+        except Exception:
+            return []
+        return [_row_to_dict(r) for r in result.fetchall()]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Self-service (no-conductor) ticket purchase — city-bus journey step 4
 # ("Ticket (optional, self-service)... paid via gateway; the conductor scans

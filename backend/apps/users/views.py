@@ -153,8 +153,20 @@ class PartnerProvisionView(views.APIView):
     Deliberately idempotent: the same (partner, external_partner_id) always
     resolves to the same User row, never a new one on a repeat call — a
     partner's backend may call this on every token-cache-miss, and their own
-    debug mapping table assumes our user_id is stable across calls."""
+    debug mapping table assumes our user_id is stable across calls.
+
+    Doubles as the lookup for a future Yatroo "conductor mode": the
+    create-branch below always creates role=PASSENGER, never CONDUCTOR --
+    a conductor identity is never auto-provisioned here, only ever looked
+    up. A tenant links a specific conductor to a specific Yatroo account by
+    setting that Conductor's own User.partner/external_partner_id fields in
+    advance (the same fields this view already reads/writes for passengers);
+    once that link exists, this same lookup returns it exactly like any
+    other existing user. See _ALLOWED_ROLES below for the safety boundary
+    on which roles are legitimate to hand back this way at all."""
     permission_classes = [IsInternalService]
+
+    _ALLOWED_ROLES = {User.Role.PASSENGER, User.Role.CONDUCTOR}
 
     def post(self, request):
         partner = (request.data.get("partner") or "").strip()
@@ -195,22 +207,41 @@ class PartnerProvisionView(views.APIView):
             user.save()
             created = True
         else:
-            # Keep display name and phone fresh on every call --
-            # external_partner_id stays the permanent lookup key regardless
-            # (see the FastAPI side).
-            update_fields = []
-            if name and user.full_name_en != name:
-                user.full_name_en = name
-                update_fields.append("full_name_en")
-            if phone and user.phone != phone:
-                user.phone = phone
-                update_fields.append("phone")
-            if update_fields:
-                user.save(update_fields=[*update_fields, "updated_at"])
+            # Defense in depth: nothing today sets partner/external_partner_id
+            # on anything but a PASSENGER or (once a tenant links one) a
+            # CONDUCTOR -- but if that ever happened by mistake on a more
+            # privileged role, this must fail loudly rather than silently
+            # hand the partner a token for it.
+            if user.role not in self._ALLOWED_ROLES:
+                return Response({
+                    "success": False, "data": None,
+                    "message": f"Account role '{user.role}' cannot be used for partner login.",
+                    "errors": None,
+                }, status=status.HTTP_409_CONFLICT)
+
+            # Keep display name and phone fresh on every call -- but only for
+            # a PASSENGER's own self-chosen identity. A conductor's name/phone
+            # belong to their employer's HR record, not to whatever a partner
+            # app happens to send on a login call.
+            if user.role == User.Role.PASSENGER:
+                update_fields = []
+                if name and user.full_name_en != name:
+                    user.full_name_en = name
+                    update_fields.append("full_name_en")
+                if phone and user.phone != phone:
+                    user.phone = phone
+                    update_fields.append("phone")
+                if update_fields:
+                    user.save(update_fields=[*update_fields, "updated_at"])
 
         return Response({
             "success": True,
-            "data": {"user_id": str(user.id), "created": created},
+            "data": {
+                "user_id": str(user.id),
+                "role": user.role,
+                "tenant_schema": user.tenant_schema,
+                "created": created,
+            },
             "message": "Provisioned." if created else "Existing account.",
             "errors": None,
         }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)

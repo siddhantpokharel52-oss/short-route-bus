@@ -72,6 +72,7 @@ class FederatedLoginResponse(BaseModel):
     access_token: str
     expires_in: int
     citybus_user_id: str
+    role: str
 
 
 def _canonical_string(timestamp: str, nonce: str, body: dict) -> str:
@@ -127,10 +128,18 @@ async def federated_login(
     """Server-to-server only -- called by Yatroo's own backend, never by a
     mobile app directly. Verifies the HMAC-signed request (signature, a
     bounded timestamp window, and a one-time nonce), provisions or looks up
-    a scoped passenger identity for the given external_user_id, and returns
-    a normal passenger JWT -- indistinguishable downstream from a token
-    issued by a real login, so every existing Master API endpoint just
-    works against it unchanged."""
+    a scoped identity for the given external_user_id, and returns a normal
+    JWT -- indistinguishable downstream from a token issued by a real
+    login, so every existing Master API endpoint just works against it
+    unchanged.
+
+    Almost always mints a PASSENGER token (provisioned automatically on
+    first call, same as before). If external_user_id has been pre-linked by
+    a tenant to one of their own conductors (see PartnerProvisionView's
+    docstring -- this never happens automatically), it mints a CONDUCTOR
+    token for that exact, already-existing account instead -- never a newly
+    created one. The `role` in the response tells Yatroo's app which mode
+    to present; nothing else about this call changes."""
     external_user_id = str(body.get("external_user_id") or "").strip()
 
     if not (x_signature and x_timestamp and x_nonce):
@@ -198,7 +207,13 @@ async def federated_login(
         _log(False, "account provisioning failed", external_user_id)
         raise HTTPException(status_code=502, detail="Account provisioning failed.")
     try:
-        user_id = resp.json()["data"]["user_id"]
+        provisioned = resp.json()["data"]
+        user_id = provisioned["user_id"]
+        # Default to PASSENGER/"" only for defensive robustness against a
+        # malformed response shape -- PartnerProvisionView itself always
+        # includes both real values on every 2xx.
+        resolved_role = provisioned.get("role") or "PASSENGER"
+        resolved_tenant_schema = provisioned.get("tenant_schema") or ""
     except (ValueError, KeyError, TypeError):
         _log(False, "malformed provisioning response", external_user_id)
         raise HTTPException(status_code=502, detail="Malformed response from account provisioning.")
@@ -208,8 +223,8 @@ async def federated_login(
     access_token = jose_jwt.encode(
         {
             "user_id": user_id,
-            "role": "PASSENGER",
-            "tenant_schema": "",
+            "role": resolved_role,
+            "tenant_schema": resolved_tenant_schema,
             "full_name": name,
             "language": "en",
             # token_type/jti are not decorative -- rest_framework_simplejwt's
@@ -236,5 +251,11 @@ async def federated_login(
     # other endpoint in this codebase uses -- Yatroo's own spec (step 4d)
     # names this exact flat shape as what CityBus returns, and their backend
     # will presumably parse response.access_token directly, not
-    # response.data.access_token.
-    return {"access_token": access_token, "expires_in": expiry_seconds, "citybus_user_id": user_id}
+    # response.data.access_token. `role` is additive to that original spec
+    # -- an existing integration parsing only access_token/expires_in/
+    # citybus_user_id is unaffected; a conductor-mode integration needs it
+    # to know which UI to present.
+    return {
+        "access_token": access_token, "expires_in": expiry_seconds,
+        "citybus_user_id": user_id, "role": resolved_role,
+    }
