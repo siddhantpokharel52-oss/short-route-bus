@@ -910,10 +910,13 @@ function ReportsPanel({ accounts }: { accounts: COA[] }) {
   const { data: company } = useQuery<{ company_name: string } | null>({
     queryKey: ['company-info'],
     queryFn: async () => {
-      const { data } = await apiClient.get('/operator/company/')
+      // Decorative (report header company name) -- gated to ops roles on the
+      // backend, so a 403 here for a non-ops role is expected and harmless.
+      const { data } = await apiClient.get('/operator/company/', { suppressErrorToast: true })
       return data.data
     },
     staleTime: 10 * 60 * 1000,
+    retry: false,
   })
 
   const needsRange = ['profit-loss', 'cash-flow', 'expense-analysis', 'general-ledger'].includes(reportType)

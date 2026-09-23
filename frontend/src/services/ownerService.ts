@@ -28,6 +28,7 @@ export interface OwnerDashboardSplit {
 export interface OwnerDashboardRoute {
   route_id: string
   route_code: string
+  route_name: string | null
   revenue: number
 }
 

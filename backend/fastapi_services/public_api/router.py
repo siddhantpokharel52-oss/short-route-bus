@@ -954,6 +954,7 @@ async def get_trip_qr(trip_id: str, user: dict = Depends(get_current_user)):
             "valid_until": "2026-09-21T23:59:59Z",
             "fare_paid": "25.00",
             "payment_method": "ESEWA",
+            "payment_reference": "yatroo-txn-8f3a1b2c",
             "qr_code": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAAAAAB...",
             "status": "VALID",
             "from_stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
@@ -1166,6 +1167,7 @@ async def issue_ticket(
         if ticket_uid:
             try:
                 await tenant_db.store_payment_reference(ticket_uid, schema, payment_reference.strip())
+                body["data"]["payment_reference"] = payment_reference.strip()
             except Exception:
                 logger.warning(
                     "Failed to store payment_reference for ticket %s (tenant=%s) — the ticket was "
@@ -1254,6 +1256,8 @@ async def issue_ticket(
                     exc_info=True,
                 )
 
+    if body is not None:
+        return JSONResponse(status_code=resp.status_code, content=body)
     return _passthrough(resp)
 
 
@@ -1286,6 +1290,7 @@ async def issue_ticket(
                     "valid_until": "2026-09-21T23:59:59Z",
                     "fare_paid": "25.00",
                     "payment_method": "ESEWA",
+                    "payment_reference": "yatroo-txn-8f3a1b2c",
                     "qr_code": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAAAAAB...",
                     "status": "VALID",
                     "from_stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
@@ -1309,6 +1314,7 @@ async def issue_ticket(
                     "valid_until": "2026-09-21T23:59:59Z",
                     "fare_paid": "40.00",
                     "payment_method": "ESEWA",
+                    "payment_reference": "yatroo-txn-8f3a1b2c",
                     "qr_code": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAAAAAC...",
                     "status": "VALID",
                     "from_stop_id": "484d042d-f919-4a7d-8595-2371f3557ef5",
@@ -1461,6 +1467,7 @@ async def issue_group_tickets(
                 continue
             try:
                 await tenant_db.store_payment_reference(ticket_uid, schema, payment_reference.strip())
+                ticket["payment_reference"] = payment_reference.strip()
             except Exception:
                 logger.warning(
                     "Failed to store payment_reference for ticket %s in group booking (tenant=%s) — "
@@ -1503,6 +1510,8 @@ async def issue_group_tickets(
                     exc_info=True,
                 )
 
+    if body is not None:
+        return JSONResponse(status_code=resp.status_code, content=body)
     return _passthrough(resp)
 
 

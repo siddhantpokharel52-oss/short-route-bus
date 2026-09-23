@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { useAuthStore } from '@store/authStore'
 import TenantLayout from './components/TenantLayout'
 import FleetPage from './pages/FleetPage'
 import VehicleCategoriesPage from './pages/VehicleCategoriesPage'
@@ -29,6 +30,19 @@ import RolesPermissionsPage from './pages/RolesPermissionsPage'
 
 
 export default function TenantApp() {
+  const { user } = useAuthStore()
+  const location = useLocation()
+
+  // Owner Dashboard (Team Implementation Guide §3.7): an owner's only real
+  // page is My Earnings. The nav already hides every other link, and the
+  // underlying APIs already reject an owner's requests, but a typed or
+  // bookmarked URL could still land here and render an empty, broken-looking
+  // page shell with nothing to show. Redirect away before that happens,
+  // rather than let a page render that the owner was never meant to reach.
+  if (user?.role === 'OWNER' && !location.pathname.endsWith('/my-earnings')) {
+    return <Navigate to="my-earnings" replace />
+  }
+
   return (
     <TenantLayout>
       <Routes>

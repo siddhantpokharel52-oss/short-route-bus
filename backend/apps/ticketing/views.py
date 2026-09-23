@@ -18,7 +18,7 @@ from .serializers import (
     NamastePayConfigSerializer,
     NamastePayCheckoutCreateSerializer, NamastePayCheckoutSerializer,
 )
-from backend.apps.users.permissions import IsConductor, IsOperationsRole, IsCompanyAdmin, IsFinanceRole, IsTenantStaff
+from backend.apps.users.permissions import IsConductor, IsOperationsRole, IsCompanyAdmin, IsFinanceRole, IsTenantStaff, IsTicketIssuer
 
 
 def api_response(data=None, message="Success", success=True, errors=None, status_code=200):
@@ -62,6 +62,16 @@ class TicketViewSet(ModelViewSet):
     ordering_fields = ["issued_at", "fare_paid"]
     ordering = ["-issued_at"]
     http_method_names = ["get", "post", "head", "options"]
+
+    def get_permissions(self):
+        # create() must also accept the self-service PASSENGER-role system
+        # account FastAPI's public API uses for every self-service/scan-to-
+        # book ticket purchase -- IsTenantStaff would block it (see
+        # IsTicketIssuer's own docstring). list()/retrieve() stay on
+        # IsTenantStaff so an OWNER still can't browse tenant-wide tickets.
+        if self.action == "create":
+            return [IsTicketIssuer()]
+        return super().get_permissions()
 
     def get_queryset(self):
         return Ticket.objects.filter(is_deleted=False)
@@ -108,6 +118,20 @@ class TicketViewSet(ModelViewSet):
         }
         # If the request comes from a conductor, record conductor_id automatically
         if hasattr(request.user, "role") and request.user.role == "CONDUCTOR":
+            # A conductor must have an open cash shift before issuing a ticket --
+            # otherwise that ticket's cash would never fall inside any shift's
+            # reconciliation window (CB7's whole point). Only enforced for an
+            # actual CONDUCTOR-role caller; a generic POS/station-staff issuance
+            # has no shift concept at all and is untouched.
+            from backend.apps.staff.models import ConductorShift
+            if not ConductorShift.objects.filter(
+                conductor_user_id=request.user.id, status=ConductorShift.Status.OPEN
+            ).exists():
+                return api_response(
+                    success=False,
+                    message="Open a shift before issuing tickets.",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
             data.setdefault("conductor_id", str(request.user.id))
             data["issued_by"] = "CONDUCTOR"
             if not data.get("vehicle_id"):
@@ -134,6 +158,13 @@ class BookingViewSet(ModelViewSet):
     serializer_class = BookingSerializer
     permission_classes = [IsTenantStaff]
     http_method_names = ["get", "post", "head", "options"]
+
+    def get_permissions(self):
+        # Same reasoning as TicketViewSet.get_permissions() -- create() must
+        # accept the self-service PASSENGER-role system account too.
+        if self.action == "create":
+            return [IsTicketIssuer()]
+        return super().get_permissions()
 
     def get_queryset(self):
         return Booking.objects.filter(is_deleted=False)

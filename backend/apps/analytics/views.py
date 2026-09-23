@@ -242,12 +242,17 @@ class OwnerDashboardSummaryView(views.APIView):
             route_id = route_by_vehicle_date.get((t["vehicle_id"], t["issued_at"].date()))
             if route_id:
                 route_revenue[route_id] = route_revenue.get(route_id, 0) + float(t["fare_paid"] or 0)
-        route_codes = (
-            {r.id: r.route_code for r in Route.objects.filter(id__in=list(route_revenue.keys()))}
+        route_details = (
+            {r.id: (r.route_code, r.name_en) for r in Route.objects.filter(id__in=list(route_revenue.keys()))}
             if route_revenue else {}
         )
         revenue_by_route = [
-            {"route_id": str(rid), "route_code": route_codes.get(rid, str(rid)[:8]), "revenue": rev}
+            {
+                "route_id": str(rid),
+                "route_code": route_details.get(rid, (str(rid)[:8], None))[0],
+                "route_name": route_details.get(rid, (None, None))[1],
+                "revenue": rev,
+            }
             for rid, rev in route_revenue.items()
         ]
 

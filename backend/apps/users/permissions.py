@@ -107,6 +107,26 @@ class IsTenantStaff(BasePermission):
                     request.user.role not in self._excluded_roles)
 
 
+class IsTicketIssuer(BasePermission):
+    """Allowed to create a Ticket/Booking row -- tenant staff doing desk
+    work, *and* the self-service PASSENGER-role system account FastAPI's
+    public API mints internally for every scan-to-book, self-service, and
+    group-booking purchase (backend/fastapi_services/public_api/tenant_db.py's
+    get_or_create_self_service_account -- always role=PASSENGER, never a
+    real end user's own token). Excludes only OWNER, the one role a ticket-
+    creation request should never come from. Deliberately narrower than
+    IsTenantStaff (which also excludes PASSENGER/STUDENT/TOURIST) -- gating
+    TicketViewSet/BookingViewSet's create() on IsTenantStaff silently broke
+    every self-service and group-booking purchase, since both proxy through
+    this same PASSENGER-role system account. No real passenger ever holds a
+    Django-side PASSENGER JWT directly -- FastAPI is the only caller that can
+    reach this endpoint as PASSENGER -- so allowing that role back in for
+    create() only carries no new exposure."""
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and
+                    request.user.role != User.Role.OWNER)
+
+
 class CanViewVehicles(BasePermission):
     """Read access to the vehicle list for anyone who needs it to do their
     job -- fleet roles who own the data, plus dispatchers who need to pick

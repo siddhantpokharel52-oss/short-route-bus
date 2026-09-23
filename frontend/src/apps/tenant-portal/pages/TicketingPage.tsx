@@ -11,6 +11,7 @@ import { Badge, statusVariant } from '@components/shared/Badge'
 import { Modal } from '@components/shared/Modal'
 import { usePagination } from '@hooks/usePagination'
 import apiClient from '@services/api'
+import conductorShiftService from '@services/conductorShiftService'
 import publicService, { FareMatch } from '@services/publicService'
 import { formatNPR } from '@utils/nepaliDate'
 import { useUiStore } from '@store/uiStore'
@@ -240,6 +241,26 @@ export default function TicketingPage() {
   const [myBus, setMyBus] = useState(false)
   const [showPos, setShowPos] = useState(false)
   const [showVerify, setShowVerify] = useState(false)
+  const [showNeedShift, setShowNeedShift] = useState(false)
+
+  // Conductors can't issue (or usefully verify) a ticket without an open
+  // shift -- backend already hard-blocks issuance for this reason (CB7).
+  // Checked here too so a conductor sees a clear "open a shift first"
+  // message immediately on click, instead of filling out the whole form
+  // and only finding out from a 400 on submit.
+  const isConductor = user?.role === 'CONDUCTOR'
+  const { data: currentShift } = useQuery({
+    queryKey: ['my-shift-current'],
+    queryFn: () => conductorShiftService.current(),
+    enabled: isConductor,
+  })
+  const requireShift = (action: () => void) => {
+    if (isConductor && !currentShift) {
+      setShowNeedShift(true)
+      return
+    }
+    action()
+  }
   const [issuedTicket, setIssuedTicket] = useState<TicketRecord | null>(null)
   const [verifyTicketNum, setVerifyTicketNum] = useState('')
   const [verifyResult, setVerifyResult] = useState<{
@@ -294,10 +315,13 @@ export default function TicketingPage() {
   const { data: company = null } = useQuery<CompanyInfo | null>({
     queryKey: ['company-info'],
     queryFn: async () => {
-      const { data } = await apiClient.get('/operator/company/')
+      // Decorative (printed-ticket company name/logo) -- gated to ops roles on
+      // the backend, so a 403 here for a conductor is expected and harmless.
+      const { data } = await apiClient.get('/operator/company/', { suppressErrorToast: true })
       return data.data as CompanyInfo
     },
     staleTime: 10 * 60 * 1000,
+    retry: false,
   })
 
   // Today stats from the loaded tickets
@@ -589,13 +613,13 @@ export default function TicketingPage() {
           <Button
             variant="outline"
             leftIcon={<QrCode className="h-4 w-4" />}
-            onClick={() => setShowVerify(true)}
+            onClick={() => requireShift(() => setShowVerify(true))}
           >
             {t('ticketing.verify')}
           </Button>
           <Button
             leftIcon={<Plus className="h-4 w-4" />}
-            onClick={() => { setIssuedTicket(null); reset({ payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '', fare_paid: '', passenger_name: '', ticket_type_id: '' }); setFareEdited(false); setShowPos(true) }}
+            onClick={() => requireShift(() => { setIssuedTicket(null); reset({ payment_method: 'CASH', route_id: '', from_stop_id: '', to_stop_id: '', fare_paid: '', passenger_name: '', ticket_type_id: '' }); setFareEdited(false); setShowPos(true) })}
           >
             {t('ticketing.issueTicketPOS')}
           </Button>
@@ -816,6 +840,18 @@ export default function TicketingPage() {
             </div>
           </form>
         )}
+      </Modal>
+
+      {/* ── Need-an-open-shift notice ─────────────────────────────────────── */}
+      <Modal open={showNeedShift} onClose={() => setShowNeedShift(false)} size="sm" closeOnBackdrop>
+        <div className="space-y-4 text-center">
+          <p className="text-base font-medium text-gray-900">
+            {t('ticketing.needShift', { defaultValue: 'You need to Open a Shift first before Issuing Ticket.' })}
+          </p>
+          <Button onClick={() => setShowNeedShift(false)}>
+            {t('ticketing.gotIt', { defaultValue: 'Got it' })}
+          </Button>
+        </div>
       </Modal>
 
       {/* ── Verify Ticket Modal ───────────────────────────────────────────── */}

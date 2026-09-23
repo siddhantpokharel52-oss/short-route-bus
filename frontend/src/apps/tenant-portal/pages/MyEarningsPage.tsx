@@ -84,7 +84,16 @@ export default function MyEarningsPage() {
   ]
 
   const routeColumns: Column<OwnerDashboardRoute>[] = [
-    { key: 'route_code', header: t('myEarnings.route', { defaultValue: 'Route' }), render: (r) => <span className="font-mono font-medium text-gray-900">{r.route_code}</span> },
+    {
+      key: 'route_code',
+      header: t('myEarnings.route', { defaultValue: 'Route' }),
+      render: (r) => (
+        <span>
+          <span className="font-mono font-medium text-gray-900">{r.route_code}</span>
+          {r.route_name && <span className="ml-2 text-gray-500">{r.route_name}</span>}
+        </span>
+      ),
+    },
     { key: 'revenue', header: t('myEarnings.revenue', { defaultValue: 'Revenue' }), render: (r) => fmtMoney(r.revenue) },
   ]
 

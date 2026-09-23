@@ -6,6 +6,17 @@ import { useAuthStore } from '@store/authStore'
 import { getPortalContext } from '@utils/portalContext'
 import toast from 'react-hot-toast'
 
+// Lets a caller opt a specific request out of the global error toast below --
+// for a background call whose failure is expected/harmless for some roles
+// (e.g. a header logo fetch gated to ops roles), a 403 popup is just noise,
+// not a real "you tried to do something you can't" moment worth interrupting
+// the user for.
+declare module "axios" {
+  export interface AxiosRequestConfig {
+    suppressErrorToast?: boolean
+  }
+}
+
 // Standard API envelope from backend
 export interface ApiResponse<T = unknown> {
   success: boolean
@@ -92,11 +103,11 @@ apiClient.interceptors.response.use(
       }
     }
 
-    if (error.response?.status === 403) {
+    if (error.response?.status === 403 && !originalRequest?.suppressErrorToast) {
       toast.error('Access denied. You do not have permission.')
     }
 
-    if (error.response?.status >= 500) {
+    if (error.response?.status >= 500 && !originalRequest?.suppressErrorToast) {
       toast.error('Server error. Please try again later.')
     }
 

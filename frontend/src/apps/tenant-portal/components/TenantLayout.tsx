@@ -49,6 +49,18 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
   // page-level data access, this array is nav-visibility only).
   const navItems: NavItem[] = user?.role === 'OWNER'
     ? [{ to: '/tenant/my-earnings', icon: Wallet, label: t('nav.myEarnings', { defaultValue: 'My Earnings' }) }]
+    : user?.role === 'CONDUCTOR'
+    ? [
+        // A conductor's whole job: see where buses are, sell/verify tickets,
+        // manage their own cash shift. Same reasoning as the OWNER cutout
+        // above -- the general admin/ops array below shows everything to
+        // everyone, which is clutter (not a security issue on its own,
+        // since every one of those pages is still backend-gated to roles
+        // that exclude CONDUCTOR) but not the right nav for this role.
+        { to: '/tenant/live-tracking', icon: LayoutDashboard, label: t('nav.dashboard') },
+        { to: '/tenant/ticketing', icon: Ticket, label: t('nav.ticketing') },
+        { to: '/tenant/my-shift', icon: Wallet, label: t('nav.myShift', { defaultValue: 'My Shift' }) },
+      ]
     : [
         { to: '/tenant/live-tracking', icon: LayoutDashboard, label: t('nav.dashboard') },
         { to: '/tenant/operations', icon: Activity, label: t('nav.todaysTrips') },
@@ -63,9 +75,6 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
         ...(user?.role === 'DRIVER'
           ? [{ to: '/tenant/my-roster', icon: CalendarDays, label: t('nav.myRoster', { defaultValue: 'My Roster' }) }]
           : [{ to: '/tenant/roster-periods', icon: CalendarRange, label: t('nav.rosterPeriods', { defaultValue: 'Roster Periods' }) }]),
-        ...(user?.role === 'CONDUCTOR'
-          ? [{ to: '/tenant/my-shift', icon: Wallet, label: t('nav.myShift', { defaultValue: 'My Shift' }) }]
-          : []),
         { to: '/tenant/drivers', icon: UserCheck, label: t('nav.drivers') },
         { to: '/tenant/conductors', icon: Users, label: t('nav.collectors') },
         { to: '/tenant/ticketing', icon: Ticket, label: t('nav.ticketing') },
@@ -77,14 +86,19 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
         { to: '/tenant/settings', icon: Settings, label: t('nav.settings') },
       ]
 
-  // Company info — same query key as Settings page so it's served from cache
+  // Company info — same query key as Settings page so it's served from cache.
+  // This is a background header-logo fetch, gated to ops/admin roles on the
+  // backend -- a 403 here for any other role (conductor, owner, driver...)
+  // is expected and harmless (the header just shows no logo), not something
+  // that should pop the global "Access denied" toast.
   const { data: companyInfo } = useQuery({
     queryKey: ['company-info'],
     queryFn: async () => {
-      const { data } = await apiClient.get('/operator/company/')
+      const { data } = await apiClient.get('/operator/company/', { suppressErrorToast: true })
       return data.data
     },
     staleTime: 5 * 60 * 1000,
+    retry: false,
   })
   const logoSrc = getMediaPath(companyInfo?.logo)
   useEffect(() => { setLogoError(false) }, [logoSrc])
