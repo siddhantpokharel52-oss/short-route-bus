@@ -737,7 +737,7 @@ export default function TicketingPage() {
                 already does. */}
             {allTicketTypes.length > 0 && (
               <SelectField
-                label="Customer Type"
+                label="Passenger Type"
                 value={watchedTicketTypeId}
                 onChange={(e) => handleTicketTypeChange(e.target.value)}
               >
@@ -779,22 +779,14 @@ export default function TicketingPage() {
               })}
             />
 
-            {/* Payment method */}
+            {/* Payment method -- conductor POS only takes cash-in-hand or a
+                NamastePay QR scan; the other digital methods (eSewa, Khalti,
+                Fonepay, Smart Card, ConnectIPS) are for self-service/mobile
+                purchase, not something a conductor collects in person. */}
             <SelectField label={t('ticketing.paymentMethod')} required {...register('payment_method')}>
               <option value="CASH">{t('ticketing.paymentMethods.CASH')}</option>
-              <option value="ESEWA">{t('ticketing.paymentMethods.ESEWA')}</option>
-              <option value="KHALTI">{t('ticketing.paymentMethods.KHALTI')}</option>
-              <option value="FONEPAY">{t('ticketing.paymentMethods.FONEPAY')}</option>
-              <option value="SMART_CARD">{t('ticketing.paymentMethods.SMART_CARD')}</option>
-              <option value="CONNECTIPS">{t('ticketing.paymentMethods.CONNECTIPS')}</option>
+              <option value="NAMASTEPAY">{t('ticketing.paymentMethods.NAMASTEPAY')}</option>
             </SelectField>
-
-            {/* Passenger Name (optional) */}
-            <Input
-              label={t('ticketing.passengerOptional')}
-              placeholder="e.g. Hari Prasad Adhikari"
-              {...register('passenger_name')}
-            />
 
             {/* Source note */}
             <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-2.5 flex items-center gap-2">

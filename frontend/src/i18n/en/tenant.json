@@ -735,7 +735,8 @@
       "KHALTI": "Khalti",
       "FONEPAY": "Fonepay",
       "SMART_CARD": "Smart Card",
-      "CONNECTIPS": "ConnectIPS"
+      "CONNECTIPS": "ConnectIPS",
+      "NAMASTEPAY": "QR"
     },
     "collections": {
       "title": "Ticket Collections",
