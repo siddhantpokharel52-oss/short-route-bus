@@ -16,10 +16,10 @@ deployment status.
 | Workstream | Status |
 |---|---|
 | **Yatroo integration** (§2) | Feature-complete. A partner-reported complaint (no ticket API, slow fares) was investigated and found factually incorrect on the ticket-API claim; the fare-speed claim has no visible code cause. A newer Namaste Pay "Partner/Subscriber App" integration model was also analyzed against the codebase — mostly not built yet (§2.5). |
-| **NamastePay payment system** (§3) | 7 of 10 spec items (CB1–CB4, CB6, CB7, CB9) done and committed. 3 items (CB5, CB8's remainder, CB10) are blocked on NamastePay/product decisions, not code work. |
-| **Team Implementation Guide gaps** (§4) | All 3 original code-fixable gaps closed (per-passenger destinations, Bus Owner Dashboard, ticket history API), plus a follow-up pass that found and closed a real access-control gap — the Owner Dashboard's own endpoints and nav had no real role scoping. Also added: ISSUED/PAID timestamp scaffolding for §3.6, a `child_fare` bulk-tooling fix for §3.3, (§4.5) a full real-device testing pass across owner/conductor/admin that found and fixed six more UX/access gaps, including a hard requirement that a conductor open a shift before issuing tickets, and (§4.6) a real regression that same lockdown introduced — self-service/group ticket purchase would have 403'd in production — caught live and fixed before shipping. 2 items (§3.6's actual state machine, §3.3's real concession rates) still need a team decision or external numbers, not code. |
+| **NamastePay payment system** (§3) | 6 of 10 spec items (CB1–CB4, CB6, CB9) done and committed. **CB7 (conductor cash-shift ledger) was built, then fully removed by explicit request** (§3.1.1) — no shift tracking exists anywhere in the app today. 3 items (CB5, CB8's remainder, CB10) are blocked on NamastePay/product decisions, not code work; CB8's own remaining half no longer has anything to fall back on now that CB7 is gone. |
+| **Team Implementation Guide gaps** (§4) | All 3 original code-fixable gaps closed (per-passenger destinations, Bus Owner Dashboard, ticket history API), plus a follow-up pass that found and closed a real access-control gap — the Owner Dashboard's own endpoints and nav had no real role scoping. Also added: ISSUED/PAID timestamp scaffolding for §3.6, a `child_fare` bulk-tooling fix for §3.3, (§4.5) a full real-device testing pass across owner/conductor/admin that found and fixed six more UX/access gaps — one of which, a hard requirement that a conductor open a shift before issuing tickets, was **itself removed again days later** along with the rest of shift tracking (§3.1.1) — and (§4.6) a real regression that same lockdown introduced — self-service/group ticket purchase would have 403'd in production — caught live and fixed before shipping. 2 items (§3.6's actual state machine, §3.3's real concession rates) still need a team decision or external numbers, not code. |
 | **Route & Group Rotation QA report** (§5) | All 94 issues triaged; every issue that was a real, scopeable bug is fixed and verified live (Critical 5/5, High 21/24, Medium/Low 29/65). The rest (39 issues) are explicitly "Clarify"-status or large standalone features needing a product decision first — not oversights. |
-| **Production deployment** (§6) | Everything through commit `ef413128` is confirmed live in production as of 2026-09-21. §4.5/§4.6's fixes are committed and pushed (`c3374338`) but **not yet confirmed deployed** — deploy commands are ready, see §6. |
+| **Production deployment** (§6) | Everything through commit `ef413128` is confirmed live in production as of 2026-09-21. Everything since — §4.5/§4.6's fixes (`c3374338`) and §3.1.1's shift-tracking removal (`57f0efbe`, one new migration) — is committed and pushed but **not yet confirmed deployed**; deploy commands are ready, see §6. |
 
 ---
 
@@ -209,17 +209,52 @@ Defines six payment flows (P1–P4, C1–C2) and ten CityBus-owed requirements
 | CB1 — bus/vehicle on every ticket | | `a67c3d05` |
 | CB6 — ticket search/validation filtered to a specific bus | | `547e4816` |
 | CB2 — group booking support | | `b704f542` |
-| CB7 — conductor shift / cash ledger | | `b2598ec3` |
+| CB7 — conductor shift / cash ledger | Built, then removed entirely — see §3.1.1 | `b2598ec3`, removed `57f0efbe` |
 | CB3 — child concession fare | | `5122eeda` |
 | CB9 — checkout confirmation flow | Built as a redirect-confirmation flow instead of a signed webhook, since NamastePay's real API (confirmed against their docs) has no signed webhook — only a browser redirect + server-side `enquire_checkout()` re-verification | `ceb0c542` |
 | CB4 — ticket lookup API for NamastePay's pay-by-ID screen (P4) | Required extending CB9's `NamastePayCheckout` to also cover conductor-initiated walk-in checkouts. New module `backend/fastapi_services/namastepay_api/`, gated by `NAMASTEPAY_LOOKUP_SECRET` | `42397f7e` |
 
+### 3.1.1 CB7 removed entirely, by explicit request (2026-09-23)
+
+Conductor shift tracking — the `ConductorShift` model, its `/operator/shifts/*`
+API (open/close/current), the "My Shift" nav item and page, and the hard
+block that required an open shift before a conductor could issue a ticket
+(added a day earlier in §4.5) — was **all removed**, end to end, per a
+direct instruction to rip out shift tracking from the conductor side
+entirely, not just the enforcement. Commit `57f0efbe`.
+
+The feature was unusually self-contained: `ConductorShift` had no real FK
+relations to or from it anywhere (every join was a loose UUID filter, this
+codebase's established pattern), and no tests referenced it. The one real
+downstream consumer was the Owner Dashboard's `cash_collected` figure
+(§4.1), which aggregated `ConductorShift.system_cash_total` — that's now
+computed directly from `Ticket.payment_method="CASH"` instead (the exact
+same value the view already computed locally for its cash-vs-online split;
+confirmed identical in a live check before and after).
+
+**A migration to drop `staff_conductorshift`
+(`0008_delete_conductorshift.py`) had already been generated and applied
+against the dev DB by a separate, concurrent process before this commit** —
+this change just brought the application code in line with that
+already-dropped state. Not yet deployed to production; the only UI path
+that could ever create a real shift row (§4.5's nav item) was itself never
+deployed, so production almost certainly has zero real `ConductorShift`
+rows to lose.
+
+**Practical effect on everything else in this doc**: CB8's "remaining
+half" note below no longer has a CB7 half to be "mostly covered by" —
+CB8 is now entirely blocked, same as CB5/CB10. Any earlier mention in this
+document of a conductor's shift, cash session, or `ConductorShift` refers
+to a feature that no longer exists in the code — kept for history, not as
+current status.
+
 ### 3.2 Blocked — waiting on external input, not code work
 
-- **CB8** (conductor↔vehicle↔shift linkage) — mostly covered by CB7's
-  `ConductorShift.vehicle_id`/`conductor_user_id`. The remaining half
-  (conductor's own NamastePay wallet identity) only matters for
-  cash-settlement Model B and is blocked on the same open item as CB10.
+- **CB8** (conductor↔vehicle↔shift linkage) — was mostly covered by CB7's
+  `ConductorShift.vehicle_id`/`conductor_user_id`; now that CB7 is removed
+  (§3.1.1), this is unaddressed again. Blocked on the same open item as
+  CB10/CB5 either way — the conductor's own NamastePay wallet identity
+  question only matters once a cash-settlement model is picked.
 - **CB5** (static QR format/reissue) — blocked: NamastePay hasn't
   specified their QR content format (spec's open item #6).
 - **CB10** (owner dashboard: settled vs. outstanding cash) — blocked:
@@ -379,7 +414,7 @@ six real gaps, all fixed and re-verified live in the same session:
 | Company admin's full nav, checked as a suspected instance of the same bug — turned out **not** to be one: `COMPANY_ADMIN` is genuinely included in nearly every permission class in `permissions.py` (`IsFleetRole`, `IsOperationsRole`, `IsFinanceRole`, `IsHRRole`, `IsMaintenanceRole`, `CanManageRoutes`, `CanViewFares`), so every link really does lead to a page they're meant to use. | No fix needed — confirmed correct by design, not left unexamined. |
 | A misleading "Access denied" toast fired on every page load for any non-ops role — turned out to be `GET /operator/company/` (a background header-logo/receipt-branding fetch, correctly gated to ops roles) triggering the global 403 toast even though its failure is harmless. Found in **three** separate call sites, not just the one first noticed. | New `suppressErrorToast` option on the shared API client (`services/api.ts`); applied to the three decorative call sites (`TenantLayout.tsx`, `TicketingPage.tsx`, `AccountingPage.tsx`). Left `TenantSettingsPage.tsx`'s copy untouched on purpose — that page's whole job *is* editing company info, so a 403 there is a real, meaningful message. |
 | Owner Dashboard's "Revenue by Route" table showed only the bare route code (`6767`), not the route name — a real display gap, not a security issue. | `OwnerDashboardSummaryView` (`analytics/views.py`) now returns `route_name` alongside `route_code`; `MyEarningsPage.tsx` renders both. |
-| A conductor issuing a ticket before opening a shift produced a confusing case (that ticket's cash never falls inside any shift's reconciliation window) — the exact scenario the "My Shift" docs above warn about. | Two-layer fix: (1) `TicketViewSet.create()` now hard-blocks conductor-role ticket issuance with no open `ConductorShift` (`400`, "Open a shift before issuing tickets."); (2) `TicketingPage.tsx` checks shift status client-side and shows a "You need to Open a Shift first before Issuing Ticket." popup with a "Got it" button on both "Verify Ticket" and "Issue Ticket — POS", instead of letting the conductor fill out the whole form first. Scoped to `CONDUCTOR`-role issuance only — self-service and generic POS/station-staff issuance are untouched. |
+| **(Superseded — see §3.1.1)** A conductor issuing a ticket before opening a shift produced a confusing case (that ticket's cash never falls inside any shift's reconciliation window) — the exact scenario the "My Shift" docs above warn about. | Two-layer fix at the time: (1) `TicketViewSet.create()` hard-blocked conductor-role ticket issuance with no open `ConductorShift` (`400`, "Open a shift before issuing tickets."); (2) `TicketingPage.tsx` checked shift status client-side with a "You need to Open a Shift first" popup. **This entire fix, and the shift feature it protected, was removed two days later** (`57f0efbe`, §3.1.1) per explicit request — kept here only as a historical record of what this pass found and fixed at the time. |
 
 Also backfilled real QR codes onto the ~10 demo tickets seeded earlier for
 Owner Dashboard testing — those had been created directly via a Django
@@ -524,10 +559,17 @@ compose files themselves are one level down at `~/short-route-bus/docker/`
 (run `cd ~/short-route-bus/docker` first — same gotcha as the `.env` file
 below).
 
-**Ready to deploy, not yet confirmed live — commit `c3374338`.** Covers
-§4.5's real-device testing-pass fixes and §4.6's ticket-issuance
-regression fix. No new migrations in this commit — a straight rebuild,
-no `migrate_schemas` step needed:
+**Ready to deploy, not yet confirmed live — through commit `57f0efbe`.**
+Covers §4.5's real-device testing-pass fixes, §4.6's ticket-issuance
+regression fix (`c3374338`, no new migrations), and §3.1.1's full removal
+of conductor shift tracking (`57f0efbe`, **one new migration** —
+`staff/migrations/0008_delete_conductorshift.py`, drops the
+`staff_conductorshift` table). No manual migrate step needed — the
+`django` service's own startup command already runs `manage.py migrate`
+every time it starts (`docker-compose.prod.yml`'s `command:`), so this
+migration applies automatically on the same `up -d django` step used for
+every prior deploy; it just won't be a no-op like the previous commit's
+migrate step was:
 
 ```bash
 ssh citybus@172.19.0.246
@@ -680,15 +722,15 @@ the user, but hasn't been confirmed sent yet.
 | NamastePay checkout + lookup API | `backend/apps/ticketing/`, `backend/fastapi_services/namastepay_api/` |
 | Bus Owner entity + dashboard | `backend/apps/fleet/models.py` (`Owner`), `backend/apps/analytics/views.py` (`OwnerDashboardSummaryView`/`OwnerDashboardTrendView`), `frontend/.../pages/OwnersPage.tsx`, `MyEarningsPage.tsx` |
 | Ticket history enrichment (bus/route/booking) | `backend/fastapi_services/public_api/tenant_db.py` (`enrich_booking_and_vehicle`/`enrich_route_names`) |
-| Owner-role access lockdown (`IsTenantStaff`) | `backend/apps/users/permissions.py`; applied in `backend/apps/ticketing/views.py` (`TicketViewSet`/`BookingViewSet`), `backend/apps/staff/views.py` (`ConductorShiftViewSet`), `backend/apps/scheduling/views.py` (`LivePositionsView`/`PlaybackView`); nav scoping in `frontend/.../components/TenantLayout.tsx`, redirect in `frontend/src/hooks/useAuth.ts` |
+| Owner-role access lockdown (`IsTenantStaff`) | `backend/apps/users/permissions.py`; applied in `backend/apps/ticketing/views.py` (`TicketViewSet`/`BookingViewSet`), `backend/apps/scheduling/views.py` (`LivePositionsView`/`PlaybackView`); nav scoping in `frontend/.../components/TenantLayout.tsx`, redirect in `frontend/src/hooks/useAuth.ts` |
 | ISSUED/PAID ticket scaffolding | `backend/apps/ticketing/models.py` (`Ticket.paid_at`), set in `serializers.py`'s two ticket-creation paths, guarded in `backend/apps/accounting/signals.py` and `TicketVerifySerializer` |
 | `child_fare` bulk fare-entry fix | `backend/apps/platform/views.py` (`FareMatrixViewSet.bulk_import`/`.generate_from_formula`) |
 | Owner route guard (redirect away from anything but My Earnings) | `frontend/src/apps/tenant-portal/TenantApp.tsx` |
 | Conductor nav scoping | `frontend/src/apps/tenant-portal/components/TenantLayout.tsx` |
 | Suppressible error toast (`suppressErrorToast`) | `frontend/src/services/api.ts`; applied in `TenantLayout.tsx`, `TicketingPage.tsx`, `AccountingPage.tsx` |
 | Revenue-by-route name display | `backend/apps/analytics/views.py` (`OwnerDashboardSummaryView`), `frontend/.../services/ownerService.ts`, `MyEarningsPage.tsx` |
-| Conductor must-have-open-shift requirement | `backend/apps/ticketing/views.py` (`TicketViewSet.create()`, hard block), `frontend/.../pages/TicketingPage.tsx` (client-side popup) |
 | Ticket-create permission for the self-service system account (`IsTicketIssuer`) | `backend/apps/users/permissions.py`; wired via `get_permissions()` override in `backend/apps/ticketing/views.py` (`TicketViewSet`/`BookingViewSet`) |
+| Conductor shift tracking (CB7) | **Removed entirely, `57f0efbe` — see §3.1.1.** No longer exists anywhere in the code. |
 | `payment_reference` echoed back in the ticket-issuance response | `backend/fastapi_services/public_api/router.py` (`issue_ticket()`/`issue_group_tickets()`) |
 | Local-dev demo accounts (persistent, for manual testing) | `demo.owner@kvbms.local`, `demo.admin@kvbms.local`, `demo.conductor@kvbms.local` — all `DemoX@2026`, tenant `mayurbus` |
 | Route & Group Rotation — fleet/roster/rotation | `backend/apps/fleet/`, `backend/apps/roster/`, `backend/apps/platform/` |
@@ -728,8 +770,9 @@ the user, but hasn't been confirmed sent yet.
   NamastePay confirming their QR content format and CityBus choosing a
   cash-settlement model — both need an external/product decision, not
   code.
-- CB8's remainder (conductor wallet identity) is blocked on the same
-  cash-settlement decision.
+- CB8 is now entirely blocked on the same cash-settlement decision — it
+  no longer has a CB7 half to fall back on, since CB7 was removed
+  entirely (§3.1.1).
 
 **Team Implementation Guide (§4.4):**
 - The ticket-state-machine item needs an actual team decision on payment-
@@ -743,10 +786,13 @@ the user, but hasn't been confirmed sent yet.
 - Phase 2/3 items are the same blocked list as CB5/CB8/CB10 above; this
   doc doesn't add anything new there.
 - §4.5's testing-pass fixes (owner route guard, conductor nav, toast
-  fixes, revenue-by-route name, shift-required ticket issuance) and
-  §4.6's regression/payment_reference fixes are committed and pushed
-  (`c3374338`) but **not yet confirmed deployed** — deploy commands are
-  in §6, same sequence used for `ef413128`.
+  fixes, revenue-by-route name — the shift-required ticket issuance fix
+  from this same pass was itself removed again in §3.1.1, so it's no
+  longer part of what's pending deploy) and §4.6's regression/
+  payment_reference fixes are committed and pushed (`c3374338`) but
+  **not yet confirmed deployed** — deploy commands are in §6, same
+  sequence used for `ef413128`. §3.1.1's shift-removal commit
+  (`57f0efbe`) is also pending the same deploy.
 
 **Also still open, unrelated to any specific doc:** whether one owner's
 buses can span more than one tenant (§3.7's own open item — a business
