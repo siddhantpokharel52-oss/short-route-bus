@@ -282,23 +282,32 @@ async def fetch_route_stops(route_id: str) -> list[dict]:
     lat/lon, same approximation basis as fetch_routes_near's distance
     filter and _serialize_route's already-acknowledged-inaccurate polyline
     (see partner_api docs sent to Yatroo: real road distance needs actual
-    route/tracking data we don't have yet)."""
+    route/tracking data we don't have yet).
+
+    route_id is caller-supplied (a URL path segment on GET /routes/{id}/stops/, and
+    fetch_fares()'s own internal call below) with no format check -- same class of bug
+    as get_route_operator_schemas()/fetch_route(): a non-UUID value used to reach
+    asyncpg unguarded and raise a raw DataError (500) instead of an empty result, which
+    every caller here already treats the same as "no such route" would."""
     engine = get_engine()
     async with engine.connect() as conn:
-        result = await conn.execute(
-            text(
-                """
-                SELECT rs.id AS route_stop_id, rs.sequence_no, rs.estimated_time_from_start,
-                       s.id AS stop_id, s.stop_code, s.name_en, s.name_ne,
-                       s.latitude, s.longitude
-                FROM public.platform_routestop rs
-                JOIN public.platform_stop s ON s.id = rs.stop_id
-                WHERE rs.route_id = :route_id
-                ORDER BY rs.sequence_no
-                """
-            ),
-            {"route_id": route_id},
-        )
+        try:
+            result = await conn.execute(
+                text(
+                    """
+                    SELECT rs.id AS route_stop_id, rs.sequence_no, rs.estimated_time_from_start,
+                           s.id AS stop_id, s.stop_code, s.name_en, s.name_ne,
+                           s.latitude, s.longitude
+                    FROM public.platform_routestop rs
+                    JOIN public.platform_stop s ON s.id = rs.stop_id
+                    WHERE rs.route_id = :route_id
+                    ORDER BY rs.sequence_no
+                    """
+                ),
+                {"route_id": route_id},
+            )
+        except Exception:
+            return []
         rows = [_row_to_dict(r) for r in result.fetchall()]
 
     cumulative = 0.0
@@ -571,7 +580,13 @@ async def _fetch_fares_exact(
 ) -> list[dict]:
     """One directional match: from_stop must be FareMatrix.zone_from, to_stop
     must be zone_to. See fetch_fares for why a fare is only ever entered once
-    per pair rather than twice (forward and back)."""
+    per pair rather than twice (forward and back).
+
+    route_id is caller-supplied (GET /fares/?route_id=... has no format check) with no
+    guard before it reaches the query below -- same class of bug as
+    get_route_operator_schemas()/fetch_route(): a non-UUID value raised a raw asyncpg
+    DataError (500) instead of the empty result fetch_fares already treats the same as
+    "no fare found"."""
     query = """
         SELECT f.id, f.route_id, f.zone_from, f.zone_to, f.base_fare, f.peak_fare,
                f.student_fare, f.senior_citizen_fare, f.child_fare, f.ticket_type_id, tt.code AS ticket_type_code,
@@ -610,7 +625,10 @@ async def _fetch_fares_exact(
 
     engine = get_engine()
     async with engine.connect() as conn:
-        result = await conn.execute(text(query), params)
+        try:
+            result = await conn.execute(text(query), params)
+        except Exception:
+            return []
         return [_row_to_dict(r) for r in result.fetchall()]
 
 
