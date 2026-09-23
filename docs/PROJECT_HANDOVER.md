@@ -7,7 +7,7 @@ NamastePay payment system, the CityBus Team Implementation Guide gaps, and
 the Route & Group Rotation QA fix series) plus current production
 deployment status.
 
-**Last updated:** 2026-09-21
+**Last updated:** 2026-09-22
 
 ---
 
@@ -17,9 +17,9 @@ deployment status.
 |---|---|
 | **Yatroo integration** (§2) | Feature-complete. A partner-reported complaint (no ticket API, slow fares) was investigated and found factually incorrect on the ticket-API claim; the fare-speed claim has no visible code cause. A newer Namaste Pay "Partner/Subscriber App" integration model was also analyzed against the codebase — mostly not built yet (§2.5). |
 | **NamastePay payment system** (§3) | 7 of 10 spec items (CB1–CB4, CB6, CB7, CB9) done and committed. 3 items (CB5, CB8's remainder, CB10) are blocked on NamastePay/product decisions, not code work. |
-| **Team Implementation Guide gaps** (§4) | All 3 original code-fixable gaps closed (per-passenger destinations, Bus Owner Dashboard, ticket history API), plus a follow-up pass that found and closed a real access-control gap — the Owner Dashboard's own endpoints and nav had no real role scoping, so an owner could reach tenant-wide data. Also added: ISSUED/PAID timestamp scaffolding for §3.6, and a `child_fare` bulk-tooling fix for §3.3. 2 remaining items (§3.6's actual state machine, §3.3's real concession rates) need a team decision or external numbers, not code. |
+| **Team Implementation Guide gaps** (§4) | All 3 original code-fixable gaps closed (per-passenger destinations, Bus Owner Dashboard, ticket history API), plus a follow-up pass that found and closed a real access-control gap — the Owner Dashboard's own endpoints and nav had no real role scoping. Also added: ISSUED/PAID timestamp scaffolding for §3.6, a `child_fare` bulk-tooling fix for §3.3, and (§4.5) a full real-device testing pass across owner/conductor/admin that found and fixed six more UX/access gaps, including a hard requirement that a conductor open a shift before issuing tickets. 2 items (§3.6's actual state machine, §3.3's real concession rates) still need a team decision or external numbers, not code. |
 | **Route & Group Rotation QA report** (§5) | All 94 issues triaged; every issue that was a real, scopeable bug is fixed and verified live (Critical 5/5, High 21/24, Medium/Low 29/65). The rest (39 issues) are explicitly "Clarify"-status or large standalone features needing a product decision first — not oversights. |
-| **Production deployment** (§6) | Everything through commit `da4a7128` is confirmed live in production as of 2026-09-21 — verified via both the API and frontend responding correctly from an external client. |
+| **Production deployment** (§6) | Everything through commit `ef413128` is confirmed live in production as of 2026-09-21. §4.5's testing-pass fixes (2026-09-22) are built and verified in dev but **not yet deployed** — see git status. |
 
 ---
 
@@ -363,6 +363,34 @@ Two smaller, unrelated fixes made in the same follow-up pass, prompted by
   that; it explicitly agrees with it ("waiting on Namaste Pay's answers,"
   its own §1 phase table).
 
+### 4.5 Real-device role testing pass (2026-09-22) — six findings, all fixed
+
+Three persistent local-dev demo accounts were created (`demo.owner@kvbms.local`,
+`demo.admin@kvbms.local`, `demo.conductor@kvbms.local` — all `DemoX@2026`
+passwords, tenant `mayurbus`, meant to stay around for ongoing manual
+testing, not one-time throwaway logins) specifically so every role could be
+clicked through for real instead of reasoned about from code. That found
+six real gaps, all fixed and re-verified live in the same session:
+
+| Finding | Fix |
+|---|---|
+| An owner could still reach other tenant pages (e.g. Live Tracking) by typing the URL directly — nav hid the link and the API correctly 403'd, but the page *shell* still rendered, with an "Access denied" toast and an empty map. | New route guard in `TenantApp.tsx`: any `/tenant/*` path other than `my-earnings` redirects an `OWNER` straight back, before the page ever renders. |
+| Conductor's nav showed the full ~20-item admin sidebar (Fleet, Accounting, Payment Integration, Roles & Permissions, etc.) — clutter, not a security hole, since every one of those pages was still correctly backend-gated against `CONDUCTOR`. | `TenantLayout.tsx` gives `CONDUCTOR` a dedicated 3-item nav (Live Tracking, Ticketing, My Shift), same treatment as the earlier `OWNER` fix. |
+| Company admin's full nav, checked as a suspected instance of the same bug — turned out **not** to be one: `COMPANY_ADMIN` is genuinely included in nearly every permission class in `permissions.py` (`IsFleetRole`, `IsOperationsRole`, `IsFinanceRole`, `IsHRRole`, `IsMaintenanceRole`, `CanManageRoutes`, `CanViewFares`), so every link really does lead to a page they're meant to use. | No fix needed — confirmed correct by design, not left unexamined. |
+| A misleading "Access denied" toast fired on every page load for any non-ops role — turned out to be `GET /operator/company/` (a background header-logo/receipt-branding fetch, correctly gated to ops roles) triggering the global 403 toast even though its failure is harmless. Found in **three** separate call sites, not just the one first noticed. | New `suppressErrorToast` option on the shared API client (`services/api.ts`); applied to the three decorative call sites (`TenantLayout.tsx`, `TicketingPage.tsx`, `AccountingPage.tsx`). Left `TenantSettingsPage.tsx`'s copy untouched on purpose — that page's whole job *is* editing company info, so a 403 there is a real, meaningful message. |
+| Owner Dashboard's "Revenue by Route" table showed only the bare route code (`6767`), not the route name — a real display gap, not a security issue. | `OwnerDashboardSummaryView` (`analytics/views.py`) now returns `route_name` alongside `route_code`; `MyEarningsPage.tsx` renders both. |
+| A conductor issuing a ticket before opening a shift produced a confusing case (that ticket's cash never falls inside any shift's reconciliation window) — the exact scenario the "My Shift" docs above warn about. | Two-layer fix: (1) `TicketViewSet.create()` now hard-blocks conductor-role ticket issuance with no open `ConductorShift` (`400`, "Open a shift before issuing tickets."); (2) `TicketingPage.tsx` checks shift status client-side and shows a "You need to Open a Shift first before Issuing Ticket." popup with a "Got it" button on both "Verify Ticket" and "Issue Ticket — POS", instead of letting the conductor fill out the whole form first. Scoped to `CONDUCTOR`-role issuance only — self-service and generic POS/station-staff issuance are untouched. |
+
+Also backfilled real QR codes onto the ~10 demo tickets seeded earlier for
+Owner Dashboard testing — those had been created directly via a Django
+shell script that bypassed `TicketSerializer.create()` (the only place a
+QR actually gets generated), so their `qr_code` was empty. Confirmed real
+ticket issuance (via the actual POS UI) always produces a genuine QR;
+backfilled the seed data to match rather than leave it looking broken.
+
+`npx tsc --noEmit` and `python manage.py check` clean throughout. Not yet
+committed — see git status.
+
 ---
 
 ## 5. Route & Group Rotation — QA fix series
@@ -608,6 +636,12 @@ the user, but hasn't been confirmed sent yet.
 | Owner-role access lockdown (`IsTenantStaff`) | `backend/apps/users/permissions.py`; applied in `backend/apps/ticketing/views.py` (`TicketViewSet`/`BookingViewSet`), `backend/apps/staff/views.py` (`ConductorShiftViewSet`), `backend/apps/scheduling/views.py` (`LivePositionsView`/`PlaybackView`); nav scoping in `frontend/.../components/TenantLayout.tsx`, redirect in `frontend/src/hooks/useAuth.ts` |
 | ISSUED/PAID ticket scaffolding | `backend/apps/ticketing/models.py` (`Ticket.paid_at`), set in `serializers.py`'s two ticket-creation paths, guarded in `backend/apps/accounting/signals.py` and `TicketVerifySerializer` |
 | `child_fare` bulk fare-entry fix | `backend/apps/platform/views.py` (`FareMatrixViewSet.bulk_import`/`.generate_from_formula`) |
+| Owner route guard (redirect away from anything but My Earnings) | `frontend/src/apps/tenant-portal/TenantApp.tsx` |
+| Conductor nav scoping | `frontend/src/apps/tenant-portal/components/TenantLayout.tsx` |
+| Suppressible error toast (`suppressErrorToast`) | `frontend/src/services/api.ts`; applied in `TenantLayout.tsx`, `TicketingPage.tsx`, `AccountingPage.tsx` |
+| Revenue-by-route name display | `backend/apps/analytics/views.py` (`OwnerDashboardSummaryView`), `frontend/.../services/ownerService.ts`, `MyEarningsPage.tsx` |
+| Conductor must-have-open-shift requirement | `backend/apps/ticketing/views.py` (`TicketViewSet.create()`, hard block), `frontend/.../pages/TicketingPage.tsx` (client-side popup) |
+| Local-dev demo accounts (persistent, for manual testing) | `demo.owner@kvbms.local`, `demo.admin@kvbms.local`, `demo.conductor@kvbms.local` — all `DemoX@2026`, tenant `mayurbus` |
 | Route & Group Rotation — fleet/roster/rotation | `backend/apps/fleet/`, `backend/apps/roster/`, `backend/apps/platform/` |
 | Route & Group Rotation — tenant-portal UI | `frontend/src/apps/tenant-portal/pages/` |
 | Tests | `tests/backend/test_partner_api/`, `tests/backend/test_public_api/` |
@@ -659,6 +693,11 @@ the user, but hasn't been confirmed sent yet.
   anywhere in the codebase for it to apply to yet.
 - Phase 2/3 items are the same blocked list as CB5/CB8/CB10 above; this
   doc doesn't add anything new there.
+- §4.5's testing-pass fixes (owner route guard, conductor nav, toast
+  fixes, revenue-by-route name, shift-required ticket issuance) are built
+  and verified in dev but **not yet committed or deployed** — next
+  action is a commit + push, then the same prod deploy sequence used
+  for `ef413128`.
 
 **Also still open, unrelated to any specific doc:** whether one owner's
 buses can span more than one tenant (§3.7's own open item — a business
