@@ -10,6 +10,13 @@ import { TripStatusBadge } from '@components/domain/TripStatusBadge'
 import schedulingService, { Trip } from '@services/schedulingService'
 import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
+import apiClient from '@services/api'
+
+interface ConductorOption {
+  id: string
+  full_name_en: string
+  user_id: string | null
+}
 
 interface CreateTripForm {
   route_id: string
@@ -64,6 +71,24 @@ export default function TripsPage() {
   })
 
   const { register, handleSubmit, reset } = useForm<CreateTripForm>()
+
+  // Only conductors with a real login (user_id) can ever be matched by
+  // GET /public-api/v1/trips/{id}/qr/ -- that endpoint's own
+  // tenant_db.fetch_trip_for_conductor() filters strictly on
+  // conductor_id == the caller's own user_id from their JWT, and
+  // TripViewSet.mine() (the conductor's own trip lookup) uses the exact
+  // same filter. A conductor picked here who has no login yet could never
+  // pull their own trip or QR, so they're excluded from this list rather
+  // than silently accepted and quietly broken later.
+  const { data: conductorOptions = [] } = useQuery<ConductorOption[]>({
+    queryKey: ['conductors-with-login-dropdown'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/operator/conductors/', { params: { page_size: 200 } })
+      const list: ConductorOption[] = data.data?.results ?? data.data ?? []
+      return list.filter((c) => !!c.user_id)
+    },
+    staleTime: 60 * 1000,
+  })
 
   const createMutation = useMutation({
     mutationFn: (payload: CreateTripForm) => schedulingService.trips.create(payload),
@@ -169,7 +194,24 @@ export default function TripsPage() {
           <Input label="Route ID" required {...register('route_id', { required: true })} />
           <Input label="Vehicle ID" required {...register('vehicle_id', { required: true })} />
           <Input label="Driver ID" required {...register('driver_id', { required: true })} />
-          <Input label="Collector ID (optional)" {...register('conductor_id')} />
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Conductor (optional)</label>
+            <select
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              defaultValue=""
+              {...register('conductor_id')}
+            >
+              <option value="">No conductor assigned</option>
+              {conductorOptions.map((c) => (
+                <option key={c.id} value={c.user_id!}>{c.full_name_en}</option>
+              ))}
+            </select>
+            {conductorOptions.length === 0 && (
+              <p className="mt-1 text-xs text-gray-400">
+                No conductor has a login yet — create one from the Conductors page first.
+              </p>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Scheduled Departure" type="datetime-local" required {...register('scheduled_departure', { required: true })} />
             <Input label="Scheduled Arrival" type="datetime-local" required {...register('scheduled_arrival', { required: true })} />

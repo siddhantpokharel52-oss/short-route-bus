@@ -12,7 +12,7 @@ from .serializers import (
     TimetableSerializer, TripSerializer, DriverShiftSerializer,
     AutoScheduleConfigSerializer,
 )
-from backend.apps.users.permissions import IsOperationsRole, IsFleetRole, IsTenantStaff
+from backend.apps.users.permissions import IsOperationsRole, IsFleetRole, IsTenantStaff, IsConductor
 
 
 def api_response(data=None, message="Success", success=True, errors=None, status_code=200):
@@ -58,6 +58,34 @@ class TripViewSet(ModelViewSet):
 
     def get_queryset(self):
         return Trip.objects.filter(is_deleted=False)
+
+    def get_permissions(self):
+        # `mine` is a conductor's own self-service lookup -- every other
+        # action on this viewset is Operations-role only (dispatcher/admin),
+        # which is exactly why a conductor previously had no way to discover
+        # their own trip_id at all (see mine()'s own docstring below).
+        if self.action == "mine":
+            return [IsConductor()]
+        return super().get_permissions()
+
+    @action(detail=False, methods=["get"], url_path="mine")
+    def mine(self, request):
+        """A conductor's own trip(s) for today. The missing counterpart to
+        today() above (Operations-role only) -- without this, a conductor
+        had no path to the trip_id that GET /public-api/v1/trips/{id}/qr/
+        needs (that endpoint's own tenant_db.fetch_trip_for_conductor already
+        enforces conductor_id == the caller's own user_id; this just exposes
+        that same, already-correct filter to the conductor themselves,
+        scoped to today so it can never return someone else's trip or a
+        stale one from a previous day)."""
+        today = timezone.now().date()
+        trips = Trip.objects.filter(
+            conductor_id=request.user.id, date=today, is_deleted=False,
+        ).order_by("scheduled_departure_time")
+        return api_response(
+            data=self.get_serializer(trips, many=True).data,
+            message=f"Your trips today ({today})",
+        )
 
     def create(self, request, *args, **kwargs):
         from backend.apps.fleet.models import Vehicle

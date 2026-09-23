@@ -1130,7 +1130,13 @@ async def issue_ticket(
         # here so the created ticket carries which bus it was actually issued on.
         trip_details = await tenant_db.fetch_trip_details(schema, trip_id_override)
         if trip_details and trip_details.get("vehicle_id"):
-            django_payload["vehicle_id"] = trip_details["vehicle_id"]
+            # asyncpg returns a uuid column as a real uuid.UUID, not a str --
+            # httpx's json= encoder can't serialize that (same class of bug
+            # already caught and fixed for validate_ticket()'s from_stop_id
+            # below). Caught live via a real scan-to-book call through this
+            # exact path, not a mock -- a mocked _proxy_to_django call never
+            # actually JSON-encodes anything.
+            django_payload["vehicle_id"] = str(trip_details["vehicle_id"])
     if issued_by_override is not None:
         # Self-service purchase: passenger_id is the caller's own identity, never trusted
         # from the payload; issued_by is forced to MOBILE regardless of what (if anything)

@@ -12,6 +12,8 @@ import { Modal } from '@components/shared/Modal'
 import { usePagination } from '@hooks/usePagination'
 import apiClient from '@services/api'
 import publicService, { FareMatch } from '@services/publicService'
+import schedulingService from '@services/schedulingService'
+import { QRCodeSVG } from 'qrcode.react'
 import { formatNPR } from '@utils/nepaliDate'
 import { useUiStore } from '@store/uiStore'
 import { useAuthStore } from '@store/authStore'
@@ -250,6 +252,28 @@ export default function TicketingPage() {
     fare: number
   } | null>(null)
   const [selectedTicket, setSelectedTicket] = useState<TicketRecord | null>(null)
+  const [qrTrip, setQrTrip] = useState<{ token: string; tripCode: string; expiresAt: number } | null>(null)
+
+  const isConductor = user?.role === 'CONDUCTOR'
+
+  const { data: myTrips = [], isLoading: myTripsLoading } = useQuery({
+    queryKey: ['my-trip-today'],
+    queryFn: schedulingService.trips.mine,
+    enabled: isConductor,
+    staleTime: 60 * 1000,
+  })
+  const myTrip = myTrips[0] ?? null
+
+  const qrMutation = useMutation({
+    mutationFn: (tripId: string) => publicService.tripQr(tripId),
+    onSuccess: (d) => setQrTrip({
+      token: d.trip_qr_token, tripCode: d.trip_code, expiresAt: Date.now() + d.expires_in * 1000,
+    }),
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || 'Could not generate QR.')
+    },
+  })
   const [voidTarget, setVoidTarget] = useState<TicketRecord | null>(null)
   const [totalCount, setTotalCount] = useState(0)
   const pagination = usePagination(totalCount)
@@ -615,6 +639,34 @@ export default function TicketingPage() {
         ))}
       </div>
 
+      {/* My trip today — conductor only. The QR a passenger scans to
+          self-book comes from here, never from typing a trip id by hand. */}
+      {isConductor && (
+        <div className="card flex flex-wrap items-center justify-between gap-3 py-4 px-5">
+          {myTripsLoading ? (
+            <p className="text-sm text-gray-400">Checking today's trip…</p>
+          ) : myTrip ? (
+            <>
+              <div>
+                <p className="text-xs text-gray-500">Today's trip</p>
+                <p className="text-sm font-semibold text-gray-800">
+                  {myTrip.trip_code} — {myTrip.route_name ?? 'Route'} · {myTrip.vehicle_bus_number ?? myTrip.vehicle_registration ?? 'Bus'}
+                </p>
+              </div>
+              <Button
+                leftIcon={<QrCode className="h-4 w-4" />}
+                onClick={() => qrMutation.mutate(myTrip.id)}
+                loading={qrMutation.isPending}
+              >
+                Generate boarding QR
+              </Button>
+            </>
+          ) : (
+            <p className="text-sm text-gray-400">No trip assigned to you today.</p>
+          )}
+        </div>
+      )}
+
       {/* Search */}
       <div className="flex flex-wrap items-center gap-3">
         <Input
@@ -937,6 +989,27 @@ export default function TicketingPage() {
                 {t('ticketing.voidTicket', { defaultValue: 'Void Ticket' })}
               </Button>
             </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Boarding QR — a passenger scans this to self-book onto this trip ── */}
+      <Modal open={!!qrTrip} onClose={() => setQrTrip(null)} title="Boarding QR" size="sm">
+        {qrTrip && (
+          <div className="flex flex-col items-center gap-4 p-6">
+            <div className="rounded-lg border border-gray-200 p-4">
+              <QRCodeSVG value={qrTrip.token} size={220} />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-gray-800">{qrTrip.tripCode}</p>
+              <p className="mt-1 text-xs text-gray-400">
+                Valid until {new Date(qrTrip.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} —
+                each passenger who scans this books their own ticket.
+              </p>
+            </div>
+            <Button variant="secondary" className="w-full" onClick={() => setQrTrip(null)}>
+              Close
+            </Button>
           </div>
         )}
       </Modal>

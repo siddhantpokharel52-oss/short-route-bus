@@ -3,6 +3,7 @@
  * Calls FastAPI public_api microservice at /public-api/
  */
 import axios from 'axios'
+import { useAuthStore } from '@store/authStore'
 
 const publicClient = axios.create({
   baseURL: '/public-api/v1',
@@ -147,6 +148,20 @@ const publicService = {
       params: { route_id: routeId, from_stop: fromStopCode, to_stop: toStopCode },
     })
     return Array.isArray(data?.data) ? data.data : []
+  },
+
+  // Conductor-only, unlike every other call in this file -- GET /trips/{id}/qr/
+  // requires the conductor's own Bearer token, which publicClient never
+  // attaches (this file's other calls are genuinely anonymous). Mints the
+  // opaque token a passenger's camera scans off the rendered QR to
+  // self-book via POST /tickets/ {trip_qr_token} -- see backend/
+  // fastapi_services/public_api/router.py's get_trip_qr().
+  tripQr: async (tripId: string): Promise<{ trip_qr_token: string; expires_in: number; trip_code: string }> => {
+    const token = useAuthStore.getState().accessToken
+    const { data } = await publicClient.get(`/trips/${tripId}/qr/`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    return data.data
   },
 
   verifyTicket: async (ticketNumber: string): Promise<{

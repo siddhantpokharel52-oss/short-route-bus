@@ -1,5 +1,23 @@
 import apiClient, { ApiResponse } from './api'
 
+// The real shape TripSerializer returns (backend/apps/scheduling/serializers.py)
+// -- deliberately separate from the Trip interface below, whose route_number/
+// vehicle_plate/driver_name/conductor_name/passenger_count fields the backend
+// never actually sends (pre-existing mismatch, not introduced here).
+export interface MyTrip {
+  id: string
+  trip_code: string
+  route_id: string
+  route_name: string | null
+  vehicle_id: string
+  vehicle_registration: string | null
+  vehicle_bus_number: string | null
+  conductor_id: string | null
+  scheduled_departure: string | null
+  scheduled_arrival: string | null
+  status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'DELAYED'
+}
+
 export interface Trip {
   id: string
   route_id: string
@@ -40,6 +58,14 @@ const schedulingService = {
 
     today: async (): Promise<Trip[]> => {
       const { data } = await apiClient.get<ApiResponse<Trip[]>>('/scheduling/trips/today/')
+      return data.data
+    },
+
+    // Conductor's own trip(s) for today -- IsConductor-gated, 403s for any
+    // other role. The only way a conductor can discover the trip_id that
+    // GET /public-api/v1/trips/{id}/qr/ needs.
+    mine: async (): Promise<MyTrip[]> => {
+      const { data } = await apiClient.get<ApiResponse<MyTrip[]>>('/scheduling/trips/mine/')
       return data.data
     },
 
