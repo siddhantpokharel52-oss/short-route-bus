@@ -243,20 +243,28 @@ async def fetch_routes(status: Optional[str] = None, route_type: Optional[str] =
 # view only — Yatroo's route-detail spec lists "Route Description" as a
 # detail-page field, not a list-page one).
 async def fetch_route(route_id: str) -> Optional[dict]:
+    """route_id comes straight from the URL path (GET /routes/{route_id}/ and friends) with
+    no format check -- same class of bug as get_route_operator_schemas() above: a non-UUID
+    value used to reach asyncpg unguarded and raise a raw DataError (500) instead of the
+    clean 404 every caller already returns for "no such route". Not a UUID at all and "no
+    matching row" mean the same thing here -- both now resolve to None the same way."""
     engine = get_engine()
     async with engine.connect() as conn:
-        result = await conn.execute(
-            text(
-                """
-                SELECT id, route_code, name_en, name_ne, start_stop_id, end_stop_id,
-                       distance_km, route_type, status, geojson_path, description,
-                       created_at, updated_at
-                FROM public.platform_route
-                WHERE id = :route_id AND is_deleted = false
-                """
-            ),
-            {"route_id": route_id},
-        )
+        try:
+            result = await conn.execute(
+                text(
+                    """
+                    SELECT id, route_code, name_en, name_ne, start_stop_id, end_stop_id,
+                           distance_km, route_type, status, geojson_path, description,
+                           created_at, updated_at
+                    FROM public.platform_route
+                    WHERE id = :route_id AND is_deleted = false
+                    """
+                ),
+                {"route_id": route_id},
+            )
+        except Exception:
+            return None
         row = result.first()
         return _row_to_dict(row) if row else None
 
