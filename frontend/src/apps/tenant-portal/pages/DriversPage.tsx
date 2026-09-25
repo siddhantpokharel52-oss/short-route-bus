@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, AlertTriangle, User, FileText, Briefcase, Bus, Heart, Wallet, Trash2, Eye, Pencil, KeyRound, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -163,36 +163,74 @@ export default function DriversPage() {
     { label: t('staff.drivers.sections.medical'), icon: Heart },
     { label: t('staff.drivers.sections.salary'), icon: Wallet },
   ]
+  // Same 5 sections as VIEW_STEPS (not the Add wizard's 6 -- there's no
+  // Vehicle tab in View and Driver has no assignable-vehicle field to edit
+  // here), each naming exactly which DriverForm fields it edits so the
+  // submit handler can scope its PATCH payload to just the chosen section.
+  const EDIT_SECTIONS: { label: string; icon: React.ElementType; fields: (keyof DriverForm)[] }[] = [
+    { label: t('staff.drivers.sections.personal'), icon: User, fields: ['full_name_en', 'full_name_ne', 'gender', 'dob', 'citizenship_no', 'phone', 'address', 'emergency_contact_name', 'emergency_contact_number'] },
+    { label: t('staff.drivers.sections.license'), icon: FileText, fields: ['license_no', 'license_category', 'license_issue_date', 'license_expiry', 'license_issuing_authority'] },
+    { label: t('staff.drivers.sections.employment'), icon: Briefcase, fields: ['employment_type', 'date_of_joining', 'experience_years', 'shift', 'previous_employer'] },
+    { label: t('staff.drivers.sections.medical'), icon: Heart, fields: ['blood_group', 'last_medical_checkup_date', 'medical_conditions'] },
+    { label: t('staff.drivers.sections.salary'), icon: Wallet, fields: ['basic_salary'] },
+  ]
+  // Edit is a two-step flow: pick a section (editPickerTarget), then edit
+  // just that section's fields (editTarget + editSection) -- same shape as
+  // the View modal's tabs, so whatever gets changed here is exactly what
+  // View already shows for that section. editSection indexes EDIT_SECTIONS,
+  // defined further down once t() and the field-editing form exist.
+  const [editPickerTarget, setEditPickerTarget] = useState<Driver | null>(null)
   const [editTarget, setEditTarget] = useState<Driver | null>(null)
+  const [editSection, setEditSection] = useState(0)
   const [deleteTarget, setDeleteTarget] = useState<Driver | null>(null)
   const [loginTarget, setLoginTarget] = useState<Driver | null>(null)
   const [loginEmail, setLoginEmail] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
 
+  // status isn't part of DriverForm (it's an operational field, not
+  // something set at creation time) -- kept as its own piece of state,
+  // edited alongside basic_salary on the Salary section, matching where
+  // the View modal already shows it.
   const [editStatus, setEditStatus] = useState('')
-  const [editShift, setEditShift] = useState('')
-  const [editPhone, setEditPhone] = useState('')
-  const [editLicenseNo, setEditLicenseNo] = useState('')
-  const [editLicenseCat, setEditLicenseCat] = useState('')
-  const [editLicenseExpiry, setEditLicenseExpiry] = useState('')
-  const [editExperience, setEditExperience] = useState('')
-  const [editBloodGroup, setEditBloodGroup] = useState('')
-  const [editEmploymentType, setEditEmploymentType] = useState('')
 
-  useEffect(() => {
-    if (!editTarget) return
-    setEditStatus(editTarget.status ?? '')
-    setEditShift(editTarget.shift ?? '')
-    setEditPhone(editTarget.phone ?? '')
-    setEditLicenseNo(editTarget.license_no ?? '')
-    setEditLicenseCat(editTarget.license_category ?? '')
-    setEditLicenseExpiry(editTarget.license_expiry ?? '')
-    setEditExperience(String(editTarget.experience_years ?? ''))
-    setEditBloodGroup(editTarget.blood_group ?? '')
-    setEditEmploymentType(editTarget.employment_type ?? '')
+  const openEditPicker = (d: Driver) => setEditPickerTarget(d)
+  const chooseEditSection = (index: number) => {
+    if (!editPickerTarget) return
+    setEditTarget(editPickerTarget)
+    setEditSection(index)
+    setEditStatus(editPickerTarget.status ?? '')
     setEditPhotoFile(null)
     setEditLicensePhotoFile(null)
-  }, [editTarget])
+    editForm.reset({
+      full_name_en: editPickerTarget.full_name_en ?? '',
+      full_name_ne: editPickerTarget.full_name_ne ?? '',
+      gender: editPickerTarget.gender ?? '',
+      dob: editPickerTarget.dob ?? '',
+      citizenship_no: editPickerTarget.citizenship_no ?? '',
+      phone: editPickerTarget.phone ?? '',
+      address: editPickerTarget.address ?? '',
+      emergency_contact_name: editPickerTarget.emergency_contact_name ?? '',
+      emergency_contact_number: editPickerTarget.emergency_contact_number ?? '',
+      license_no: editPickerTarget.license_no ?? '',
+      license_category: editPickerTarget.license_category ?? '',
+      license_issue_date: editPickerTarget.license_issue_date ?? '',
+      license_expiry: editPickerTarget.license_expiry ?? '',
+      license_issuing_authority: editPickerTarget.license_issuing_authority ?? '',
+      employment_type: editPickerTarget.employment_type ?? '',
+      date_of_joining: editPickerTarget.date_of_joining ?? '',
+      experience_years: String(editPickerTarget.experience_years ?? ''),
+      previous_employer: editPickerTarget.previous_employer ?? '',
+      shift: editPickerTarget.shift ?? '',
+      blood_group: editPickerTarget.blood_group ?? '',
+      medical_conditions: editPickerTarget.medical_conditions ?? '',
+      last_medical_checkup_date: editPickerTarget.last_medical_checkup_date ?? '',
+      basic_salary: editPickerTarget.basic_salary ?? '',
+      route_id: '',
+      bus_id: '',
+    })
+    setEditPickerTarget(null)
+  }
+  const closeEdit = () => { setEditTarget(null); setEditPhotoFile(null); setEditLicensePhotoFile(null) }
 
   const { data, isLoading } = useQuery({
     queryKey: ['drivers', pagination.page, search],
@@ -222,6 +260,12 @@ export default function DriversPage() {
       shift: '',
     },
   })
+
+  // Separate form instance for editing -- seeded per-driver, per-section from
+  // chooseEditSection() above, not from these defaults (Create's and Edit's
+  // forms are independent, same as their separate photo-file state already
+  // was before this change).
+  const editForm = useForm<DriverForm>()
 
   // Add Driver wizard: each section is a step. Nothing is saved server-side
   // until the final step's real submit -- currentStep/maxStepReached are
@@ -319,7 +363,7 @@ export default function DriversPage() {
 
   // ── Update ────────────────────────────────────────────────────────────────────
   const updateDriverMutation = useMutation({
-    mutationFn: (payload: Partial<Driver>) => {
+    mutationFn: (payload: Record<string, unknown>) => {
       if (!editPhotoFile && !editLicensePhotoFile) {
         return apiClient.patch(`/operator/drivers/${editTarget!.id}/`, payload)
       }
@@ -335,9 +379,7 @@ export default function DriversPage() {
     },
     onSuccess: () => {
       toast.success(t('staff.drivers.toast.updated'))
-      setEditTarget(null)
-      setEditPhotoFile(null)
-      setEditLicensePhotoFile(null)
+      closeEdit()
       qc.invalidateQueries({ queryKey: ['drivers'] })
     },
     onError: (err: unknown) => {
@@ -379,18 +421,28 @@ export default function DriversPage() {
     },
   })
 
-  const handleUpdate = () => {
-    updateDriverMutation.mutate({
-      status: editStatus,
-      shift: editShift || undefined,
-      phone: editPhone,
-      license_no: editLicenseNo,
-      license_category: editLicenseCat,
-      license_expiry: editLicenseExpiry,
-      experience_years: editExperience ? Number(editExperience) : undefined,
-      blood_group: editBloodGroup || undefined,
-      employment_type: editEmploymentType,
-    })
+  // Scoped to whichever section was chosen in the picker -- only that
+  // section's fields go in the PATCH, so an edit to License can't
+  // accidentally resend (and overwrite with stale data) Personal's fields.
+  const handleUpdate = (values: DriverForm) => {
+    const fields = EDIT_SECTIONS[editSection].fields
+    const payload: Record<string, unknown> = {}
+    for (const field of fields) {
+      if (field === 'experience_years') {
+        payload.experience_years = values.experience_years ? Number(values.experience_years) : 0
+      } else if (field === 'basic_salary') {
+        payload.basic_salary = values.basic_salary || null
+      } else {
+        payload[field] = values[field]
+      }
+    }
+    if (editSection === EDIT_SECTIONS.length - 1) {
+      // Salary section also carries status -- it's not part of DriverForm
+      // (an operational field, not something set at creation), so it's
+      // added here rather than in the fields loop above.
+      payload.status = editStatus
+    }
+    updateDriverMutation.mutate(payload)
   }
 
   // ── Table columns ─────────────────────────────────────────────────────────────
@@ -460,7 +512,7 @@ export default function DriversPage() {
             <Eye className="h-4 w-4" />
           </button>
           <button
-            onClick={() => setEditTarget(d)}
+            onClick={() => openEditPicker(d)}
             className="rounded-lg p-1.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
           >
             <Pencil className="h-4 w-4" />
@@ -614,145 +666,246 @@ export default function DriversPage() {
         )}
       </Modal>
 
-      {/* ── Edit Driver Modal ─────────────────────────────────────────────── */}
+      {/* ── Edit: choose a section ────────────────────────────────────────── */}
+      <Modal
+        open={!!editPickerTarget}
+        onClose={() => setEditPickerTarget(null)}
+        title={t('staff.drivers.editSectionPickerTitle', { defaultValue: 'What do you want to edit?' })}
+        size="sm"
+      >
+        {editPickerTarget && (
+          <div className="p-6 space-y-4">
+            <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+              <strong>{editPickerTarget.full_name_en}</strong> · {editPickerTarget.employee_id}
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {EDIT_SECTIONS.map((section, index) => {
+                const SectionIcon = section.icon
+                return (
+                  <button
+                    key={section.label}
+                    type="button"
+                    onClick={() => chooseEditSection(index)}
+                    className="flex flex-col items-center gap-2 rounded-lg border border-gray-200 px-3 py-4 text-center text-sm font-medium text-gray-700 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700 transition-colors"
+                  >
+                    <SectionIcon className="h-5 w-5" />
+                    {section.label}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex justify-end border-t pt-4">
+              <Button variant="secondary" onClick={() => setEditPickerTarget(null)}>{t('common:common.cancel')}</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Edit: the chosen section's fields ─────────────────────────────── */}
       <Modal
         open={!!editTarget}
-        onClose={() => setEditTarget(null)}
-        title={`${t('staff.drivers.title')} — ${editTarget?.employee_id ?? ''}`}
+        onClose={closeEdit}
+        title={`${t('staff.drivers.title')} — ${editTarget?.employee_id ?? ''} — ${EDIT_SECTIONS[editSection].label}`}
         size="md"
       >
         {editTarget && (
-          <div className="space-y-4 p-6">
-            <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
-              <strong>{editTarget.full_name_en}</strong> · {editTarget.employee_id}
-            </p>
-
-            <PhotoUploadField label="Photo" existingUrl={editTarget.photo} onFileChange={setEditPhotoFile} />
-            <PhotoUploadField label="License Photo" existingUrl={editTarget.license_photo} onFileChange={setEditLicensePhotoFile} />
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.status')}</label>
-                <select
-                  value={editStatus}
-                  onChange={(e) => setEditStatus(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="ACTIVE">{t('staff.drivers.statuses.active')}</option>
-                  <option value="INACTIVE">{t('staff.drivers.statuses.inactive')}</option>
-                  <option value="ON_LEAVE">{t('staff.drivers.statuses.onLeave')}</option>
-                  <option value="SUSPENDED">{t('staff.drivers.statuses.suspended')}</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.fields.employmentType')}</label>
-                <select
-                  value={editEmploymentType}
-                  onChange={(e) => setEditEmploymentType(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="PERMANENT">{t('staff.drivers.employmentTypes.permanent')}</option>
-                  <option value="CONTRACT">{t('staff.drivers.employmentTypes.contract')}</option>
-                  <option value="PART_TIME">{t('staff.drivers.employmentTypes.partTime')}</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.fields.shift')}</label>
-                <select
-                  value={editShift}
-                  onChange={(e) => setEditShift(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="">{t('staff.drivers.notAssigned')}</option>
-                  <option value="MORNING">{t('staff.drivers.shifts.morning')}</option>
-                  <option value="DAY">{t('staff.drivers.shifts.day')}</option>
-                  <option value="EVENING">{t('staff.drivers.shifts.evening')}</option>
-                  <option value="NIGHT">{t('staff.drivers.shifts.night')}</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.fields.bloodGroup')}</label>
-                <select
-                  value={editBloodGroup}
-                  onChange={(e) => setEditBloodGroup(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="">{t('staff.drivers.unknown')}</option>
-                  {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map((bg) => (
-                    <option key={bg} value={bg}>{bg}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.fields.phone')}</label>
-                <input
-                  type="text"
-                  maxLength={10}
-                  inputMode="numeric"
-                  value={editPhone}
-                  onChange={(e) => setEditPhone(sanitizePhoneDigits(e.target.value))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.fields.experienceYears')}</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="50"
-                  value={editExperience}
-                  onChange={(e) => setEditExperience(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.licenseNumber')}</label>
-                <input
-                  type="text"
-                  value={editLicenseNo}
-                  onChange={(e) => setEditLicenseNo(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.table.class')}</label>
-                <select
-                  value={editLicenseCat}
-                  onChange={(e) => setEditLicenseCat(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="">{t('staff.drivers.selectClass')}</option>
-                  <option value="A">{t('staff.drivers.licenseClasses.a')}</option>
-                  <option value="B">{t('staff.drivers.licenseClasses.b')}</option>
-                  <option value="C">{t('staff.drivers.licenseClasses.c')}</option>
-                  <option value="D">{t('staff.drivers.licenseClasses.d')}</option>
-                  <option value="E">{t('staff.drivers.licenseClasses.e')}</option>
-                </select>
-              </div>
-
-              <div className="sm:col-span-2">
-                <NepaliDateInput
-                  label={t('staff.drivers.fields.licenseExpiryDate')}
-                  value={editLicenseExpiry}
-                  onChange={setEditLicenseExpiry}
-                />
-              </div>
+          <form onSubmit={editForm.handleSubmit(handleUpdate)} className="space-y-4 p-6">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                <strong>{editTarget.full_name_en}</strong> · {editTarget.employee_id}
+              </p>
+              <button
+                type="button"
+                onClick={() => { setEditPickerTarget(editTarget); setEditTarget(null) }}
+                className="text-xs font-medium text-primary-600 hover:text-primary-700"
+              >
+                {t('staff.drivers.changeSection', { defaultValue: 'Change section' })}
+              </button>
             </div>
 
+            {editSection === 0 && <>
+              <PhotoUploadField label="Photo" existingUrl={editTarget.photo} onFileChange={setEditPhotoFile} />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input label={t('staff.drivers.fields.fullNameEn')} {...editForm.register('full_name_en')} />
+                <NepaliInput label={t('staff.drivers.fields.fullNameNe')} {...editForm.register('full_name_ne')} />
+                <Controller
+                  name="gender"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <SelectField label={t('staff.drivers.fields.gender')} {...field}>
+                      <option value="MALE">{t('staff.drivers.genders.male')}</option>
+                      <option value="FEMALE">{t('staff.drivers.genders.female')}</option>
+                      <option value="OTHER">{t('staff.drivers.genders.other')}</option>
+                    </SelectField>
+                  )}
+                />
+                <Controller
+                  name="dob"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <NepaliDateInput label={t('staff.drivers.fields.dob')} value={field.value} onChange={field.onChange} />
+                  )}
+                />
+                <Input label={t('staff.drivers.fields.citizenshipNo')} {...editForm.register('citizenship_no')} />
+                <Input
+                  label={t('staff.drivers.fields.phone')}
+                  maxLength={10}
+                  inputMode="numeric"
+                  {...editForm.register('phone', {
+                    onChange: (e) => { e.target.value = sanitizePhoneDigits(e.target.value) },
+                  })}
+                />
+                <div className="sm:col-span-2">
+                  <Input label={t('staff.drivers.fields.address')} {...editForm.register('address')} />
+                </div>
+                <Input label={t('staff.drivers.fields.emergencyContact')} {...editForm.register('emergency_contact_name')} />
+                <Input
+                  label={t('staff.drivers.fields.emergencyPhone')}
+                  maxLength={10}
+                  inputMode="numeric"
+                  {...editForm.register('emergency_contact_number', {
+                    onChange: (e) => { e.target.value = sanitizePhoneDigits(e.target.value) },
+                  })}
+                />
+              </div>
+            </>}
+
+            {editSection === 1 && <>
+              <PhotoUploadField label="License Photo" existingUrl={editTarget.license_photo} onFileChange={setEditLicensePhotoFile} />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input label={t('staff.drivers.licenseNumber')} {...editForm.register('license_no')} />
+                <Controller
+                  name="license_category"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <SelectField label={t('staff.drivers.fields.licenseClass')} {...field}>
+                      <option value="">{t('staff.drivers.selectClass')}</option>
+                      <option value="A">{t('staff.drivers.licenseClasses.a')}</option>
+                      <option value="B">{t('staff.drivers.licenseClasses.b')}</option>
+                      <option value="C">{t('staff.drivers.licenseClasses.c')}</option>
+                      <option value="D">{t('staff.drivers.licenseClasses.d')}</option>
+                      <option value="E">{t('staff.drivers.licenseClasses.e')}</option>
+                    </SelectField>
+                  )}
+                />
+                <Controller
+                  name="license_issue_date"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <NepaliDateInput label={t('staff.drivers.fields.issueDate')} value={field.value} onChange={field.onChange} />
+                  )}
+                />
+                <Controller
+                  name="license_expiry"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <NepaliDateInput label={t('staff.drivers.fields.expiryDate')} value={field.value} onChange={field.onChange} />
+                  )}
+                />
+                <div className="sm:col-span-2">
+                  <Input label={t('staff.drivers.fields.issuingAuthority')} {...editForm.register('license_issuing_authority')} />
+                </div>
+              </div>
+            </>}
+
+            {editSection === 2 && <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Controller
+                  name="date_of_joining"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <NepaliDateInput label={t('staff.drivers.fields.dateOfJoining')} value={field.value} onChange={field.onChange} />
+                  )}
+                />
+                <Input label={t('staff.drivers.fields.experienceYears')} type="number" min="0" max="50" {...editForm.register('experience_years')} />
+                <Controller
+                  name="employment_type"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <SelectField label={t('staff.drivers.fields.employmentType')} {...field}>
+                      <option value="PERMANENT">{t('staff.drivers.employmentTypes.permanent')}</option>
+                      <option value="CONTRACT">{t('staff.drivers.employmentTypes.contract')}</option>
+                      <option value="PART_TIME">{t('staff.drivers.employmentTypes.partTime')}</option>
+                    </SelectField>
+                  )}
+                />
+                <Input label={t('staff.drivers.fields.previousEmployer')} {...editForm.register('previous_employer')} />
+                <Controller
+                  name="shift"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <SelectField label={t('staff.drivers.fields.shift')} {...field}>
+                      <option value="">{t('staff.drivers.notAssigned')}</option>
+                      <option value="MORNING">{t('staff.drivers.shifts.morning')}</option>
+                      <option value="DAY">{t('staff.drivers.shifts.day')}</option>
+                      <option value="EVENING">{t('staff.drivers.shifts.evening')}</option>
+                      <option value="NIGHT">{t('staff.drivers.shifts.night')}</option>
+                    </SelectField>
+                  )}
+                />
+              </div>
+            </>}
+
+            {editSection === 3 && <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Controller
+                  name="blood_group"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <SelectField label={t('staff.drivers.fields.bloodGroup')} {...field}>
+                      <option value="">{t('staff.drivers.unknown')}</option>
+                      {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map((bg) => (
+                        <option key={bg} value={bg}>{bg}</option>
+                      ))}
+                    </SelectField>
+                  )}
+                />
+                <Controller
+                  name="last_medical_checkup_date"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <NepaliDateInput label={t('staff.drivers.fields.lastCheckup')} value={field.value} onChange={field.onChange} />
+                  )}
+                />
+                <div className="sm:col-span-2">
+                  <label className="mb-1 block text-sm font-medium text-gray-700">
+                    {t('staff.drivers.fields.medicalConditions')}
+                  </label>
+                  <textarea
+                    rows={3}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    {...editForm.register('medical_conditions')}
+                  />
+                </div>
+              </div>
+            </>}
+
+            {editSection === 4 && <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input label={t('staff.drivers.fields.basicSalary')} type="number" min="0" step="0.01" {...editForm.register('basic_salary')} />
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.drivers.status')}</label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  >
+                    <option value="ACTIVE">{t('staff.drivers.statuses.active')}</option>
+                    <option value="INACTIVE">{t('staff.drivers.statuses.inactive')}</option>
+                    <option value="ON_LEAVE">{t('staff.drivers.statuses.onLeave')}</option>
+                    <option value="SUSPENDED">{t('staff.drivers.statuses.suspended')}</option>
+                  </select>
+                </div>
+              </div>
+            </>}
+
             <div className="flex justify-end gap-3 border-t pt-4">
-              <Button variant="secondary" onClick={() => setEditTarget(null)}>{t('common:common.cancel')}</Button>
-              <Button onClick={handleUpdate} loading={updateDriverMutation.isPending}>
+              <Button type="button" variant="secondary" onClick={closeEdit}>{t('common:common.cancel')}</Button>
+              <Button type="submit" loading={updateDriverMutation.isPending}>
                 {t('staff.drivers.saveChanges')}
               </Button>
             </div>
-          </div>
+          </form>
         )}
       </Modal>
 
