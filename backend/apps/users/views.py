@@ -296,6 +296,15 @@ class ChangePasswordView(views.APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
         user.set_password(serializer.validated_data["new_password"])
         user.save()
+
+        # An Owner setting their own password for the first time (replacing
+        # the tenant-issued temp password) -- clear it so the tenant's UI
+        # stops showing it. The real password the owner just chose is never
+        # stored anywhere in retrievable form, only its hash on User.
+        if user.role == User.Role.OWNER:
+            from backend.apps.fleet.models import Owner
+            Owner.objects.filter(user_id=user.id).update(temp_password="")
+
         return Response({
             "success": True,
             "data": None,

@@ -9,6 +9,7 @@ import RosterGridPage from './pages/RosterGridPage'
 import DriverRosterPage from './pages/DriverRosterPage'
 import OwnersPage from './pages/OwnersPage'
 import MyEarningsPage from './pages/MyEarningsPage'
+import SetNewPasswordPage from './pages/SetNewPasswordPage'
 import DriversPage from './pages/DriversPage'
 import ConductorsPage from './pages/ConductorsPage'
 import SchedulingPage from './pages/SchedulingPage'
@@ -38,8 +39,14 @@ export default function TenantApp() {
   // bookmarked URL could still land here and render an empty, broken-looking
   // page shell with nothing to show. Redirect away before that happens,
   // rather than let a page render that the owner was never meant to reach.
-  if (user?.role === 'OWNER' && !location.pathname.endsWith('/my-earnings')) {
-    return <Navigate to="my-earnings" replace />
+  if (user?.role === 'OWNER') {
+    if (user.mustChangePassword) {
+      if (!location.pathname.endsWith('/set-new-password')) {
+        return <Navigate to="set-new-password" replace />
+      }
+    } else if (!location.pathname.endsWith('/my-earnings')) {
+      return <Navigate to="my-earnings" replace />
+    }
   }
 
   return (
@@ -56,6 +63,7 @@ export default function TenantApp() {
         <Route path="my-roster" element={<DriverRosterPage />} />
         <Route path="owners" element={<OwnersPage />} />
         <Route path="my-earnings" element={<MyEarningsPage />} />
+        <Route path="set-new-password" element={<SetNewPasswordPage />} />
         <Route path="drivers" element={<DriversPage />} />
         <Route path="conductors" element={<ConductorsPage />} />
 

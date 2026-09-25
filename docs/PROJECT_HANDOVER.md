@@ -2,12 +2,13 @@
 
 **Purpose:** current, single source of truth for anyone picking this project
 up — what's built, what's deployed, how to operate it, and what's still
-open, across five active workstreams (the Yatroo integration, the
+open, across six active workstreams (the Yatroo integration, the
 NamastePay payment system, the CityBus Team Implementation Guide gaps, the
-Route & Group Rotation QA fix series, and the Pokhara tenant QA fix
-series) plus current production deployment status.
+Route & Group Rotation QA fix series, the Pokhara tenant QA fix series, and
+Owner accounts / login security & form UX) plus current production
+deployment status.
 
-**Last updated:** 2026-09-23
+**Last updated:** 2026-09-25
 
 ---
 
@@ -20,7 +21,8 @@ series) plus current production deployment status.
 | **Team Implementation Guide gaps** (§4) | All 3 original code-fixable gaps closed (per-passenger destinations, Bus Owner Dashboard, ticket history API), plus a follow-up pass that found and closed a real access-control gap — the Owner Dashboard's own endpoints and nav had no real role scoping. Also added: ISSUED/PAID timestamp scaffolding for §3.6, a `child_fare` bulk-tooling fix for §3.3, (§4.5) a full real-device testing pass across owner/conductor/admin that found and fixed six more UX/access gaps — one of which, a hard requirement that a conductor open a shift before issuing tickets, was **itself removed again days later** along with the rest of shift tracking (§3.1.1) — and (§4.6) a real regression that same lockdown introduced — self-service/group ticket purchase would have 403'd in production — caught live and fixed before shipping. 2 items (§3.6's actual state machine, §3.3's real concession rates) still need a team decision or external numbers, not code. |
 | **Route & Group Rotation QA report** (§5) | All 94 issues triaged; every issue that was a real, scopeable bug is fixed and verified live (Critical 5/5, High 21/24, Medium/Low 29/65). The rest (39 issues) are explicitly "Clarify"-status or large standalone features needing a product decision first — not oversights. |
 | **Pokhara tenant QA report** (§6) | All 11 issues fixed and verified live against a real second tenant. Headline finding: Route/Stop weren't filtered by tenant assignment at all — a cross-tenant data leak that had already **corrupted** a tenant's own roster data (real `Duty` rows written against another tenant's routes), not just a display bug. Also closed: two stuck-submit-button/silent-400 form bugs, a genuinely missing "create a login for this conductor/driver" flow (nothing in the product ever built it), a dead-looking-but-actually-guarded button, mislabeled nav links, unseeded tenant branding, and a stray-waypoint map bug. |
-| **Production deployment** (§7) | Everything through commit `ef413128` is confirmed live in production as of 2026-09-21. Everything since — §4.5/§4.6's fixes (`c3374338`), §3.1.1's shift-tracking removal (`57f0efbe`, one new migration), and all of §6's Pokhara fixes (`1997e392`, `6e230f3b`, `57994545`) — is committed and pushed but **not yet confirmed deployed**; deploy commands are ready, see §7. |
+| **Owner accounts / login security & form UX** (§7) | Owner `create-login` + forced temp-password change flow built, verified live end-to-end, and committed. Also fixed in the same pass: a broken `changePassword` endpoint call (wrong URL/field name), admin-password fields rendering in plaintext (`type="text"`), and a password-strength mismatch between frontend (8 chars) and backend (10 chars) validation. |
+| **Production deployment** (§8) | Everything through commit `ef413128` is confirmed live in production as of 2026-09-21. Everything since — §4.5/§4.6's fixes (`c3374338`), §3.1.1's shift-tracking removal (`57f0efbe`, one new migration), §6's Pokhara fixes (`1997e392`, `6e230f3b`, `57994545`), and §7's owner-accounts work — is committed and pushed but **not yet confirmed deployed**; deploy commands are ready, see §8. |
 
 ---
 
@@ -42,7 +44,7 @@ Two separate pieces of work, both done:
 
 **Endpoint:** `POST /partner/federated-login` (also reachable at
 `/public-api/v1/partner/federated-login` — both resolve to the same place;
-see the nginx note in §7).
+see the nginx note in §8).
 
 **Flow:** Yatroo's backend, having already authenticated its own rider,
 signs a request (`external_user_id` + optional `phone`/`email`/`name`) with
@@ -155,7 +157,7 @@ point against the actual code:
 | Money settling into each owner's **own** Namaste Pay account | ❌ Not built | `NamastePayConfig` is one row per **tenant** (company-wide), not per-owner — confirmed via `NamastePayConfig.objects.first()`, an unfiltered singleton lookup, used everywhere the config is read. `fleet.Owner` has no field referencing any Namaste Pay account/wallet/agent ID at all. |
 | Static QR on the bus for a passenger with no app booking | ❌ Not built | Zero matches anywhere in the codebase for any static/owner-linked QR — only the existing per-ticket dynamic QR exists. Same root blocker as CB5. |
 | Passenger paying directly from their Namaste Pay wallet (Subscriber API) | ❌ Not built | The existing NamastePay flow (CB9) is a hosted-checkout redirect, a different mechanism; no Subscriber API integration exists, and we don't have their Subscriber API docs. |
-| Per-company/per-vehicle route availability with times | ⚠️ Partial | `GET /routes/{id}/` returns only an aggregate `total_buses` count across every operator on that route — the per-schema counts are computed internally then discarded, never broken out per company. No live arrival times (GPS tracking is out of scope, §10). |
+| Per-company/per-vehicle route availability with times | ⚠️ Partial | `GET /routes/{id}/` returns only an aggregate `total_buses` count across every operator on that route — the per-schema counts are computed internally then discarded, never broken out per company. No live arrival times (GPS tracking is out of scope, §11). |
 | Namaste Pay's own future interoperability with other PSPs | N/A | Entirely Namaste Pay's own roadmap; not something this codebase would ever implement either way. |
 
 **Bottom line:** this document assumes a fundamentally different money-routing
@@ -181,7 +183,7 @@ search API is slow. Checked directly against the code:
   `POST /tickets/namastepay/checkout/` also exist. All are real, working,
   proxied through to Django's ticket-creation logic. Most likely
   explanation: Yatroo is working off stale/incomplete documentation — see
-  §8, the Reference doc still hasn't been sent to them.
+  §9, the Reference doc still hasn't been sent to them.
 - **"Fares API slow" — no cause found in code, can't rule it out either.**
   Traced the full call chain (`get_fares` → `tenant_db.fetch_fares` →
   `_fetch_fares_exact`): no cross-schema fan-out, no N+1 queries, no
@@ -425,7 +427,7 @@ ticket issuance (via the actual POS UI) always produces a genuine QR;
 backfilled the seed data to match rather than leave it looking broken.
 
 `npx tsc --noEmit` and `python manage.py check` clean throughout. Committed
-(`c3374338`), pushed. Not yet confirmed deployed to production — see §7.
+(`c3374338`), pushed. Not yet confirmed deployed to production — see §8.
 
 ### 4.6 Self-service ticket regression + payment_reference echo fix (2026-09-23)
 
@@ -667,7 +669,34 @@ PaymentIntegrationPage, Routes), `frontend/src/components/shared/`
 
 ---
 
-## 7. Production deployment — operational notes
+## 7. Owner accounts / login security & form UX
+
+A Bus Owner created via `OwnersPage.tsx` had no way to actually get a login
+short of a tenant admin manually creating a `User` in Django admin and
+pasting its UUID into a raw "Login User ID" field — the same gap `Driver`/
+`Conductor` already had a `create-login` action for. Fixing that surfaced a
+cluster of related, smaller gaps in the same area, all closed together:
+
+| Finding | Fix |
+|---|---|
+| Owner had no `create-login` action, unlike Driver/Conductor. | New `POST /fleet/owners/{id}/create-login/` (`OwnerViewSet`), mirroring `ConductorViewSet.create_login()` exactly — creates a `role=OWNER` `User`, links `Owner.user_id`, and stores the tenant-chosen password as `Owner.temp_password` (new `EncryptedCharField`, same type as `NamastePayConfig.api_key`) so the tenant admin can view it (eye toggle) until the owner signs in and replaces it. |
+| Driver/Conductor/Owner/Tenant-admin `create-login`/create-account paths read straight from `request.data` and called `set_password()` directly — no email-format or password-strength check anywhere, unlike the normal registration path. | New shared `backend/apps/users/validators.py` (`validate_email_or_message`, `validate_password_or_messages`, `ComplexityPasswordValidator` registered in `AUTH_PASSWORD_VALIDATORS`) — applied uniformly across `DriverViewSet`/`ConductorViewSet`/`OwnerViewSet.create_login()` and `TenantViewSet`'s admin-creation action. |
+| An owner logging in with a tenant-issued temp password had no forced path to set their own — they'd land straight on My Earnings still using it. | `CustomTokenObtainPairSerializer` returns `must_change_password` (true whenever `Owner.temp_password` is still set); `TenantApp.tsx`'s route guard redirects there before anything else; new `SetNewPasswordPage.tsx` reuses the existing change-password endpoint (`old_password` = the temp password); `ChangePasswordView` clears `Owner.temp_password` on success. |
+| **Real, separate bug found in the same area:** `authService.changePassword()` was calling `/auth/password/change/` (doesn't exist) with a `confirm_password` field — the actual endpoint is `/auth/change-password/` and the actual field is `new_password_confirm`. Every "change password" attempt anywhere in the app (`SettingsPage.tsx`, `TenantSettingsPage.tsx`) would have 404'd or failed validation before this fix. | Corrected the URL and field mapping in `authService.ts`. |
+| **Real security issue found in the same area:** the admin-password inputs on `TenantsPage.tsx`/`TenantDetailPage.tsx` (super-admin creating a tenant + its admin login) were `type="text"` — a password typed there was fully visible on screen and could be captured by a screen-share, unlike every other password field in the app. | Changed to `type="password"`, and the shared `Input` component (`components/shared/Input.tsx`) now gives **every** password field a show/hide eye toggle for free (unless the caller already supplies its own `rightAddon`), so this class of field never regresses back to plaintext-only again. |
+| **Found during this review, fixed before committing:** the new `isValidPassword()`/`PASSWORD_VALIDATION_MESSAGE` (`utils/password.ts`) and every "must be at least 8 characters" hint (English *and* Nepali i18n strings, plus a raw placeholder on `TenantDetailPage.tsx`) said **8**, but the backend's actual `MinimumLengthValidator` requires **10** (`base.py`, unchanged) — a real user could pass every client-side check with an 8- or 9-character password and then get a confusing server-side 400. Fixed to 10 everywhere, both languages. | `utils/password.ts`, `i18n/en/platform.json`, `i18n/ne/platform.json`, `TenantDetailPage.tsx`. |
+| Drivers' "View" modal was a single long vertical scroll through five sections; the new step-based "Add Driver" wizard (gated — each step's required fields must pass before "Next" unlocks the next tab) made that inconsistency more visible. | View modal rebuilt as a horizontal pill-tab layout matching the Add wizard's visual language, but **ungated** (every tab clickable in any order at any time, since it's read-only) — same pattern applied to Owners' new View modal. Add Driver wizard also now advances on Enter within a non-final step instead of submitting early. |
+
+Verified end-to-end (not just read): live-tested `create-login` → login
+returns `must_change_password: true` → `change-password` with the temp
+password succeeds and clears `Owner.temp_password` — all three steps
+confirmed against the real running dev stack, fixture cleaned up
+afterward. `npx tsc --noEmit` and `python manage.py check` clean. Migration
+(`fleet.0012_owner_temp_password`) already applied to the dev DB.
+
+---
+
+## 8. Production deployment — operational notes
 
 **Server access:** SSH `citybus@172.19.0.246`. Production uses
 `docker-compose.prod.yml` **only** — never combine it with the base
@@ -689,7 +718,12 @@ query/view/frontend changes only). No manual migrate step needed — the
 every time it starts (`docker-compose.prod.yml`'s `command:`), so the one
 pending migration applies automatically on the same `up -d django` step
 used for every prior deploy; it just won't be a no-op like the previous
-commit's migrate step was:
+commit's migrate step was.
+
+**Also now pending — §7's owner-accounts commit**, one more migration on
+top of the above (`fleet/migrations/0012_owner_temp_password.py`, adds
+`Owner.temp_password`), picked up automatically by the same `django`
+startup migrate step, no separate action needed:
 
 ```bash
 ssh citybus@172.19.0.246
@@ -784,7 +818,7 @@ not any API-level test. Keep doing both.
 
 ---
 
-## 8. Documents already sent to / prepared for Yatroo
+## 9. Documents already sent to / prepared for Yatroo
 
 All of the following are **intentionally untracked in git** (never
 committed, never deployed to the server) — they're deliverables to hand
@@ -830,7 +864,7 @@ the user, but hasn't been confirmed sent yet.
 
 ---
 
-## 9. Where things live (quick reference)
+## 10. Where things live (quick reference)
 
 | What | Where |
 |---|---|
@@ -859,6 +893,9 @@ the user, but hasn't been confirmed sent yet.
 | Conductor/Driver "create login" flow | `backend/apps/staff/views.py` (`ConductorViewSet.create_login()`/`DriverViewSet.create_login()`); UI in `frontend/.../pages/ConductorsPage.tsx`/`DriversPage.tsx` (row action) |
 | New-tenant `BusCompany` seeding | `backend/apps/tenants/serializers.py` (`TenantSerializer.create()`) |
 | Local-dev test tenant (persistent, real second schema) | `pokhara` / `qa.pokhara.admin@kvbms.local` — created for the Pokhara QA cross-tenant fixes, kept around for future tenant-isolation testing |
+| Owner `create-login` + temp-password flow | `backend/apps/fleet/views.py` (`OwnerViewSet.create_login()`), `backend/apps/fleet/models.py` (`Owner.temp_password`), `backend/apps/users/serializers.py` (`must_change_password`), `backend/apps/users/views.py` (`ChangePasswordView` clearing it); UI in `frontend/.../pages/OwnersPage.tsx`, `frontend/.../pages/SetNewPasswordPage.tsx` |
+| Shared email/password validators | `backend/apps/users/validators.py` (`validate_email_or_message`, `validate_password_or_messages`, `ComplexityPasswordValidator`); frontend equivalents `frontend/src/utils/email.ts`, `frontend/src/utils/password.ts` |
+| Universal password show/hide toggle | `frontend/src/components/shared/Input.tsx` |
 | Tests | `tests/backend/test_partner_api/`, `tests/backend/test_public_api/` |
 | Full Master API reference (internal, git-tracked) | `docs/API.md` |
 | This project's own status history (now partly stale) | `docs/YATROO_INTEGRATION_STATUS.md` |
@@ -866,10 +903,10 @@ the user, but hasn't been confirmed sent yet.
 
 ---
 
-## 10. What's genuinely still open, across all five workstreams
+## 11. What's genuinely still open, across all six workstreams
 
 **Yatroo:**
-- Yatroo hasn't been sent the Reference/Recent-Changes docs yet (§8), and
+- Yatroo hasn't been sent the Reference/Recent-Changes docs yet (§9), and
   those docs now trail §4.1's fixes by a few days.
 - Reply to Yatroo's 2026-09-01 complaint (§2.6) still needs to actually be
   sent — a drafted response is ready, clarifying the ticket API does exist
@@ -914,17 +951,22 @@ the user, but hasn't been confirmed sent yet.
   from this same pass was itself removed again in §3.1.1, so it's no
   longer part of what's pending deploy) and §4.6's regression/
   payment_reference fixes are committed and pushed (`c3374338`) but
-  **not yet confirmed deployed** — deploy commands are in §7, same
+  **not yet confirmed deployed** — deploy commands are in §8, same
   sequence used for `ef413128`. §3.1.1's shift-removal commit
-  (`57f0efbe`) is also pending the same deploy.
+  (`57f0efbe`) and §7's owner-accounts work are also pending the same
+  deploy.
 
 **Pokhara tenant QA report (§6):** everything in §6 (all 11 issues) is
 committed and pushed (`1997e392`, `6e230f3b`, `57994545`) but **not yet
 confirmed deployed** — same pending-deploy batch as everything else in
-this section, see §7. Also still open, not code: a read-only audit for
+this section, see §8. Also still open, not code: a read-only audit for
 already-corrupted `Duty` rows in the live production database (§6.1)
 needs to actually be run, and any rows it finds need explicit
 confirmation before deleting anything.
+
+**Owner accounts / login security & form UX (§7):** fully built and
+verified, nothing blocked — committed and pushed but **not yet confirmed
+deployed**, same pending-deploy batch, see §8.
 
 **Also still open, unrelated to any specific doc:** whether one owner's
 buses can span more than one tenant (§3.7's own open item — a business

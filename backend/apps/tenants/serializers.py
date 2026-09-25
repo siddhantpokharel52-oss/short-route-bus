@@ -50,8 +50,12 @@ class TenantSerializer(serializers.ModelSerializer):
         admin_password = data.get("admin_password", "").strip()
         if admin_email and not admin_password:
             raise serializers.ValidationError({"admin_password": "Password is required when admin email is provided."})
-        if admin_password and len(admin_password) < 8:
-            raise serializers.ValidationError({"admin_password": "Password must be at least 8 characters."})
+        if admin_password:
+            from django.core.exceptions import ValidationError as DjangoValidationError
+            try:
+                validate_password(admin_password)
+            except DjangoValidationError as e:
+                raise serializers.ValidationError({"admin_password": list(e.messages)})
         return data
 
     def create(self, validated_data):

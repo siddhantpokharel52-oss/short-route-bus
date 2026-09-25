@@ -72,6 +72,17 @@ class DriverViewSet(ModelViewSet):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
+        from backend.apps.users.validators import validate_email_or_message, validate_password_or_messages
+        email_error = validate_email_or_message(email)
+        if email_error:
+            return api_response(success=False, message=email_error, status_code=status.HTTP_400_BAD_REQUEST)
+        password_errors = validate_password_or_messages(password)
+        if password_errors:
+            return api_response(
+                success=False, message=" ".join(password_errors),
+                errors={"password": password_errors}, status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
         from backend.apps.users.models import User
         if User.objects.filter(email=email).exists():
             return api_response(
@@ -193,6 +204,17 @@ class ConductorViewSet(ModelViewSet):
             return api_response(
                 success=False, message="email and password are required.",
                 status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from backend.apps.users.validators import validate_email_or_message, validate_password_or_messages
+        email_error = validate_email_or_message(email)
+        if email_error:
+            return api_response(success=False, message=email_error, status_code=status.HTTP_400_BAD_REQUEST)
+        password_errors = validate_password_or_messages(password)
+        if password_errors:
+            return api_response(
+                success=False, message=" ".join(password_errors),
+                errors={"password": password_errors}, status_code=status.HTTP_400_BAD_REQUEST,
             )
 
         from backend.apps.users.models import User

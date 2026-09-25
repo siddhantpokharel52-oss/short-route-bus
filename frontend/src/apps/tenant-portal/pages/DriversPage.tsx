@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, AlertTriangle, User, FileText, Briefcase, Bus, Heart, Wallet, Trash2, Eye, Pencil, KeyRound } from 'lucide-react'
+import { Plus, Search, AlertTriangle, User, FileText, Briefcase, Bus, Heart, Wallet, Trash2, Eye, Pencil, KeyRound, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
@@ -16,6 +16,9 @@ import apiClient from '@services/api'
 import toast from 'react-hot-toast'
 import { useForm, Controller } from 'react-hook-form'
 import { sanitizePhoneDigits, isValidPhone, PHONE_VALIDATION_MESSAGE } from '@utils/phone'
+import { isValidEmail, EMAIL_VALIDATION_MESSAGE } from '@utils/email'
+import { isValidPassword, PASSWORD_VALIDATION_MESSAGE } from '@utils/password'
+import { cn } from '@utils/cn'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Driver {
@@ -152,6 +155,14 @@ export default function DriversPage() {
   const [editLicensePhotoFile, setEditLicensePhotoFile] = useState<File | null>(null)
 
   const [viewTarget, setViewTarget] = useState<Driver | null>(null)
+  const [viewStep, setViewStep] = useState(0)
+  const VIEW_STEPS: { label: string; icon: React.ElementType }[] = [
+    { label: t('staff.drivers.sections.personal'), icon: User },
+    { label: t('staff.drivers.sections.license'), icon: FileText },
+    { label: t('staff.drivers.sections.employment'), icon: Briefcase },
+    { label: t('staff.drivers.sections.medical'), icon: Heart },
+    { label: t('staff.drivers.sections.salary'), icon: Wallet },
+  ]
   const [editTarget, setEditTarget] = useState<Driver | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Driver | null>(null)
   const [loginTarget, setLoginTarget] = useState<Driver | null>(null)
@@ -203,7 +214,7 @@ export default function DriversPage() {
     staleTime: 5 * 60 * 1000,
   })
 
-  const { register, handleSubmit, reset, control, setError, formState: { errors } } = useForm<DriverForm>({
+  const { register, handleSubmit, reset, control, setError, trigger, formState: { errors } } = useForm<DriverForm>({
     defaultValues: {
       gender: 'MALE',
       license_category: '',
@@ -211,6 +222,40 @@ export default function DriversPage() {
       shift: '',
     },
   })
+
+  // Add Driver wizard: each section is a step. Nothing is saved server-side
+  // until the final step's real submit -- currentStep/maxStepReached are
+  // purely client-side navigation state, not a draft record. Only Personal
+  // and License have required fields, so by the time a user reaches the
+  // last step every field handleSubmit's own full-form validation checks
+  // has already been triggered once via a step's "Next".
+  const [currentStep, setCurrentStep] = useState(0)
+  const [maxStepReached, setMaxStepReached] = useState(0)
+  const STEPS: { label: string; icon: React.ElementType; fields: (keyof DriverForm)[] }[] = [
+    { label: t('staff.drivers.sections.personal'), icon: User, fields: ['full_name_en', 'gender', 'dob', 'citizenship_no', 'phone', 'address'] },
+    { label: t('staff.drivers.sections.licenseInfo'), icon: FileText, fields: ['license_no', 'license_category', 'license_expiry'] },
+    { label: t('staff.drivers.sections.employment'), icon: Briefcase, fields: [] },
+    { label: t('staff.drivers.sections.vehicle'), icon: Bus, fields: [] },
+    { label: t('staff.drivers.sections.medical'), icon: Heart, fields: [] },
+    { label: t('staff.drivers.sections.salaryWages'), icon: Wallet, fields: [] },
+  ]
+  const isLastStep = currentStep === STEPS.length - 1
+
+  const resetWizard = () => { setCurrentStep(0); setMaxStepReached(0) }
+
+  const goToStep = (index: number) => {
+    if (index <= maxStepReached) setCurrentStep(index)
+  }
+
+  const handleNext = async () => {
+    const valid = await trigger(STEPS[currentStep].fields)
+    if (!valid) return
+    const next = Math.min(currentStep + 1, STEPS.length - 1)
+    setCurrentStep(next)
+    setMaxStepReached((m) => Math.max(m, next))
+  }
+
+  const handleBack = () => setCurrentStep((s) => Math.max(s - 1, 0))
 
   // ── Create ────────────────────────────────────────────────────────────────────
   const createMutation = useMutation({
@@ -251,6 +296,7 @@ export default function DriversPage() {
       setAllowances([])
       setPhotoFile(null)
       setLicensePhotoFile(null)
+      resetWizard()
       qc.invalidateQueries({ queryKey: ['drivers'] })
     },
     onError: (err: unknown) => {
@@ -408,7 +454,7 @@ export default function DriversPage() {
       render: (d) => (
         <div className="flex items-center gap-1">
           <button
-            onClick={() => setViewTarget(d)}
+            onClick={() => { setViewTarget(d); setViewStep(0) }}
             className="rounded-lg p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-colors"
           >
             <Eye className="h-4 w-4" />
@@ -478,60 +524,88 @@ export default function DriversPage() {
         open={!!viewTarget}
         onClose={() => setViewTarget(null)}
         title={`${t('staff.drivers.title')} — ${viewTarget?.employee_id ?? ''}`}
-        size="lg"
+        size="full"
       >
         {viewTarget && (
           <div className="space-y-6 p-6">
-            <Section icon={User} title={t('staff.drivers.sections.personal')} />
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <DetailRow label={t('staff.drivers.fields.fullNameEn')} value={viewTarget.full_name_en} />
-              <DetailRow label={t('staff.drivers.fields.fullNameNe')} value={viewTarget.full_name_ne} />
-              <DetailRow label={t('staff.drivers.fields.gender')} value={viewTarget.gender} />
-              <DetailRow label={t('staff.drivers.fields.dob')} dateValue={viewTarget.dob} />
-              <DetailRow label={t('staff.drivers.fields.citizenshipNo')} value={viewTarget.citizenship_no} />
-              <DetailRow label={t('staff.drivers.fields.phone')} value={viewTarget.phone} />
-              <div className="col-span-2 sm:col-span-3">
-                <DetailRow label={t('staff.drivers.fields.address')} value={viewTarget.address} />
+            {/* Nothing to validate here -- every section is freely clickable,
+                unlike the Add Driver wizard's gated steps. */}
+            <div className="flex items-center gap-2 overflow-x-auto border-b pb-3">
+              {VIEW_STEPS.map((step, index) => {
+                const StepIcon = step.icon
+                const isCurrent = index === viewStep
+                return (
+                  <button
+                    key={step.label}
+                    type="button"
+                    onClick={() => setViewStep(index)}
+                    className={cn(
+                      'flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                      isCurrent ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                    )}
+                  >
+                    <StepIcon className="h-3.5 w-3.5" />
+                    {step.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {viewStep === 0 && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <DetailRow label={t('staff.drivers.fields.fullNameEn')} value={viewTarget.full_name_en} />
+                <DetailRow label={t('staff.drivers.fields.fullNameNe')} value={viewTarget.full_name_ne} />
+                <DetailRow label={t('staff.drivers.fields.gender')} value={viewTarget.gender} />
+                <DetailRow label={t('staff.drivers.fields.dob')} dateValue={viewTarget.dob} />
+                <DetailRow label={t('staff.drivers.fields.citizenshipNo')} value={viewTarget.citizenship_no} />
+                <DetailRow label={t('staff.drivers.fields.phone')} value={viewTarget.phone} />
+                <div className="col-span-2 sm:col-span-3">
+                  <DetailRow label={t('staff.drivers.fields.address')} value={viewTarget.address} />
+                </div>
+                <DetailRow label={t('staff.drivers.fields.emergencyContact')} value={viewTarget.emergency_contact_name} />
+                <DetailRow label={t('staff.drivers.fields.emergencyPhone')} value={viewTarget.emergency_contact_number} />
               </div>
-              <DetailRow label={t('staff.drivers.fields.emergencyContact')} value={viewTarget.emergency_contact_name} />
-              <DetailRow label={t('staff.drivers.fields.emergencyPhone')} value={viewTarget.emergency_contact_number} />
-            </div>
+            )}
 
-            <Section icon={FileText} title={t('staff.drivers.sections.license')} />
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <DetailRow label={t('staff.drivers.fields.licenseNo')} value={viewTarget.license_no} />
-              <DetailRow label={t('staff.drivers.table.class')} value={viewTarget.license_category} />
-              <DetailRow label={t('staff.drivers.fields.issueDate')} dateValue={viewTarget.license_issue_date} />
-              <DetailRow label={t('staff.drivers.fields.expiryDate')} dateValue={viewTarget.license_expiry} />
-              <div className="col-span-2">
-                <DetailRow label={t('staff.drivers.fields.issuingAuthority')} value={viewTarget.license_issuing_authority} />
+            {viewStep === 1 && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <DetailRow label={t('staff.drivers.fields.licenseNo')} value={viewTarget.license_no} />
+                <DetailRow label={t('staff.drivers.table.class')} value={viewTarget.license_category} />
+                <DetailRow label={t('staff.drivers.fields.issueDate')} dateValue={viewTarget.license_issue_date} />
+                <DetailRow label={t('staff.drivers.fields.expiryDate')} dateValue={viewTarget.license_expiry} />
+                <div className="col-span-2">
+                  <DetailRow label={t('staff.drivers.fields.issuingAuthority')} value={viewTarget.license_issuing_authority} />
+                </div>
               </div>
-            </div>
+            )}
 
-            <Section icon={Briefcase} title={t('staff.drivers.sections.employment')} />
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <DetailRow label={t('staff.drivers.fields.employeeId')} value={viewTarget.employee_id} />
-              <DetailRow label={t('staff.drivers.fields.employmentType')} value={viewTarget.employment_type?.replace('_', ' ')} />
-              <DetailRow label={t('staff.drivers.fields.dateOfJoining')} dateValue={viewTarget.date_of_joining} />
-              <DetailRow label={t('staff.drivers.experience')} value={viewTarget.experience_years != null ? t('staff.drivers.yrs', { count: viewTarget.experience_years }) : undefined} />
-              <DetailRow label={t('staff.drivers.fields.shift')} value={viewTarget.shift} />
-              <DetailRow label={t('staff.drivers.fields.previousEmployer')} value={viewTarget.previous_employer} />
-            </div>
-
-            <Section icon={Heart} title={t('staff.drivers.sections.medical')} />
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <DetailRow label={t('staff.drivers.fields.bloodGroup')} value={viewTarget.blood_group} />
-              <DetailRow label={t('staff.drivers.fields.lastCheckup')} dateValue={viewTarget.last_medical_checkup_date} />
-              <div className="col-span-2 sm:col-span-3">
-                <DetailRow label={t('staff.drivers.fields.medicalConditions')} value={viewTarget.medical_conditions} />
+            {viewStep === 2 && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <DetailRow label={t('staff.drivers.fields.employeeId')} value={viewTarget.employee_id} />
+                <DetailRow label={t('staff.drivers.fields.employmentType')} value={viewTarget.employment_type?.replace('_', ' ')} />
+                <DetailRow label={t('staff.drivers.fields.dateOfJoining')} dateValue={viewTarget.date_of_joining} />
+                <DetailRow label={t('staff.drivers.experience')} value={viewTarget.experience_years != null ? t('staff.drivers.yrs', { count: viewTarget.experience_years }) : undefined} />
+                <DetailRow label={t('staff.drivers.fields.shift')} value={viewTarget.shift} />
+                <DetailRow label={t('staff.drivers.fields.previousEmployer')} value={viewTarget.previous_employer} />
               </div>
-            </div>
+            )}
 
-            <Section icon={Wallet} title={t('staff.drivers.sections.salary')} />
-            <div className="grid grid-cols-2 gap-4">
-              <DetailRow label={t('staff.drivers.fields.basicSalary')} value={viewTarget.basic_salary} />
-              <DetailRow label={t('staff.drivers.status')} value={viewTarget.status} />
-            </div>
+            {viewStep === 3 && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <DetailRow label={t('staff.drivers.fields.bloodGroup')} value={viewTarget.blood_group} />
+                <DetailRow label={t('staff.drivers.fields.lastCheckup')} dateValue={viewTarget.last_medical_checkup_date} />
+                <div className="col-span-2 sm:col-span-3">
+                  <DetailRow label={t('staff.drivers.fields.medicalConditions')} value={viewTarget.medical_conditions} />
+                </div>
+              </div>
+            )}
+
+            {viewStep === 4 && (
+              <div className="grid grid-cols-2 gap-4">
+                <DetailRow label={t('staff.drivers.fields.basicSalary')} value={viewTarget.basic_salary} />
+                <DetailRow label={t('staff.drivers.status')} value={viewTarget.status} />
+              </div>
+            )}
 
             <div className="flex justify-end border-t pt-4">
               <Button variant="secondary" onClick={() => setViewTarget(null)}>{t('common:common.close')}</Button>
@@ -734,12 +808,14 @@ export default function DriversPage() {
               label="Email" type="email" required
               placeholder="e.g. krishna.thapa@example.com"
               value={loginEmail}
+              error={loginEmail && !isValidEmail(loginEmail) ? EMAIL_VALIDATION_MESSAGE : undefined}
               onChange={(e) => setLoginEmail(e.target.value)}
             />
             <Input
               label="Password" type="password" required
               placeholder="Temporary password"
               value={loginPassword}
+              error={loginPassword && !isValidPassword(loginPassword) ? PASSWORD_VALIDATION_MESSAGE : undefined}
               onChange={(e) => setLoginPassword(e.target.value)}
             />
             <div className="flex justify-end gap-3 border-t pt-4">
@@ -748,7 +824,7 @@ export default function DriversPage() {
               </Button>
               <Button
                 loading={createLoginMutation.isPending}
-                disabled={!loginEmail || !loginPassword}
+                disabled={!isValidEmail(loginEmail) || !isValidPassword(loginPassword)}
                 leftIcon={<KeyRound className="h-4 w-4" />}
                 onClick={() => createLoginMutation.mutate({ id: loginTarget.id, email: loginEmail, password: loginPassword })}
               >
@@ -762,13 +838,53 @@ export default function DriversPage() {
       {/* ── Add Driver Modal ──────────────────────────────────────────────── */}
       <Modal
         open={showCreate}
-        onClose={() => { setShowCreate(false); reset(); setAllowances([]); setPhotoFile(null); setLicensePhotoFile(null) }}
+        onClose={() => { setShowCreate(false); reset(); setAllowances([]); setPhotoFile(null); setLicensePhotoFile(null); resetWizard() }}
         title={t('staff.drivers.addDriver')}
         size="full"
       >
-        <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-6 p-6">
+        <form
+          onSubmit={handleSubmit((d) => createMutation.mutate(d))}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !isLastStep) { e.preventDefault(); handleNext() }
+          }}
+          className="space-y-6 p-6"
+        >
+          {/* ── Step indicator ──────────────────────────────────────────────── */}
+          <div className="flex items-center overflow-x-auto pb-2">
+            {STEPS.map((step, index) => {
+              const isDone = index < maxStepReached
+              const isCurrent = index === currentStep
+              const isUnlocked = index <= maxStepReached
+              const StepIcon = step.icon
+              return (
+                <div key={step.label} className="flex items-center">
+                  <button
+                    type="button"
+                    disabled={!isUnlocked}
+                    onClick={() => goToStep(index)}
+                    className={cn(
+                      'flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                      isCurrent && 'bg-primary-600 text-white',
+                      !isCurrent && isDone && 'bg-primary-50 text-primary-700 hover:bg-primary-100 cursor-pointer',
+                      !isCurrent && !isDone && isUnlocked && 'bg-gray-100 text-gray-600 hover:bg-gray-200 cursor-pointer',
+                      !isUnlocked && 'bg-gray-50 text-gray-300 cursor-not-allowed',
+                    )}
+                  >
+                    {isDone
+                      ? <Check className="h-3.5 w-3.5" />
+                      : <StepIcon className="h-3.5 w-3.5" />}
+                    {step.label}
+                  </button>
+                  {index < STEPS.length - 1 && (
+                    <div className={cn('h-px w-6 shrink-0', isDone ? 'bg-primary-300' : 'bg-gray-200')} />
+                  )}
+                </div>
+              )
+            })}
+          </div>
 
           {/* Personal Information */}
+          {currentStep === 0 && <>
           <Section icon={User} title={t('staff.drivers.sections.personal')} />
           <PhotoUploadField label="Photo" hint="Optional — can be added later via Edit" onFileChange={setPhotoFile} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -858,8 +974,10 @@ export default function DriversPage() {
               })}
             />
           </div>
+          </>}
 
           {/* Driver License Information */}
+          {currentStep === 1 && <>
           <Section icon={FileText} title={t('staff.drivers.sections.licenseInfo')} />
           <PhotoUploadField label="License Photo" hint="Optional — can be added later via Edit" onFileChange={setLicensePhotoFile} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -914,14 +1032,11 @@ export default function DriversPage() {
               />
             </div>
           </div>
+          </>}
 
           {/* Employment Information */}
+          {currentStep === 2 && <>
           <Section icon={Briefcase} title={t('staff.drivers.sections.employment')} />
-          <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2">
-            <p className="text-xs text-blue-600">
-              <strong>{t('staff.drivers.fields.employeeId')}</strong> — {t('staff.drivers.employeeIdAuto')}
-            </p>
-          </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Controller
               name="date_of_joining"
@@ -956,8 +1071,10 @@ export default function DriversPage() {
               <option value="NIGHT">{t('staff.drivers.shifts.night')}</option>
             </SelectField>
           </div>
+          </>}
 
           {/* Vehicle Information */}
+          {currentStep === 3 && <>
           <Section icon={Bus} title={t('staff.drivers.sections.vehicle')} />
           <SelectField label={t('staff.drivers.fields.busVehicle')} {...register('bus_id')}>
             <option value="">{t('staff.drivers.notAssigned')}</option>
@@ -968,8 +1085,10 @@ export default function DriversPage() {
               </option>
             ))}
           </SelectField>
+          </>}
 
           {/* Medical Information */}
+          {currentStep === 4 && <>
           <Section icon={Heart} title={t('staff.drivers.sections.medical')} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <SelectField label={t('staff.drivers.fields.bloodGroup')} {...register('blood_group')}>
@@ -997,8 +1116,10 @@ export default function DriversPage() {
               />
             </div>
           </div>
+          </>}
 
           {/* Salary & Wages */}
+          {currentStep === 5 && <>
           <Section icon={Wallet} title={t('staff.drivers.sections.salaryWages')} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Input
@@ -1064,19 +1185,35 @@ export default function DriversPage() {
               </div>
             ))}
           </div>
+          </>}
 
           {/* Actions */}
-          <div className="flex justify-end gap-3 border-t pt-4">
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() => { setShowCreate(false); reset(); setAllowances([]); setPhotoFile(null); setLicensePhotoFile(null) }}
-            >
-              {t('common:common.cancel')}
-            </Button>
-            <Button type="submit" loading={createMutation.isPending} leftIcon={<Plus className="h-4 w-4" />}>
-              {t('staff.drivers.addDriver')}
-            </Button>
+          <div className="flex justify-between gap-3 border-t pt-4">
+            <div>
+              {currentStep > 0 && (
+                <Button variant="secondary" type="button" leftIcon={<ChevronLeft className="h-4 w-4" />} onClick={handleBack}>
+                  {t('common:common.back', { defaultValue: 'Back' })}
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => { setShowCreate(false); reset(); setAllowances([]); setPhotoFile(null); setLicensePhotoFile(null); resetWizard() }}
+              >
+                {t('common:common.cancel')}
+              </Button>
+              {isLastStep ? (
+                <Button type="submit" loading={createMutation.isPending} leftIcon={<Plus className="h-4 w-4" />}>
+                  {t('staff.drivers.addDriver')}
+                </Button>
+              ) : (
+                <Button type="button" rightIcon={<ChevronRight className="h-4 w-4" />} onClick={handleNext}>
+                  {t('common:common.next', { defaultValue: 'Next' })}
+                </Button>
+              )}
+            </div>
           </div>
         </form>
       </Modal>

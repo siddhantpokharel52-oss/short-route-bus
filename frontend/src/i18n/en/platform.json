@@ -91,7 +91,7 @@
       "adminFullNameHint": "e.g. Ram Bahadur Shrestha",
       "adminEmail": "Admin Email",
       "adminPassword": "Admin Password",
-      "adminPasswordHint": "Min 8 characters",
+      "adminPasswordHint": "Min 10 characters",
       "required": "Required"
     },
     "credentialsModal": {
@@ -391,8 +391,8 @@
     "validation": {
       "currentPasswordRequired": "Current password is required",
       "newPasswordRequired": "New password is required",
-      "minLength": "Minimum 8 characters",
-      "passwordComplexity": "Must contain uppercase, lowercase and number",
+      "minLength": "Minimum 10 characters",
+      "passwordComplexity": "Must be at least 10 characters and include an uppercase letter, a lowercase letter, a number, and a special character",
       "confirmRequired": "Please confirm new password",
       "passwordsMismatch": "Passwords do not match"
     },

@@ -9,6 +9,7 @@ import toast from 'react-hot-toast'
 import { useUiStore } from '@store/uiStore'
 import { LanguageToggle } from '@components/shared/LanguageToggle'
 import { CalendarToggle } from '@components/shared/DateDisplay'
+import { isValidPassword } from '@utils/password'
 
 interface PasswordForm {
   old_password: string
@@ -87,11 +88,7 @@ export default function SettingsPage() {
               error={errors.new_password?.message}
               {...register('new_password', {
                 required: t('platform:settings.validation.newPasswordRequired'),
-                minLength: { value: 8, message: t('platform:settings.validation.minLength') },
-                pattern: {
-                  value: /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)/,
-                  message: t('platform:settings.validation.passwordComplexity'),
-                },
+                validate: (v) => isValidPassword(v) || t('platform:settings.validation.passwordComplexity'),
               })}
             />
             <Input

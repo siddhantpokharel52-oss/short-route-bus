@@ -37,6 +37,19 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data["language"] = user.language_preference or "en"
         data["user_id"] = str(user.id)
         data["requires_2fa"] = getattr(user, "is_2fa_enabled", False)
+
+        # An Owner logging in with the temp password the tenant set for them
+        # (create_login) must be pushed into the change-password flow first --
+        # TenantSchemaMiddleware has already switched to this user's tenant
+        # schema by this point (it runs before the view, keyed off the
+        # X-Tenant-Slug header the login request already carries), so Owner
+        # (a TENANT_APPS model) resolves correctly here.
+        must_change_password = False
+        if user.role == User.Role.OWNER:
+            from backend.apps.fleet.models import Owner
+            owner = Owner.objects.filter(user_id=user.id).first()
+            must_change_password = bool(owner and owner.temp_password)
+        data["must_change_password"] = must_change_password
         return data
 
 

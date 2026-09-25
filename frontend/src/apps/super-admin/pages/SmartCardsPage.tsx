@@ -14,6 +14,7 @@ import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
 import { formatNPR } from '@utils/nepaliDate'
 import { useUiStore } from '@store/uiStore'
+import { isValidEmail, EMAIL_VALIDATION_MESSAGE } from '@utils/email'
 
 interface SmartCard {
   id: string
@@ -196,7 +197,10 @@ export default function SmartCardsPage() {
             required
             placeholder="passenger@example.com"
             error={errors.issue_to_email?.message}
-            {...register('issue_to_email', { required: t('platform:smartCards.required', { defaultValue: 'Required' }) })}
+            {...register('issue_to_email', {
+              required: t('platform:smartCards.required', { defaultValue: 'Required' }),
+              validate: (v) => isValidEmail(v) || EMAIL_VALIDATION_MESSAGE,
+            })}
           />
           <div className="flex justify-end gap-3 border-t pt-4">
             <Button variant="secondary" type="button" onClick={() => { setShowIssue(false); reset() }}>{t('common:common.cancel')}</Button>

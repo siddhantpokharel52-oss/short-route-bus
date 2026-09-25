@@ -28,6 +28,7 @@ export function useAuth() {
           role: tokenResp.role as Parameters<typeof store.setAuth>[0]['role'],
           tenantSchema: tokenResp.tenant_schema || null,
           language: (tokenResp.language as 'en' | 'ne') ?? 'en',
+          mustChangePassword: tokenResp.must_change_password ?? false,
         },
         tokenResp.access,
         tokenResp.refresh
@@ -39,7 +40,7 @@ export function useAuth() {
       }
 
       // Route based on role
-      redirectByRole(tokenResp.role, navigate)
+      redirectByRole(tokenResp.role, navigate, tokenResp.must_change_password)
       return { requires2FA: false }
     },
     [store, navigate]
@@ -62,12 +63,13 @@ export function useAuth() {
           role: tokenResp.role as Parameters<typeof store.setAuth>[0]['role'],
           tenantSchema: tokenResp.tenant_schema || null,
           language: (tokenResp.language as 'en' | 'ne') ?? 'en',
+          mustChangePassword: tokenResp.must_change_password ?? false,
         },
         tokenResp.access,
         tokenResp.refresh
       )
 
-      redirectByRole(tokenResp.role, navigate)
+      redirectByRole(tokenResp.role, navigate, tokenResp.must_change_password)
     },
     [store, navigate]
   )
@@ -96,13 +98,19 @@ export function useAuth() {
   }
 }
 
-function redirectByRole(role: string, navigate: (path: string) => void) {
+function redirectByRole(role: string, navigate: (path: string) => void, mustChangePassword?: boolean) {
   if (
     ['SUPER_ADMIN', 'TRANSPORT_AUTHORITY_OFFICER', 'REVENUE_AUDITOR',
      'COMPLIANCE_OFFICER', 'PLATFORM_SUPPORT'].includes(role)
   ) {
     navigate('/super-admin/dashboard')
   } else if (role === 'OWNER') {
+    if (mustChangePassword) {
+      // Still signed in with the tenant-issued temp password -- must set
+      // their own before seeing anything else.
+      navigate('/tenant/set-new-password')
+      return
+    }
     // An owner's only real page is My Earnings (Team Implementation Guide
     // §3.7) -- landing them on Live Tracking would put a fleet-wide GPS map
     // in front of them before they've clicked anything.

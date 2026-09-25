@@ -13,6 +13,8 @@ import { usePagination } from '@hooks/usePagination'
 import tenantService, { Tenant, TenantCreateResult } from '@services/tenantService'
 import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
+import { isValidEmail, EMAIL_VALIDATION_MESSAGE } from '@utils/email'
+import { isValidPassword, PASSWORD_VALIDATION_MESSAGE } from '@utils/password'
 
 // Real tenant domains (anything other than *.localhost) are always served over
 // HTTPS on the standard port — matching nginx.conf's HTTPS server block, there's
@@ -394,7 +396,10 @@ export default function TenantsPage() {
               required
               placeholder={t('platform:tenants.createModal.emailHint')}
               error={errors.contact_email?.message}
-              {...register('contact_email', { required: t('platform:tenants.createModal.required') })}
+              {...register('contact_email', {
+                required: t('platform:tenants.createModal.required'),
+                validate: (v) => isValidEmail(v) || EMAIL_VALIDATION_MESSAGE,
+              })}
             />
             <div className="sm:col-span-2">
               <Input
@@ -432,8 +437,16 @@ export default function TenantsPage() {
             <p className="mb-3 text-xs text-blue-600">{t('platform:tenants.createModal.adminSectionHint')}</p>
             <div className="space-y-3">
               <Input label={t('platform:tenants.createModal.adminFullName')} placeholder={t('platform:tenants.createModal.adminFullNameHint')} {...register('admin_full_name')} />
-              <Input label={t('platform:tenants.createModal.adminEmail')} type="email" placeholder="admin@sajha.com.np" {...register('admin_email')} />
-              <Input label={t('platform:tenants.createModal.adminPassword')} type="text" placeholder={t('platform:tenants.createModal.adminPasswordHint')} {...register('admin_password')} />
+              <Input
+                label={t('platform:tenants.createModal.adminEmail')} type="email" placeholder="admin@sajha.com.np"
+                error={errors.admin_email?.message}
+                {...register('admin_email', { validate: (v) => !v || isValidEmail(v) || EMAIL_VALIDATION_MESSAGE })}
+              />
+              <Input
+                label={t('platform:tenants.createModal.adminPassword')} type="password" placeholder={t('platform:tenants.createModal.adminPasswordHint')}
+                error={errors.admin_password?.message}
+                {...register('admin_password', { validate: (v) => !v || isValidPassword(v) || PASSWORD_VALIDATION_MESSAGE })}
+              />
             </div>
           </div>
 
@@ -578,7 +591,11 @@ export default function TenantsPage() {
               label={t('platform:tenants.createModal.emailAddress')}
               type="email"
               required
-              {...editForm.register('contact_email', { required: true })}
+              error={editForm.formState.errors.contact_email?.message}
+              {...editForm.register('contact_email', {
+                required: t('platform:tenants.createModal.required'),
+                validate: (v) => isValidEmail(v) || EMAIL_VALIDATION_MESSAGE,
+              })}
             />
             <Input
               label={t('platform:tenants.createModal.panVat')}
@@ -614,13 +631,15 @@ export default function TenantsPage() {
                 type="email"
                 placeholder="admin@sajha.com.np"
                 value={editAdminEmail}
+                error={editAdminEmail && !isValidEmail(editAdminEmail) ? EMAIL_VALIDATION_MESSAGE : undefined}
                 onChange={(e) => setEditAdminEmail(e.target.value)}
               />
               <Input
                 label={t('platform:tenants.createModal.adminPassword')}
-                type="text"
+                type="password"
                 placeholder={t('platform:tenants.createModal.adminPasswordHint')}
                 value={editAdminPassword}
+                error={editAdminPassword && !isValidPassword(editAdminPassword) ? PASSWORD_VALIDATION_MESSAGE : undefined}
                 onChange={(e) => setEditAdminPassword(e.target.value)}
               />
               <Button
@@ -628,7 +647,7 @@ export default function TenantsPage() {
                 variant="secondary"
                 className="w-full"
                 loading={createAdminMutation.isPending}
-                disabled={!editAdminEmail || editAdminPassword.length < 8}
+                disabled={!isValidEmail(editAdminEmail) || !isValidPassword(editAdminPassword)}
                 onClick={() => createAdminMutation.mutate({
                   admin_email: editAdminEmail,
                   admin_password: editAdminPassword,

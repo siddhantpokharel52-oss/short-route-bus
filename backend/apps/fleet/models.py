@@ -1,6 +1,7 @@
 import uuid
 from django.db import models
 from django.utils import timezone
+from encrypted_model_fields.fields import EncryptedCharField
 
 
 class Vehicle(models.Model):
@@ -128,6 +129,12 @@ class Owner(models.Model):
     # dashboard -- bare UUID, not FK, matching staff.Driver/Conductor's own
     # established convention for referencing a User from a tenant-scoped model.
     user_id = models.UUIDField(null=True, blank=True, unique=True)
+    # Plaintext (encrypted at rest), set by create-login and shown back to the
+    # tenant admin via a view/eye button until the owner signs in and sets
+    # their own password -- ChangePasswordView clears this the moment that
+    # happens, so a real, owner-chosen password is never visible to the
+    # tenant. Same field type as ticketing.NamastePayConfig.api_key.
+    temp_password = EncryptedCharField(max_length=255, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     created_by_id = models.UUIDField(null=True, blank=True)

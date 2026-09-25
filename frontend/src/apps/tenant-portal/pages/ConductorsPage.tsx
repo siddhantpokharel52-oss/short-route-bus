@@ -16,6 +16,8 @@ import apiClient from '@services/api'
 import toast from 'react-hot-toast'
 import { useForm, Controller } from 'react-hook-form'
 import { sanitizePhoneDigits, isValidPhone, PHONE_VALIDATION_MESSAGE } from '@utils/phone'
+import { isValidEmail, EMAIL_VALIDATION_MESSAGE } from '@utils/email'
+import { isValidPassword, PASSWORD_VALIDATION_MESSAGE } from '@utils/password'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Collector {
@@ -748,12 +750,14 @@ export default function ConductorsPage() {
               label="Email" type="email" required
               placeholder="e.g. ramesh.gurung@example.com"
               value={loginEmail}
+              error={loginEmail && !isValidEmail(loginEmail) ? EMAIL_VALIDATION_MESSAGE : undefined}
               onChange={(e) => setLoginEmail(e.target.value)}
             />
             <Input
               label="Password" type="password" required
               placeholder="Temporary password"
               value={loginPassword}
+              error={loginPassword && !isValidPassword(loginPassword) ? PASSWORD_VALIDATION_MESSAGE : undefined}
               onChange={(e) => setLoginPassword(e.target.value)}
             />
             <div className="flex justify-end gap-3 border-t pt-4">
@@ -762,7 +766,7 @@ export default function ConductorsPage() {
               </Button>
               <Button
                 loading={createLoginMutation.isPending}
-                disabled={!loginEmail || !loginPassword}
+                disabled={!isValidEmail(loginEmail) || !isValidPassword(loginPassword)}
                 leftIcon={<KeyRound className="h-4 w-4" />}
                 onClick={() => createLoginMutation.mutate({ id: loginTarget.id, email: loginEmail, password: loginPassword })}
               >

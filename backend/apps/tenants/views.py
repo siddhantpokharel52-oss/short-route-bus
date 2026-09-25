@@ -95,10 +95,19 @@ class TenantViewSet(ModelViewSet):
         password = (request.data.get("admin_password") or "").strip()
         full_name = (request.data.get("admin_full_name") or "").strip()
 
+        from backend.apps.users.validators import validate_email_or_message, validate_password_or_messages
+
         if not email:
             return api_response(success=False, message="Admin email is required.", status_code=400)
-        if len(password) < 8:
-            return api_response(success=False, message="Password must be at least 8 characters.", status_code=400)
+        email_error = validate_email_or_message(email)
+        if email_error:
+            return api_response(success=False, message=email_error, status_code=400)
+        password_errors = validate_password_or_messages(password)
+        if password_errors:
+            return api_response(
+                success=False, message=" ".join(password_errors),
+                errors={"password": password_errors}, status_code=400,
+            )
         if User.objects.filter(email=email).exists():
             return api_response(success=False, message=f"A user with email '{email}' already exists.", status_code=400)
 

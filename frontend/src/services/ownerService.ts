@@ -6,12 +6,13 @@ export interface Owner {
   phone: string
   email: string
   user_id: string | null
+  temp_password: string
   is_active: boolean
   vehicle_count: number
   created_at: string
 }
 
-export type OwnerPayload = Partial<Omit<Owner, 'id' | 'vehicle_count' | 'created_at'>>
+export type OwnerPayload = Partial<Omit<Owner, 'id' | 'vehicle_count' | 'created_at' | 'temp_password'>>
 
 export interface OwnerDashboardPerBus {
   vehicle_id: string

@@ -426,11 +426,23 @@ class GroupCompositionRuleSerializer(serializers.ModelSerializer):
 
 class OwnerSerializer(serializers.ModelSerializer):
     vehicle_count = serializers.SerializerMethodField()
+    phone = serializers.CharField(required=True)
+    email = serializers.EmailField(required=True)
 
     class Meta:
         model = Owner
-        fields = ["id", "name", "phone", "email", "user_id", "is_active", "created_at", "vehicle_count"]
-        read_only_fields = ["id", "created_at", "vehicle_count"]
+        fields = [
+            "id", "name", "phone", "email", "user_id", "temp_password",
+            "is_active", "created_at", "vehicle_count",
+        ]
+        # temp_password is only ever set by create-login and cleared by
+        # ChangePasswordView -- never directly writable through this serializer.
+        read_only_fields = ["id", "created_at", "vehicle_count", "temp_password"]
+
+    def validate_phone(self, value):
+        if not re.fullmatch(r"\d{10}", value):
+            raise serializers.ValidationError("Phone must be exactly 10 digits.")
+        return value
 
     def get_vehicle_count(self, obj):
         return obj.vehicles.filter(is_deleted=False).count()

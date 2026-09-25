@@ -30,6 +30,7 @@ export interface AuthUser {
   role: UserRole
   tenantSchema: string | null
   language: 'en' | 'ne'
+  mustChangePassword?: boolean
 }
 
 interface AuthState {
@@ -46,6 +47,7 @@ interface AuthState {
   setTokens: (access: string, refresh: string) => void
   setPending2FA: (otpToken: string) => void
   setTenantSlug: (slug: string) => void
+  clearMustChangePassword: () => void
   logout: () => void
 }
 
@@ -78,6 +80,11 @@ export const useAuthStore = create<AuthState>()(
         set({ requires2FA: true, pendingOtpToken: otpToken }),
 
       setTenantSlug: (slug) => set({ tenantSlug: slug }),
+
+      clearMustChangePassword: () =>
+        set((state) => ({
+          user: state.user ? { ...state.user, mustChangePassword: false } : state.user,
+        })),
 
       logout: () =>
         set({

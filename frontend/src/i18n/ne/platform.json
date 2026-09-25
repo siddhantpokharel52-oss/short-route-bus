@@ -91,7 +91,7 @@
       "adminFullNameHint": "जस्तै: राम बहादुर श्रेष्ठ",
       "adminEmail": "एडमिन इमेल",
       "adminPassword": "एडमिन पासवर्ड",
-      "adminPasswordHint": "न्यूनतम ८ अक्षर",
+      "adminPasswordHint": "न्यूनतम १० अक्षर",
       "required": "आवश्यक"
     },
     "credentialsModal": {
@@ -391,8 +391,8 @@
     "validation": {
       "currentPasswordRequired": "हालको पासवर्ड आवश्यक छ",
       "newPasswordRequired": "नयाँ पासवर्ड आवश्यक छ",
-      "minLength": "न्यूनतम ८ अक्षर",
-      "passwordComplexity": "ठूलो अक्षर, सानो अक्षर र अंक हुनुपर्छ",
+      "minLength": "न्यूनतम १० अक्षर",
+      "passwordComplexity": "कम्तिमा १० अक्षर लामो हुनुपर्छ र ठूलो अक्षर, सानो अक्षर, अंक, र विशेष चिन्ह समावेश हुनुपर्छ",
       "confirmRequired": "कृपया नयाँ पासवर्ड पुष्टि गर्नुहोस्",
       "passwordsMismatch": "पासवर्डहरू मेल खाएनन्"
     },

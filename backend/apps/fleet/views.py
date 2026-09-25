@@ -150,6 +150,63 @@ class OwnerViewSet(ModelViewSet):
     def get_queryset(self):
         return Owner.objects.all()
 
+    @action(detail=True, methods=["post"], url_path="create-login")
+    def create_login(self, request, pk=None):
+        """
+        POST /fleet/owners/{id}/create-login/
+        Same gap and same fix as ConductorViewSet.create_login() -- an Owner
+        created via the Owners page has no linked user_id, and there was no
+        way to get one short of a Django admin manually creating a User and
+        handing over its UUID to paste into the "Login User ID" field.
+        """
+        owner = self.get_object()
+        if owner.user_id:
+            return api_response(
+                success=False, message="This owner already has a login.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        email = (request.data.get("email") or "").strip().lower()
+        password = request.data.get("password") or ""
+        if not email or not password:
+            return api_response(
+                success=False, message="email and password are required.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from backend.apps.users.validators import validate_email_or_message, validate_password_or_messages
+        email_error = validate_email_or_message(email)
+        if email_error:
+            return api_response(success=False, message=email_error, status_code=status.HTTP_400_BAD_REQUEST)
+        password_errors = validate_password_or_messages(password)
+        if password_errors:
+            return api_response(
+                success=False, message=" ".join(password_errors),
+                errors={"password": password_errors}, status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from backend.apps.users.models import User
+        if User.objects.filter(email=email).exists():
+            return api_response(
+                success=False, message=f"'{email}' is already in use by another account.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = User(
+            email=email, full_name_en=owner.name, phone=owner.phone,
+            role=User.Role.OWNER, tenant_schema=request.user.tenant_schema, is_active=True,
+        )
+        user.set_password(password)
+        user.save()
+
+        owner.user_id = user.id
+        owner.temp_password = password
+        owner.save(update_fields=["user_id", "temp_password"])
+
+        return api_response(
+            data={"user_id": str(user.id), "email": user.email},
+            message="Login created.", status_code=status.HTTP_201_CREATED,
+        )
+
 
 class VehicleCategoryViewSet(ModelViewSet):
     serializer_class = VehicleCategorySerializer

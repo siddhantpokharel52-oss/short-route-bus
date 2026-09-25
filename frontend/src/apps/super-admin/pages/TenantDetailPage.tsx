@@ -15,6 +15,8 @@ import { useUiStore } from '@store/uiStore'
 import toast from 'react-hot-toast'
 import { useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { isValidEmail, EMAIL_VALIDATION_MESSAGE } from '@utils/email'
+import { isValidPassword, PASSWORD_VALIDATION_MESSAGE } from '@utils/password'
 
 export default function TenantDetailPage() {
   const { t } = useTranslation(['common', 'platform'])
@@ -299,17 +301,20 @@ export default function TenantDetailPage() {
             required
             placeholder="admin@example.com"
             error={adminForm.formState.errors.admin_email?.message}
-            {...adminForm.register('admin_email', { required: 'Admin email is required.' })}
+            {...adminForm.register('admin_email', {
+              required: 'Admin email is required.',
+              validate: (v) => isValidEmail(v) || EMAIL_VALIDATION_MESSAGE,
+            })}
           />
           <Input
             label="Admin Password"
-            type="text"
+            type="password"
             required
-            placeholder="At least 8 characters"
+            placeholder="At least 10 characters"
             error={adminForm.formState.errors.admin_password?.message}
             {...adminForm.register('admin_password', {
               required: 'Password is required.',
-              minLength: { value: 8, message: 'Password must be at least 8 characters.' },
+              validate: (v) => isValidPassword(v) || PASSWORD_VALIDATION_MESSAGE,
             })}
           />
           <div className="flex justify-end gap-3 border-t pt-4">

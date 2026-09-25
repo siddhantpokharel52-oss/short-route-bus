@@ -13,6 +13,7 @@ export interface TokenResponse {
   full_name: string
   language: string
   user_id: string
+  must_change_password?: boolean
 }
 
 export interface TwoFactorPayload {
@@ -56,9 +57,16 @@ const authService = {
     new_password: string
     confirm_password: string
   }): Promise<void> => {
+    // Backend's ChangePasswordSerializer field is new_password_confirm, not
+    // confirm_password -- translated here so every caller can keep using the
+    // field name their form already has.
     const { data } = await apiClient.post<ApiResponse<null>>(
-      '/auth/password/change/',
-      payload
+      '/auth/change-password/',
+      {
+        old_password: payload.old_password,
+        new_password: payload.new_password,
+        new_password_confirm: payload.confirm_password,
+      }
     )
     if (!data.success) throw new Error(data.message)
   },

@@ -1,4 +1,5 @@
-import { InputHTMLAttributes, forwardRef } from 'react'
+import { InputHTMLAttributes, forwardRef, useState } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { cn } from '@utils/cn'
 import { useUiStore } from '@store/uiStore'
 
@@ -18,6 +19,24 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     const textType = !type || ['text', 'search', 'email', 'url', 'tel'].includes(type)
     const unicodeActive = isUnicode && textType
 
+    // Every password field gets a show/hide toggle for free, unless the
+    // caller already supplied its own rightAddon (e.g. LoginPage builds its
+    // own so it can share one showPassword state across a stacked layout).
+    const [revealed, setRevealed] = useState(false)
+    const isPassword = type === 'password'
+    const effectiveType = isPassword && revealed ? 'text' : type
+    const effectiveRightAddon = rightAddon ?? (isPassword && (
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={() => setRevealed((s) => !s)}
+        className="pointer-events-auto text-gray-400 hover:text-gray-600"
+        aria-label={revealed ? 'Hide password' : 'Show password'}
+      >
+        {revealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    ))
+
     return (
       <div className="w-full">
         {label && (
@@ -36,7 +55,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           <input
             ref={ref}
             id={inputId}
-            type={type}
+            type={effectiveType}
             className={cn(
               'w-full rounded-lg border px-3 py-2 text-sm',
               'bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100',
@@ -49,13 +68,13 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
                   ? 'border-red-400 focus:ring-red-400'
                   : 'border-gray-300 focus:ring-primary-500 dark:border-gray-600',
               leftAddon && 'pl-10',
-              rightAddon && 'pr-10',
+              effectiveRightAddon && 'pr-10',
               className
             )}
             {...props}
           />
-          {rightAddon && (
-            <div className="absolute right-3 text-gray-400">{rightAddon}</div>
+          {effectiveRightAddon && (
+            <div className="absolute right-3 text-gray-400">{effectiveRightAddon}</div>
           )}
         </div>
         {error && <p className="mt-1 text-xs text-red-500">{error}</p>}

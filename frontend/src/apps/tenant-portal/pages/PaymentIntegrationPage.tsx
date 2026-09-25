@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CreditCard, Save, ShieldCheck, CheckCircle2, XCircle, PlugZap } from 'lucide-react'
+import { CreditCard, Save, ShieldCheck, CheckCircle2, XCircle, PlugZap, Eye, EyeOff } from 'lucide-react'
 import { Button } from '@components/shared/Button'
 import { Badge } from '@components/shared/Badge'
 import paymentGatewayService, { NamastePayConfigPayload } from '@services/paymentGatewayService'
@@ -24,6 +24,7 @@ interface FormValues {
 export default function PaymentIntegrationPage() {
   const qc = useQueryClient()
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [showApiKey, setShowApiKey] = useState(false)
 
   const { data: config, isLoading } = useQuery({
     queryKey: ['namastepay-config'],
@@ -96,12 +97,23 @@ export default function PaymentIntegrationPage() {
               <label className="mb-1 block text-sm font-medium text-gray-700">
                 API Key {config?.api_key_set && <Badge variant="success" className="ml-1">configured</Badge>}
               </label>
-              <input
-                type="password"
-                placeholder={config?.api_key_set ? 'Leave blank to keep the current key' : 'Enter your NamastePay API key'}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                {...register('api_key')}
-              />
+              <div className="relative">
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  placeholder={config?.api_key_set ? 'Leave blank to keep the current key' : 'Enter your NamastePay API key'}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-10 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  {...register('api_key')}
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setShowApiKey((s) => !s)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+                >
+                  {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
               <p className="mt-1 text-xs text-gray-400">
                 Generate this from the NamastePay merchant portal for your environment. Set your return URL there too, when generating the key -- it isn't configured here.
               </p>

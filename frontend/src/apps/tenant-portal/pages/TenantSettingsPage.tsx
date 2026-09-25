@@ -11,6 +11,8 @@ import apiClient from '@services/api'
 import authService from '@services/authService'
 import toast from 'react-hot-toast'
 import { useUiStore } from '@store/uiStore'
+import { isValidEmail, EMAIL_VALIDATION_MESSAGE } from '@utils/email'
+import { isValidPassword, PASSWORD_VALIDATION_MESSAGE } from '@utils/password'
 
 // Extract a browser-accessible path from whatever the backend returns.
 // Backend DRF ImageField can return either an absolute URL (with Django hostname)
@@ -223,7 +225,13 @@ export default function TenantSettingsPage() {
 
             <div className="border-t border-gray-100 pt-4 space-y-4">
               <Input label={t('settings.companyName')} required {...companyForm.register('company_name')} />
-              <Input label={t('settings.contactEmail')} type="email" {...companyForm.register('contact_email')} />
+              <Input
+                label={t('settings.contactEmail')} type="email"
+                error={companyForm.formState.errors.contact_email?.message}
+                {...companyForm.register('contact_email', {
+                  validate: (v) => !v || isValidEmail(v) || EMAIL_VALIDATION_MESSAGE,
+                })}
+              />
               <Input label={t('settings.contactPhone')} type="tel" {...companyForm.register('contact_phone')} />
               <Input label={t('settings.registrationNo')} {...companyForm.register('registration_no')} />
               <Input label={t('settings.panTax')} {...companyForm.register('tax_pan')} />
@@ -272,7 +280,10 @@ export default function TenantSettingsPage() {
             <Input
               label={t('settings.newPassword')} type="password" required
               error={errors.new_password?.message}
-              {...regPass('new_password', { required: true, minLength: { value: 8, message: t('settings.validation.minPassword') } })}
+              {...regPass('new_password', {
+                required: true,
+                validate: (v) => isValidPassword(v) || PASSWORD_VALIDATION_MESSAGE,
+              })}
             />
             <Input
               label={t('settings.confirmPassword')} type="password" required
