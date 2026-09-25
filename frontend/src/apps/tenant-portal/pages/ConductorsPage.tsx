@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, User, Briefcase, Bus, Heart, Wallet, Trash2, Eye, Pencil, AlertTriangle, KeyRound, Link2, Unlink } from 'lucide-react'
+import { Plus, Search, User, Briefcase, Bus, Heart, Wallet, Trash2, Eye, Pencil, AlertTriangle, KeyRound, Link2, Unlink, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
@@ -18,6 +18,7 @@ import { useForm, Controller } from 'react-hook-form'
 import { sanitizePhoneDigits, isValidPhone, PHONE_VALIDATION_MESSAGE } from '@utils/phone'
 import { isValidEmail, EMAIL_VALIDATION_MESSAGE } from '@utils/email'
 import { isValidPassword, PASSWORD_VALIDATION_MESSAGE } from '@utils/password'
+import { cn } from '@utils/cn'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Collector {
@@ -134,7 +135,29 @@ export default function ConductorsPage() {
 
   // ── CRUD targets ─────────────────────────────────────────────────────────────
   const [viewTarget, setViewTarget] = useState<Collector | null>(null)
+  const [viewStep, setViewStep] = useState(0)
+  const VIEW_STEPS: { label: string; icon: React.ElementType }[] = [
+    { label: t('staff.conductors.personalInfo'), icon: User },
+    { label: t('staff.conductors.employmentInfo'), icon: Briefcase },
+    { label: t('staff.conductors.busAssignment'), icon: Bus },
+    { label: t('staff.conductors.medicalInfo'), icon: Heart },
+    { label: t('staff.conductors.salaryWages'), icon: Wallet },
+  ]
+  // Same 5 sections as VIEW_STEPS, each naming which CollectorForm fields it
+  // edits -- same two-step "pick a section, then edit just that section"
+  // flow as DriversPage.tsx, adapted to Collector's own fields (no license,
+  // vehicle/route assignment instead).
+  const EDIT_SECTIONS: { label: string; icon: React.ElementType; fields: (keyof CollectorForm)[] }[] = [
+    { label: t('staff.conductors.personalInfo'), icon: User, fields: ['full_name_en', 'full_name_ne', 'gender', 'dob', 'citizenship_no', 'phone', 'address', 'emergency_contact_name', 'emergency_contact_number'] },
+    { label: t('staff.conductors.employmentInfo'), icon: Briefcase, fields: ['employment_type', 'date_of_joining', 'shift', 'assigned_route_id'] },
+    { label: t('staff.conductors.busAssignment'), icon: Bus, fields: ['assigned_vehicle_id'] },
+    { label: t('staff.conductors.medicalInfo'), icon: Heart, fields: ['blood_group'] },
+    { label: t('staff.conductors.salaryWages'), icon: Wallet, fields: ['basic_salary'] },
+  ]
+
+  const [editPickerTarget, setEditPickerTarget] = useState<Collector | null>(null)
   const [editTarget, setEditTarget] = useState<Collector | null>(null)
+  const [editSection, setEditSection] = useState(0)
   const [deleteTarget, setDeleteTarget] = useState<Collector | null>(null)
   const [loginTarget, setLoginTarget] = useState<Collector | null>(null)
   const [loginEmail, setLoginEmail] = useState('')
@@ -142,27 +165,39 @@ export default function ConductorsPage() {
   const [linkTarget, setLinkTarget] = useState<Collector | null>(null)
   const [yatrooExternalId, setYatrooExternalId] = useState('')
 
-  // ── Edit form state ───────────────────────────────────────────────────────────
+  // status isn't part of CollectorForm (operational, not set at creation) --
+  // kept separately, edited alongside basic_salary on the Salary section.
   const [editStatus, setEditStatus] = useState('')
-  const [editShift, setEditShift] = useState('')
-  const [editPhone, setEditPhone] = useState('')
-  const [editBloodGroup, setEditBloodGroup] = useState('')
-  const [editEmploymentType, setEditEmploymentType] = useState('')
-  const [editVehicleId, setEditVehicleId] = useState('')
-  const [editRouteId, setEditRouteId] = useState('')
 
-  useEffect(() => {
-    if (!editTarget) return
-    setEditStatus(editTarget.status ?? '')
-    setEditShift(editTarget.shift ?? '')
-    setEditPhone(editTarget.phone ?? '')
-    setEditBloodGroup(editTarget.blood_group ?? '')
-    setEditEmploymentType(editTarget.employment_type ?? '')
-    setEditVehicleId(editTarget.assigned_vehicle_id ?? '')
-    setEditRouteId(editTarget.assigned_route_id ?? '')
+  const openEditPicker = (c: Collector) => setEditPickerTarget(c)
+  const chooseEditSection = (index: number) => {
+    if (!editPickerTarget) return
+    setEditTarget(editPickerTarget)
+    setEditSection(index)
+    setEditStatus(editPickerTarget.status ?? '')
     setEditPhotoFile(null)
     setEditCitizenshipPhotoFile(null)
-  }, [editTarget])
+    editForm.reset({
+      full_name_en: editPickerTarget.full_name_en ?? '',
+      full_name_ne: editPickerTarget.full_name_ne ?? '',
+      gender: editPickerTarget.gender ?? '',
+      dob: editPickerTarget.dob ?? '',
+      citizenship_no: editPickerTarget.citizenship_no ?? '',
+      phone: editPickerTarget.phone ?? '',
+      address: editPickerTarget.address ?? '',
+      emergency_contact_name: editPickerTarget.emergency_contact_name ?? '',
+      emergency_contact_number: editPickerTarget.emergency_contact_number ?? '',
+      blood_group: editPickerTarget.blood_group ?? '',
+      employment_type: editPickerTarget.employment_type ?? '',
+      date_of_joining: editPickerTarget.date_of_joining ?? '',
+      shift: editPickerTarget.shift ?? '',
+      assigned_vehicle_id: editPickerTarget.assigned_vehicle_id ?? '',
+      assigned_route_id: editPickerTarget.assigned_route_id ?? '',
+      basic_salary: editPickerTarget.basic_salary ?? '',
+    })
+    setEditPickerTarget(null)
+  }
+  const closeEdit = () => { setEditTarget(null); setEditPhotoFile(null); setEditCitizenshipPhotoFile(null) }
 
   // ── Queries ───────────────────────────────────────────────────────────────────
   const { data, isLoading } = useQuery({
@@ -194,9 +229,44 @@ export default function ConductorsPage() {
     staleTime: 5 * 60 * 1000,
   })
 
-  const { register, handleSubmit, reset, control, formState: { errors } } = useForm<CollectorForm>({
+  const { register, handleSubmit, reset, control, trigger, formState: { errors } } = useForm<CollectorForm>({
     defaultValues: { gender: 'MALE', employment_type: 'PERMANENT', shift: '', assigned_route_id: '', assigned_vehicle_id: '' },
   })
+
+  // Separate form instance for editing -- seeded per-conductor, per-section
+  // from chooseEditSection() above, same independence from Create's form as
+  // DriversPage.tsx's editForm.
+  const editForm = useForm<CollectorForm>()
+
+  // Add Collector wizard: each section is a step, gated the same way as
+  // Add Driver's -- only Personal has required fields, so by the last step
+  // every field's client-side validation has already run via a "Next".
+  const [currentStep, setCurrentStep] = useState(0)
+  const [maxStepReached, setMaxStepReached] = useState(0)
+  const STEPS: { label: string; icon: React.ElementType; fields: (keyof CollectorForm)[] }[] = [
+    { label: t('staff.conductors.personalInfo'), icon: User, fields: ['full_name_en', 'gender', 'dob', 'citizenship_no', 'phone', 'address'] },
+    { label: t('staff.conductors.employmentInfo'), icon: Briefcase, fields: [] },
+    { label: t('staff.conductors.busAssignment'), icon: Bus, fields: [] },
+    { label: t('staff.conductors.medicalInfo'), icon: Heart, fields: [] },
+    { label: t('staff.conductors.salaryWages'), icon: Wallet, fields: [] },
+  ]
+  const isLastStep = currentStep === STEPS.length - 1
+
+  const resetWizard = () => { setCurrentStep(0); setMaxStepReached(0) }
+
+  const goToStep = (index: number) => {
+    if (index <= maxStepReached) setCurrentStep(index)
+  }
+
+  const handleNext = async () => {
+    const valid = await trigger(STEPS[currentStep].fields)
+    if (!valid) return
+    const next = Math.min(currentStep + 1, STEPS.length - 1)
+    setCurrentStep(next)
+    setMaxStepReached((m) => Math.max(m, next))
+  }
+
+  const handleBack = () => setCurrentStep((s) => Math.max(s - 1, 0))
 
   // ── Create ────────────────────────────────────────────────────────────────────
   const createMutation = useMutation({
@@ -231,6 +301,7 @@ export default function ConductorsPage() {
       setAllowances([])
       setPhotoFile(null)
       setCitizenshipPhotoFile(null)
+      resetWizard()
       qc.invalidateQueries({ queryKey: ['conductors'] })
     },
     onError: (err: unknown) => {
@@ -249,7 +320,7 @@ export default function ConductorsPage() {
 
   // ── Update ────────────────────────────────────────────────────────────────────
   const updateMutation = useMutation({
-    mutationFn: (payload: Partial<Collector>) => {
+    mutationFn: (payload: Record<string, unknown>) => {
       if (!editPhotoFile && !editCitizenshipPhotoFile) {
         return apiClient.patch(`/operator/conductors/${editTarget!.id}/`, payload)
       }
@@ -265,9 +336,7 @@ export default function ConductorsPage() {
     },
     onSuccess: () => {
       toast.success(t('staff.conductors.toast.updateSuccess'))
-      setEditTarget(null)
-      setEditPhotoFile(null)
-      setEditCitizenshipPhotoFile(null)
+      closeEdit()
       qc.invalidateQueries({ queryKey: ['conductors'] })
     },
     onError: (err: unknown) => {
@@ -339,16 +408,25 @@ export default function ConductorsPage() {
     },
   })
 
-  const handleUpdate = () => {
-    updateMutation.mutate({
-      status: editStatus,
-      shift: editShift || undefined,
-      phone: editPhone,
-      blood_group: editBloodGroup || undefined,
-      employment_type: editEmploymentType,
-      assigned_vehicle_id: editVehicleId || null,
-      assigned_route_id: editRouteId || null,
-    })
+  // Scoped to whichever section was chosen in the picker -- same design as
+  // DriversPage.tsx's handleUpdate.
+  const handleUpdate = (values: CollectorForm) => {
+    const fields = EDIT_SECTIONS[editSection].fields
+    const payload: Record<string, unknown> = {}
+    for (const field of fields) {
+      if (field === 'assigned_vehicle_id' || field === 'assigned_route_id') {
+        payload[field] = values[field] || null
+      } else if (field === 'basic_salary') {
+        payload.basic_salary = values.basic_salary || null
+      } else {
+        payload[field] = values[field]
+      }
+    }
+    if (editSection === EDIT_SECTIONS.length - 1) {
+      // Salary section also carries status -- see editStatus's own comment.
+      payload.status = editStatus
+    }
+    updateMutation.mutate(payload)
   }
 
   const vehicleMap = new Map(
@@ -429,7 +507,7 @@ export default function ConductorsPage() {
             <Eye className="h-4 w-4" />
           </button>
           <button
-            onClick={() => setEditTarget(c)}
+            onClick={() => openEditPicker(c)}
             className="rounded-lg p-1.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
             title={t('common:common.edit')}
           >
@@ -511,59 +589,87 @@ export default function ConductorsPage() {
         open={!!viewTarget}
         onClose={() => setViewTarget(null)}
         title={`${t('staff.conductors.title')} — ${viewTarget?.employee_id ?? ''}`}
-        size="lg"
+        size="full"
       >
         {viewTarget && (
           <div className="space-y-6 p-6">
-            <Section icon={User} title={t('staff.conductors.personalInfo')} />
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <DetailRow label={t('staff.conductors.fullNameEn')} value={viewTarget.full_name_en} />
-              <DetailRow label={t('staff.conductors.fullNameNe')} value={viewTarget.full_name_ne} />
-              <DetailRow label={t('staff.conductors.gender')} value={viewTarget.gender} />
-              <DetailRow label={t('staff.conductors.dateOfBirth')} dateValue={viewTarget.dob} />
-              <DetailRow label={t('staff.conductors.citizenshipNo')} value={viewTarget.citizenship_no} />
-              <DetailRow label={t('staff.conductors.phone')} value={viewTarget.phone} />
-              <div className="col-span-2 sm:col-span-3">
-                <DetailRow label={t('staff.conductors.address')} value={viewTarget.address} />
+            {/* Nothing to validate here -- every section is freely clickable,
+                unlike the Add Collector wizard's gated steps. */}
+            <div className="flex items-center gap-2 overflow-x-auto border-b pb-3">
+              {VIEW_STEPS.map((step, index) => {
+                const StepIcon = step.icon
+                const isCurrent = index === viewStep
+                return (
+                  <button
+                    key={step.label}
+                    type="button"
+                    onClick={() => setViewStep(index)}
+                    className={cn(
+                      'flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                      isCurrent ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                    )}
+                  >
+                    <StepIcon className="h-3.5 w-3.5" />
+                    {step.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {viewStep === 0 && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <DetailRow label={t('staff.conductors.fullNameEn')} value={viewTarget.full_name_en} />
+                <DetailRow label={t('staff.conductors.fullNameNe')} value={viewTarget.full_name_ne} />
+                <DetailRow label={t('staff.conductors.gender')} value={viewTarget.gender} />
+                <DetailRow label={t('staff.conductors.dateOfBirth')} dateValue={viewTarget.dob} />
+                <DetailRow label={t('staff.conductors.citizenshipNo')} value={viewTarget.citizenship_no} />
+                <DetailRow label={t('staff.conductors.phone')} value={viewTarget.phone} />
+                <div className="col-span-2 sm:col-span-3">
+                  <DetailRow label={t('staff.conductors.address')} value={viewTarget.address} />
+                </div>
+                <DetailRow label={t('staff.conductors.emergencyContact')} value={viewTarget.emergency_contact_name} />
+                <DetailRow label={t('staff.conductors.emergencyPhone')} value={viewTarget.emergency_contact_number} />
               </div>
-              <DetailRow label={t('staff.conductors.emergencyContact')} value={viewTarget.emergency_contact_name} />
-              <DetailRow label={t('staff.conductors.emergencyPhone')} value={viewTarget.emergency_contact_number} />
-            </div>
+            )}
 
-            <Section icon={Briefcase} title={t('staff.conductors.employmentInfo')} />
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <DetailRow label={t('staff.conductors.employeeId')} value={viewTarget.employee_id} />
-              <DetailRow label={t('staff.conductors.employmentType')} value={viewTarget.employment_type?.replace('_', ' ')} />
-              <DetailRow label={t('staff.conductors.dateOfJoining')} dateValue={viewTarget.date_of_joining} />
-              <DetailRow label={t('staff.conductors.shift')} value={viewTarget.shift} />
-              <DetailRow label={t('staff.conductors.status')} value={viewTarget.status} />
-            </div>
+            {viewStep === 1 && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <DetailRow label={t('staff.conductors.employeeId')} value={viewTarget.employee_id} />
+                <DetailRow label={t('staff.conductors.employmentType')} value={viewTarget.employment_type?.replace('_', ' ')} />
+                <DetailRow label={t('staff.conductors.dateOfJoining')} dateValue={viewTarget.date_of_joining} />
+                <DetailRow label={t('staff.conductors.shift')} value={viewTarget.shift} />
+                <DetailRow label={t('staff.conductors.status')} value={viewTarget.status} />
+              </div>
+            )}
 
-            <Section icon={Bus} title={t('staff.conductors.busAssignment')} />
-            <div className="grid grid-cols-2 gap-4">
-              <DetailRow
-                label={t('staff.conductors.assignedBus')}
-                value={viewTarget.assigned_vehicle_id
-                  ? (vehicleMap.get(viewTarget.assigned_vehicle_id) ?? viewTarget.assigned_vehicle_id)
-                  : '—'}
-              />
-              <DetailRow
-                label={t('staff.conductors.assignedRoute')}
-                value={viewTarget.assigned_route_id
-                  ? (routeMap.get(viewTarget.assigned_route_id) ?? viewTarget.assigned_route_id)
-                  : '—'}
-              />
-            </div>
+            {viewStep === 2 && (
+              <div className="grid grid-cols-2 gap-4">
+                <DetailRow
+                  label={t('staff.conductors.assignedBus')}
+                  value={viewTarget.assigned_vehicle_id
+                    ? (vehicleMap.get(viewTarget.assigned_vehicle_id) ?? viewTarget.assigned_vehicle_id)
+                    : '—'}
+                />
+                <DetailRow
+                  label={t('staff.conductors.assignedRoute')}
+                  value={viewTarget.assigned_route_id
+                    ? (routeMap.get(viewTarget.assigned_route_id) ?? viewTarget.assigned_route_id)
+                    : '—'}
+                />
+              </div>
+            )}
 
-            <Section icon={Heart} title={t('staff.conductors.medicalInfo')} />
-            <div className="grid grid-cols-2 gap-4">
-              <DetailRow label={t('staff.conductors.bloodGroup')} value={viewTarget.blood_group} />
-            </div>
+            {viewStep === 3 && (
+              <div className="grid grid-cols-2 gap-4">
+                <DetailRow label={t('staff.conductors.bloodGroup')} value={viewTarget.blood_group} />
+              </div>
+            )}
 
-            <Section icon={Wallet} title={t('staff.conductors.salaryWages')} />
-            <div className="grid grid-cols-2 gap-4">
-              <DetailRow label={t('staff.conductors.basicSalary')} value={viewTarget.basic_salary} />
-            </div>
+            {viewStep === 4 && (
+              <div className="grid grid-cols-2 gap-4">
+                <DetailRow label={t('staff.conductors.basicSalary')} value={viewTarget.basic_salary} />
+              </div>
+            )}
 
             <div className="flex justify-end border-t pt-4">
               <Button variant="secondary" onClick={() => setViewTarget(null)}>{t('common:common.close')}</Button>
@@ -572,129 +678,216 @@ export default function ConductorsPage() {
         )}
       </Modal>
 
-      {/* ── Edit Collector Modal ──────────────────────────────────────────── */}
+      {/* ── Edit: choose a section ────────────────────────────────────────── */}
+      <Modal
+        open={!!editPickerTarget}
+        onClose={() => setEditPickerTarget(null)}
+        title={t('staff.conductors.editSectionPickerTitle', { defaultValue: 'What do you want to edit?' })}
+        size="sm"
+      >
+        {editPickerTarget && (
+          <div className="p-6 space-y-4">
+            <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+              <strong>{editPickerTarget.full_name_en}</strong> · {editPickerTarget.employee_id}
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {EDIT_SECTIONS.map((section, index) => {
+                const SectionIcon = section.icon
+                return (
+                  <button
+                    key={section.label}
+                    type="button"
+                    onClick={() => chooseEditSection(index)}
+                    className="flex flex-col items-center gap-2 rounded-lg border border-gray-200 px-3 py-4 text-center text-sm font-medium text-gray-700 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700 transition-colors"
+                  >
+                    <SectionIcon className="h-5 w-5" />
+                    {section.label}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex justify-end border-t pt-4">
+              <Button variant="secondary" onClick={() => setEditPickerTarget(null)}>{t('common:common.cancel')}</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Edit: the chosen section's fields ─────────────────────────────── */}
       <Modal
         open={!!editTarget}
-        onClose={() => setEditTarget(null)}
-        title={`${t('common:common.edit')} ${t('staff.conductors.title')} — ${editTarget?.employee_id ?? ''}`}
+        onClose={closeEdit}
+        title={`${t('staff.conductors.title')} — ${editTarget?.employee_id ?? ''} — ${EDIT_SECTIONS[editSection].label}`}
         size="md"
       >
         {editTarget && (
-          <div className="space-y-4 p-6">
-            <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
-              <strong>{editTarget.full_name_en}</strong> · {editTarget.employee_id}
-            </p>
-
-            <PhotoUploadField label="Photo" existingUrl={editTarget.photo} onFileChange={setEditPhotoFile} />
-            <PhotoUploadField label="Citizenship Photo" existingUrl={editTarget.citizenship_photo} onFileChange={setEditCitizenshipPhotoFile} />
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.conductors.status')}</label>
-                <select
-                  value={editStatus}
-                  onChange={(e) => setEditStatus(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="ACTIVE">{t('staff.conductors.statusOptions.ACTIVE')}</option>
-                  <option value="INACTIVE">{t('staff.conductors.statusOptions.INACTIVE')}</option>
-                  <option value="ON_LEAVE">{t('staff.conductors.statusOptions.ON_LEAVE')}</option>
-                  <option value="SUSPENDED">{t('staff.conductors.statusOptions.SUSPENDED')}</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.conductors.employmentType')}</label>
-                <select
-                  value={editEmploymentType}
-                  onChange={(e) => setEditEmploymentType(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="PERMANENT">{t('staff.conductors.types.PERMANENT')}</option>
-                  <option value="CONTRACT">{t('staff.conductors.types.CONTRACT')}</option>
-                  <option value="PART_TIME">{t('staff.conductors.types.PART_TIME')}</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.conductors.shift')}</label>
-                <select
-                  value={editShift}
-                  onChange={(e) => setEditShift(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="">{t('staff.conductors.notAssignedOption')}</option>
-                  <option value="MORNING">{t('staff.conductors.shifts.MORNING')}</option>
-                  <option value="DAY">{t('staff.conductors.shifts.DAY')}</option>
-                  <option value="EVENING">{t('staff.conductors.shifts.EVENING')}</option>
-                  <option value="NIGHT">{t('staff.conductors.shifts.NIGHT')}</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.conductors.bloodGroup')}</label>
-                <select
-                  value={editBloodGroup}
-                  onChange={(e) => setEditBloodGroup(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="">{t('staff.conductors.unknownBloodGroup')}</option>
-                  {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map((bg) => (
-                    <option key={bg} value={bg}>{bg}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.conductors.phoneNumber')}</label>
-                <input
-                  type="text"
-                  maxLength={10}
-                  inputMode="numeric"
-                  value={editPhone}
-                  onChange={(e) => setEditPhone(sanitizePhoneDigits(e.target.value))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.conductors.assignToBus')}</label>
-                <select
-                  value={editVehicleId}
-                  onChange={(e) => setEditVehicleId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="">{t('staff.conductors.notAssignedOption')}</option>
-                  {(vehicles as { id: string; registration_no?: string }[]).map((v) => (
-                    <option key={v.id} value={v.id}>{v.registration_no ?? v.id}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.conductors.assignToRoute')}</label>
-                <select
-                  value={editRouteId}
-                  onChange={(e) => setEditRouteId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="">{t('staff.conductors.notAssignedOption')}</option>
-                  {(routes as { id: string; route_code?: string; name_en?: string }[]).map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.route_code ? `${r.route_code} — ` : ''}{r.name_en ?? r.id}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          <form onSubmit={editForm.handleSubmit(handleUpdate)} className="space-y-4 p-6">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                <strong>{editTarget.full_name_en}</strong> · {editTarget.employee_id}
+              </p>
+              <button
+                type="button"
+                onClick={() => { setEditPickerTarget(editTarget); setEditTarget(null) }}
+                className="text-xs font-medium text-primary-600 hover:text-primary-700"
+              >
+                {t('staff.conductors.changeSection', { defaultValue: 'Change section' })}
+              </button>
             </div>
 
+            {editSection === 0 && <>
+              <PhotoUploadField label="Photo" existingUrl={editTarget.photo} onFileChange={setEditPhotoFile} />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input label={t('staff.conductors.fullNameEn')} {...editForm.register('full_name_en')} />
+                <NepaliInput label={t('staff.conductors.fullNameNe')} {...editForm.register('full_name_ne')} />
+                <Controller
+                  name="gender"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <SelectField label={t('staff.conductors.gender')} {...field}>
+                      <option value="MALE">{t('staff.conductors.genders.MALE')}</option>
+                      <option value="FEMALE">{t('staff.conductors.genders.FEMALE')}</option>
+                      <option value="OTHER">{t('staff.conductors.genders.OTHER')}</option>
+                    </SelectField>
+                  )}
+                />
+                <Controller
+                  name="dob"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <NepaliDateInput label={t('staff.conductors.dateOfBirth')} value={field.value} onChange={field.onChange} />
+                  )}
+                />
+                <Input label={t('staff.conductors.citizenshipNo')} {...editForm.register('citizenship_no')} />
+                <Input
+                  label={t('staff.conductors.phoneNumber')}
+                  maxLength={10}
+                  inputMode="numeric"
+                  {...editForm.register('phone', {
+                    onChange: (e) => { e.target.value = sanitizePhoneDigits(e.target.value) },
+                  })}
+                />
+                <div className="sm:col-span-2">
+                  <Input label={t('staff.conductors.address')} {...editForm.register('address')} />
+                </div>
+                <Input label={t('staff.conductors.emergencyContact')} {...editForm.register('emergency_contact_name')} />
+                <Input
+                  label={t('staff.conductors.emergencyPhone')}
+                  maxLength={10}
+                  inputMode="numeric"
+                  {...editForm.register('emergency_contact_number', {
+                    onChange: (e) => { e.target.value = sanitizePhoneDigits(e.target.value) },
+                  })}
+                />
+              </div>
+            </>}
+
+            {editSection === 1 && <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Controller
+                  name="date_of_joining"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <NepaliDateInput label={t('staff.conductors.dateOfJoining')} value={field.value} onChange={field.onChange} />
+                  )}
+                />
+                <Controller
+                  name="employment_type"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <SelectField label={t('staff.conductors.employmentType')} {...field}>
+                      <option value="PERMANENT">{t('staff.conductors.types.PERMANENT')}</option>
+                      <option value="CONTRACT">{t('staff.conductors.types.CONTRACT')}</option>
+                      <option value="PART_TIME">{t('staff.conductors.types.PART_TIME')}</option>
+                    </SelectField>
+                  )}
+                />
+                <Controller
+                  name="shift"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <SelectField label={t('staff.conductors.shift')} {...field}>
+                      <option value="">{t('staff.conductors.notAssignedOption')}</option>
+                      <option value="MORNING">{t('staff.conductors.shifts.MORNING')}</option>
+                      <option value="DAY">{t('staff.conductors.shifts.DAY')}</option>
+                      <option value="EVENING">{t('staff.conductors.shifts.EVENING')}</option>
+                      <option value="NIGHT">{t('staff.conductors.shifts.NIGHT')}</option>
+                    </SelectField>
+                  )}
+                />
+                <Controller
+                  name="assigned_route_id"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <SelectField label={t('staff.conductors.routeAssigned')} {...field}>
+                      <option value="">{t('staff.conductors.notAssignedOption')}</option>
+                      {(routes as { id: string; route_code?: string; name_en?: string }[]).map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.route_code ? `${r.route_code} — ` : ''}{r.name_en ?? r.id}
+                        </option>
+                      ))}
+                    </SelectField>
+                  )}
+                />
+              </div>
+            </>}
+
+            {editSection === 2 && <>
+              <Controller
+                name="assigned_vehicle_id"
+                control={editForm.control}
+                render={({ field }) => (
+                  <SelectField label={t('staff.conductors.assignToBus')} {...field}>
+                    <option value="">{t('staff.conductors.notAssignedOption')}</option>
+                    {(vehicles as { id: string; registration_no?: string }[]).map((v) => (
+                      <option key={v.id} value={v.id}>{v.registration_no ?? v.id}</option>
+                    ))}
+                  </SelectField>
+                )}
+              />
+            </>}
+
+            {editSection === 3 && <>
+              <Controller
+                name="blood_group"
+                control={editForm.control}
+                render={({ field }) => (
+                  <SelectField label={t('staff.conductors.bloodGroup')} {...field}>
+                    <option value="">{t('staff.conductors.unknownBloodGroup')}</option>
+                    {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map((bg) => (
+                      <option key={bg} value={bg}>{bg}</option>
+                    ))}
+                  </SelectField>
+                )}
+              />
+            </>}
+
+            {editSection === 4 && <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input label={t('staff.conductors.basicSalary')} type="number" min="0" step="0.01" {...editForm.register('basic_salary')} />
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">{t('staff.conductors.status')}</label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  >
+                    <option value="ACTIVE">{t('staff.conductors.statusOptions.ACTIVE')}</option>
+                    <option value="INACTIVE">{t('staff.conductors.statusOptions.INACTIVE')}</option>
+                    <option value="ON_LEAVE">{t('staff.conductors.statusOptions.ON_LEAVE')}</option>
+                    <option value="SUSPENDED">{t('staff.conductors.statusOptions.SUSPENDED')}</option>
+                  </select>
+                </div>
+              </div>
+            </>}
+
             <div className="flex justify-end gap-3 border-t pt-4">
-              <Button variant="secondary" onClick={() => setEditTarget(null)}>{t('common:common.cancel')}</Button>
-              <Button onClick={handleUpdate} loading={updateMutation.isPending}>
+              <Button type="button" variant="secondary" onClick={closeEdit}>{t('common:common.cancel')}</Button>
+              <Button type="submit" loading={updateMutation.isPending}>
                 {t('common:common.update')}
               </Button>
             </div>
-          </div>
+          </form>
         )}
       </Modal>
 
@@ -816,13 +1009,53 @@ export default function ConductorsPage() {
       {/* ── Add Collector Modal ───────────────────────────────────────────── */}
       <Modal
         open={showCreate}
-        onClose={() => { setShowCreate(false); reset(); setAllowances([]); setPhotoFile(null); setCitizenshipPhotoFile(null) }}
+        onClose={() => { setShowCreate(false); reset(); setAllowances([]); setPhotoFile(null); setCitizenshipPhotoFile(null); resetWizard() }}
         title={t('staff.conductors.addConductor')}
         size="full"
       >
-        <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-6 p-6">
+        <form
+          onSubmit={handleSubmit((d) => createMutation.mutate(d))}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !isLastStep) { e.preventDefault(); handleNext() }
+          }}
+          className="space-y-6 p-6"
+        >
+          {/* ── Step indicator ──────────────────────────────────────────────── */}
+          <div className="flex items-center overflow-x-auto pb-2">
+            {STEPS.map((step, index) => {
+              const isDone = index < maxStepReached
+              const isCurrent = index === currentStep
+              const isUnlocked = index <= maxStepReached
+              const StepIcon = step.icon
+              return (
+                <div key={step.label} className="flex items-center">
+                  <button
+                    type="button"
+                    disabled={!isUnlocked}
+                    onClick={() => goToStep(index)}
+                    className={cn(
+                      'flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                      isCurrent && 'bg-primary-600 text-white',
+                      !isCurrent && isDone && 'bg-primary-50 text-primary-700 hover:bg-primary-100 cursor-pointer',
+                      !isCurrent && !isDone && isUnlocked && 'bg-gray-100 text-gray-600 hover:bg-gray-200 cursor-pointer',
+                      !isUnlocked && 'bg-gray-50 text-gray-300 cursor-not-allowed',
+                    )}
+                  >
+                    {isDone
+                      ? <Check className="h-3.5 w-3.5" />
+                      : <StepIcon className="h-3.5 w-3.5" />}
+                    {step.label}
+                  </button>
+                  {index < STEPS.length - 1 && (
+                    <div className={cn('h-px w-6 shrink-0', isDone ? 'bg-primary-300' : 'bg-gray-200')} />
+                  )}
+                </div>
+              )
+            })}
+          </div>
 
           {/* Personal Information */}
+          {currentStep === 0 && <>
           <Section icon={User} title={t('staff.conductors.personalInfo')} />
           <PhotoUploadField label="Photo" hint="Optional — can be added later via Edit" onFileChange={setPhotoFile} />
           <PhotoUploadField label="Citizenship Photo" hint="Optional — can be added later via Edit" onFileChange={setCitizenshipPhotoFile} />
@@ -914,8 +1147,10 @@ export default function ConductorsPage() {
               })}
             />
           </div>
+          </>}
 
           {/* Employment Information */}
+          {currentStep === 1 && <>
           <Section icon={Briefcase} title={t('staff.conductors.employmentInfo')} />
           <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2">
             <p className="text-xs text-blue-600">
@@ -951,8 +1186,10 @@ export default function ConductorsPage() {
               ))}
             </SelectField>
           </div>
+          </>}
 
           {/* Bus Assignment */}
+          {currentStep === 2 && <>
           <Section icon={Bus} title={t('staff.conductors.busAssignment')} />
           <SelectField label={t('staff.conductors.assignToBus')} {...register('assigned_vehicle_id')}>
             <option value="">{t('staff.conductors.notAssignedOption')}</option>
@@ -964,8 +1201,10 @@ export default function ConductorsPage() {
               </option>
             ))}
           </SelectField>
+          </>}
 
           {/* Medical Information */}
+          {currentStep === 3 && <>
           <Section icon={Heart} title={t('staff.conductors.medicalInfo')} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <SelectField label={t('staff.conductors.bloodGroup')} {...register('blood_group')}>
@@ -975,8 +1214,10 @@ export default function ConductorsPage() {
               ))}
             </SelectField>
           </div>
+          </>}
 
           {/* Salary & Wages */}
+          {currentStep === 4 && <>
           <Section icon={Wallet} title={t('staff.conductors.salaryWages')} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Input
@@ -1042,15 +1283,35 @@ export default function ConductorsPage() {
               </div>
             ))}
           </div>
+          </>}
 
           {/* Actions */}
-          <div className="flex justify-end gap-3 border-t pt-4">
-            <Button variant="secondary" type="button" onClick={() => { setShowCreate(false); reset(); setAllowances([]); setPhotoFile(null); setCitizenshipPhotoFile(null) }}>
-              {t('common:common.cancel')}
-            </Button>
-            <Button type="submit" loading={createMutation.isPending} leftIcon={<Plus className="h-4 w-4" />}>
-              {t('staff.conductors.addConductor')}
-            </Button>
+          <div className="flex justify-between gap-3 border-t pt-4">
+            <div>
+              {currentStep > 0 && (
+                <Button variant="secondary" type="button" leftIcon={<ChevronLeft className="h-4 w-4" />} onClick={handleBack}>
+                  {t('common:common.back', { defaultValue: 'Back' })}
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => { setShowCreate(false); reset(); setAllowances([]); setPhotoFile(null); setCitizenshipPhotoFile(null); resetWizard() }}
+              >
+                {t('common:common.cancel')}
+              </Button>
+              {isLastStep ? (
+                <Button type="submit" loading={createMutation.isPending} leftIcon={<Plus className="h-4 w-4" />}>
+                  {t('staff.conductors.addConductor')}
+                </Button>
+              ) : (
+                <Button type="button" rightIcon={<ChevronRight className="h-4 w-4" />} onClick={handleNext}>
+                  {t('common:common.next', { defaultValue: 'Next' })}
+                </Button>
+              )}
+            </div>
           </div>
         </form>
       </Modal>
