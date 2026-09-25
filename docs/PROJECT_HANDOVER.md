@@ -720,9 +720,9 @@ pending migration applies automatically on the same `up -d django` step
 used for every prior deploy; it just won't be a no-op like the previous
 commit's migrate step was.
 
-**Also now pending — §7's owner-accounts commit**, one more migration on
-top of the above (`fleet/migrations/0012_owner_temp_password.py`, adds
-`Owner.temp_password`), picked up automatically by the same `django`
+**Also now pending — §7's owner-accounts commit (`7cbf88be`)**, one more
+migration on top of the above (`fleet/migrations/0012_owner_temp_password.py`,
+adds `Owner.temp_password`), picked up automatically by the same `django`
 startup migrate step, no separate action needed:
 
 ```bash
