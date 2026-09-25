@@ -312,7 +312,6 @@
       "notAssignedOption": "— Not assigned —",
       "unknownBloodGroup": "— Unknown —",
       "selectGender": "Select gender",
-      "employeeIdAutoGen": "Employee ID is auto-generated (CDR-0001, CDR-0002 …)",
       "addAllowance": "Add Allowance",
       "noAllowances": "No allowances added yet.",
       "allowanceTitle": "Title (e.g. Transport)",
