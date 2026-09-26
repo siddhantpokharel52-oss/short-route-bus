@@ -790,27 +790,34 @@ class FareMatrixViewSet(ModelViewSet):
         return qs
 
     def _can_write_route(self, user, route):
-        """Fares are platform-managed only -- a tenant operator can view
-        fares on routes they run, but never write them, regardless of route
-        type. (Previously EXCLUSIVE routes with a sole operator were an
-        exception; that carve-out was removed by explicit decision.)"""
-        return bool(user.is_platform_role)
+        """Fares are tenant-managed -- each operator sets and maintains its
+        own fares for the routes it actively runs. Platform/super-admin no
+        longer writes fares at all (reversed from the earlier "platform-
+        managed only" decision, per direct instruction) -- CanViewFares
+        still lets platform staff see fares tenant-wide for oversight, but
+        this is the one place that decides who may change them, and it's
+        tenant-only now."""
+        if user.is_platform_role or user.role not in CanViewFares._tenant_roles:
+            return False
+        return RouteAssignment.objects.filter(
+            tenant__schema_name=user.tenant_schema,
+            route=route,
+            status=RouteAssignment.Status.ACTIVE,
+        ).exists()
 
     def _forbidden_route_response(self):
         return api_response(
             success=False,
-            message="Fares are managed by platform admins only. You can view fares on your own routes but not edit them.",
+            message="Fares are managed by the tenant that actively runs this route. You can only add or edit fares for routes assigned to your own tenant.",
             status_code=status.HTTP_403_FORBIDDEN,
         )
 
     @action(detail=False, methods=["get"], url_path="my-routes")
     def my_routes(self, request):
         """Routes the calling tenant operator is actively assigned to --
-        lets the tenant-portal fares page populate its route filter without
-        exposing every route platform-wide. Read-only context only; fare
-        writes are platform-admin-only regardless of route, so this no
-        longer reports a per-route can_write_fares flag. Not meant for
-        platform roles (they manage fares from the super-admin app instead)."""
+        lets the tenant-portal fares page populate its route filter and know
+        which routes it may write fares for. Not meant for platform roles
+        (they no longer write fares at all, from either app)."""
         user = request.user
         if user.is_platform_role:
             return api_response(data=[])
@@ -917,7 +924,7 @@ class FareMatrixViewSet(ModelViewSet):
                 errors.append({"row": i, "error": route_err})
                 continue
             if not self._can_write_route(request.user, route):
-                errors.append({"row": i, "error": "Fares are managed by platform admins only."})
+                errors.append({"row": i, "error": "This route isn't actively assigned to your tenant."})
                 continue
 
             ticket_type, tt_err = self._resolve_ticket_type(row.get("ticket_type", default_ticket_type_val))

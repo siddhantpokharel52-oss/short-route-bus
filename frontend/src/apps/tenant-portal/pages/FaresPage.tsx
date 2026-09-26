@@ -1,18 +1,26 @@
 /**
- * FaresPage (tenant-portal) — read-only view of fares on every route this
- * operator is assigned to. Fares are managed by platform admins only, no
- * exceptions (an earlier EXCLUSIVE-route write exception was removed by
- * explicit decision) — this page has no add/edit/delete, by design, not by
- * omission.
+ * FaresPage (tenant-portal) — a tenant sets and maintains its own fares for
+ * the routes it actively runs. Reversed from the earlier "platform-managed
+ * only, no exceptions" decision, per direct instruction: fares are now
+ * tenant-managed, not platform-managed. Platform/super-admin can still see
+ * fares tenant-wide for oversight (frontend/src/apps/super-admin/pages/
+ * FaresPage.tsx), but that page is read-only now -- this one has the real
+ * Add/Edit/Delete/Bulk-Import/Generate-from-Formula UI, scoped to routes
+ * this tenant is actively assigned to (backend/apps/platform/views.py's
+ * FareMatrixViewSet._can_write_route enforces the same scoping server-side,
+ * so this UI restriction is a convenience, not the actual security boundary).
  */
-import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Eye } from 'lucide-react'
+import { forwardRef, useEffect, useMemo, useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useForm, useFieldArray } from 'react-hook-form'
+import { Plus, Upload, Trash2, Eye, Pencil, Calculator } from 'lucide-react'
 import { Button } from '@components/shared/Button'
+import { Input } from '@components/shared/Input'
 import { Table, Column, Pagination } from '@components/shared/Table'
 import { Modal } from '@components/shared/Modal'
 import { usePagination } from '@hooks/usePagination'
 import apiClient from '@services/api'
+import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 
 interface MyRoute {
@@ -24,7 +32,17 @@ interface MyRoute {
 
 interface TicketTypeOption {
   id: string
+  code: string
   name_en: string
+}
+
+interface RouteStopOption {
+  route_stop_id: string
+  stop_id: string
+  name_en: string
+  name_ne: string
+  stop_code: string
+  sequence_no: number
 }
 
 interface FareRow {
@@ -41,20 +59,99 @@ interface FareRow {
   created_at: string
 }
 
+interface AddFareValues {
+  route: string
+  ticket_type: string
+  zone_from: string
+  zone_to: string
+  base_fare: string
+  peak_fare: string
+}
+
+interface BulkFareRowInput {
+  zone_from: string
+  zone_to: string
+  base_fare: string
+  peak_fare: string
+}
+
+interface BulkFormValues {
+  route: string
+  ticket_type: string
+  fares: BulkFareRowInput[]
+}
+
+const emptyBulkRow: BulkFareRowInput = { zone_from: '', zone_to: '', base_fare: '', peak_fare: '' }
+
 const selectClass =
   'w-full rounded-lg border px-3 py-2 text-sm bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100 ' +
   'border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent'
 
+function flattenErrors(errors: Record<string, string[] | string>): string {
+  return Object.entries(errors)
+    .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}`)
+    .join(' | ')
+}
+
+// A route's own ordered stops -- used to turn Zone From/To into real
+// dropdowns instead of free text, and to auto-suggest one row per
+// consecutive leg in Bulk Import. Same endpoint the POS ticketing modal
+// already uses for the same From/To-picker purpose.
+function useRouteStops(routeId: string | undefined) {
+  return useQuery({
+    queryKey: ['route-stops-for-fares', routeId],
+    queryFn: async () => {
+      const { data } = await apiClient.get(`/platform/routes/${routeId}/stops/`)
+      return (data.data ?? []) as RouteStopOption[]
+    },
+    enabled: !!routeId,
+  })
+}
+
+// A fare is direction-agnostic (the backend falls back to the reverse pair
+// automatically), so "To" only ever needs to offer stops *after* "From" in
+// sequence -- entering a backward leg would just be redundant.
+function toOptionsAfter(stops: RouteStopOption[], fromName: string): RouteStopOption[] {
+  if (!fromName) return stops
+  const fromSeq = stops.find((s) => s.name_en === fromName)?.sequence_no
+  return fromSeq == null ? stops : stops.filter((s) => s.sequence_no > fromSeq)
+}
+
+// React was warning "Function components cannot be given refs" here --
+// react-hook-form's register() always hands a select a ref (to imperatively
+// seed/read its value for setValue()/reset()/replace()), and a plain
+// function component silently drops it instead of erroring, so this was
+// easy to miss. forwardRef is required for any form control wrapped like
+// this one that register() gets spread onto.
+const StopSelect = forwardRef<
+  HTMLSelectElement,
+  { stops: RouteStopOption[]; allowFlat?: boolean } & React.SelectHTMLAttributes<HTMLSelectElement>
+>(function StopSelect({ stops, allowFlat, ...props }, ref) {
+  return (
+    <select ref={ref} className={selectClass} {...props}>
+      <option value="">{allowFlat ? 'Leave blank for a flat fare' : 'Select stop'}</option>
+      {stops.map((s) => <option key={s.stop_id} value={s.name_en}>{s.name_en}</option>)}
+    </select>
+  )
+})
+
 export default function FaresPage() {
   const { t } = useTranslation('tenant')
+  const qc = useQueryClient()
   const [routeFilter, setRouteFilter] = useState('')
+  const [showAdd, setShowAdd] = useState(false)
+  const [showBulk, setShowBulk] = useState(false)
+  const [showGenerate, setShowGenerate] = useState(false)
   const [viewTarget, setViewTarget] = useState<FareRow | null>(null)
+  const [editTarget, setEditTarget] = useState<FareRow | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<FareRow | null>(null)
   const [totalCount, setTotalCount] = useState(0)
   const pagination = usePagination(totalCount)
 
-  // Every route this operator is actively assigned to -- populates the
-  // route filter only. Fare writes are platform-admin-only regardless of
-  // route, so there's no per-route "can I edit this" concept here anymore.
+  // Every route this tenant is actively assigned to -- both the route
+  // filter AND the only routes this tenant may write fares for (the
+  // backend enforces the same scoping independently; this just keeps the
+  // picker from offering a route the write would be rejected for anyway).
   const { data: myRoutes } = useQuery({
     queryKey: ['my-routes-for-fares'],
     queryFn: async () => {
@@ -68,7 +165,7 @@ export default function FaresPage() {
   )
 
   const { data: ticketTypes } = useQuery({
-    queryKey: ['ticket-types-for-fares-readonly'],
+    queryKey: ['ticket-types-for-fares'],
     queryFn: async () => {
       const { data } = await apiClient.get('/platform/ticket-types/', { params: { page_size: 100 } })
       return (data.data ?? []) as TicketTypeOption[]
@@ -78,6 +175,11 @@ export default function FaresPage() {
     () => Object.fromEntries((ticketTypes ?? []).map((tt) => [tt.id, tt])),
     [ticketTypes]
   )
+  // Every fare row prices exactly one Ticket Type -- when only one type
+  // exists this just pre-fills it so the picker isn't extra friction, but
+  // the moment a second type (Student, Senior Citizen, ...) is configured,
+  // the tenant must be able to pick which one each fare is for.
+  const defaultTicketTypeId = ticketTypes?.[0]?.id
 
   const { data: fares, isLoading } = useQuery({
     queryKey: ['fare-matrix-tenant', pagination.page, routeFilter],
@@ -90,6 +192,185 @@ export default function FaresPage() {
     },
   })
 
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['fare-matrix-tenant'] })
+
+  // ── Add a single fare row ──────────────────────────────────────────
+  const addForm = useForm<AddFareValues>()
+  const addRouteId = addForm.watch('route')
+  const addFromName = addForm.watch('zone_from')
+  const { data: addRouteStops } = useRouteStops(addRouteId)
+
+  const createMutation = useMutation({
+    mutationFn: (payload: AddFareValues & { student_fare: string; senior_citizen_fare: string; child_fare: string }) =>
+      apiClient.post('/platform/fare-matrix/', payload).then((r) => r.data),
+    onSuccess: () => {
+      toast.success('Fare added.')
+      setShowAdd(false)
+      addForm.reset()
+      invalidate()
+    },
+    onError: (err: any) => {
+      const errors = err?.response?.data?.errors
+      toast.error(errors && typeof errors === 'object' ? flattenErrors(errors) : (err?.response?.data?.message || 'Failed to add fare.'))
+    },
+  })
+
+  const onSubmitAdd = (values: AddFareValues) => {
+    createMutation.mutate({
+      ...values,
+      // student_fare/senior_citizen_fare/child_fare aren't separately asked
+      // for here -- mirrored to base_fare, same as the (now read-only)
+      // super-admin page did. Use Bulk Import or Generate Fares to price
+      // concession fares independently per row/formula.
+      peak_fare: values.peak_fare || values.base_fare,
+      student_fare: values.base_fare,
+      senior_citizen_fare: values.base_fare,
+      child_fare: values.base_fare,
+    })
+  }
+
+  // ── Edit / Delete an existing fare row ──────────────────────────────
+  const editForm = useForm<AddFareValues>()
+  const editRouteId = editForm.watch('route')
+  const editFromName = editForm.watch('zone_from')
+  const { data: editRouteStops } = useRouteStops(editRouteId)
+
+  const openEdit = (row: FareRow) => {
+    setEditTarget(row)
+    editForm.reset({
+      route: row.route ?? '',
+      ticket_type: row.ticket_type,
+      zone_from: row.zone_from, zone_to: row.zone_to,
+      base_fare: row.base_fare, peak_fare: row.peak_fare,
+    })
+  }
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: AddFareValues & { student_fare: string; senior_citizen_fare: string; child_fare: string }) =>
+      apiClient.patch(`/platform/fare-matrix/${editTarget?.id}/`, payload).then((r) => r.data),
+    onSuccess: () => {
+      toast.success('Fare updated.')
+      setEditTarget(null)
+      invalidate()
+    },
+    onError: (err: any) => {
+      const errors = err?.response?.data?.errors
+      toast.error(errors && typeof errors === 'object' ? flattenErrors(errors) : (err?.response?.data?.message || 'Failed to update fare.'))
+    },
+  })
+
+  const onSubmitEdit = (values: AddFareValues) => {
+    updateMutation.mutate({
+      ...values,
+      peak_fare: values.peak_fare || values.base_fare,
+      student_fare: values.base_fare,
+      senior_citizen_fare: values.base_fare,
+      child_fare: values.base_fare,
+    })
+  }
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/platform/fare-matrix/${id}/`),
+    onSuccess: () => {
+      toast.success('Fare deleted.')
+      setDeleteTarget(null)
+      invalidate()
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to delete fare.')
+    },
+  })
+
+  // ── Bulk import a whole fare chart ─────────────────────────────────
+  const bulkForm = useForm<BulkFormValues>({
+    defaultValues: { route: '', ticket_type: '', fares: [emptyBulkRow] },
+  })
+  const { fields, append, remove, replace } = useFieldArray({ control: bulkForm.control, name: 'fares' })
+  const bulkRouteId = bulkForm.watch('route')
+  const { data: bulkRouteStops } = useRouteStops(bulkRouteId)
+
+  // Once a route with a real stop sequence is picked, suggest one row per
+  // consecutive leg (A→B, B→C, ...) as a starting point -- still fully
+  // editable/removable, and more rows can be added on top for a through-fare
+  // that skips stops.
+  useEffect(() => {
+    if (bulkRouteStops && bulkRouteStops.length >= 2) {
+      const legs: BulkFareRowInput[] = []
+      for (let i = 0; i < bulkRouteStops.length - 1; i++) {
+        legs.push({
+          zone_from: bulkRouteStops[i].name_en, zone_to: bulkRouteStops[i + 1].name_en,
+          base_fare: '', peak_fare: '',
+        })
+      }
+      replace(legs)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bulkRouteStops])
+
+  const bulkMutation = useMutation({
+    mutationFn: (payload: unknown) =>
+      apiClient.post('/platform/fare-matrix/bulk-import/', payload).then((r) => r.data),
+    onSuccess: (data) => {
+      toast.success(data.message || 'Fares imported.')
+      setShowBulk(false)
+      bulkForm.reset({ route: '', ticket_type: '', fares: [emptyBulkRow] })
+      invalidate()
+    },
+    onError: (err: any) => {
+      const rowErrors = err?.response?.data?.errors
+      if (Array.isArray(rowErrors)) {
+        rowErrors.forEach((e: { row: number; error: unknown }) => {
+          const detail = typeof e.error === 'string' ? e.error : flattenErrors(e.error as Record<string, string[]>)
+          toast.error(`Row ${e.row + 1}: ${detail}`)
+        })
+      } else {
+        toast.error(err?.response?.data?.message || 'Bulk import failed.')
+      }
+    },
+  })
+
+  const onSubmitBulk = (values: BulkFormValues) => {
+    bulkMutation.mutate({
+      route: values.route,
+      ticket_type: values.ticket_type,
+      fares: values.fares.map((f) => ({
+        zone_from: f.zone_from,
+        zone_to: f.zone_to,
+        base_fare: f.base_fare,
+        ...(f.peak_fare ? { peak_fare: f.peak_fare } : {}),
+      })),
+    })
+  }
+
+  // ── Generate a whole fare chart from a stage-based formula ──────────
+  // fare = round_to_5(base_fare + step * stage_gap), stage_gap being how
+  // many stops apart two stops are. Prices every stop pair on the route at
+  // once instead of entering each one by hand. Never overwrites a fare that
+  // already exists for a pair (manually entered, imported, or generated and
+  // then hand-edited), so it's always safe to re-run after adding a stop.
+  const generateForm = useForm<{ route: string; ticket_type: string; base_fare: string; step: string }>()
+  const generateRouteId = generateForm.watch('route')
+  const { data: generateRouteStops } = useRouteStops(generateRouteId)
+  const pairCount = generateRouteStops ? (generateRouteStops.length * (generateRouteStops.length - 1)) / 2 : 0
+
+  const generateMutation = useMutation({
+    mutationFn: (payload: { route: string; ticket_type: string; base_fare: string; step: string }) =>
+      apiClient.post('/platform/fare-matrix/generate-from-formula/', payload).then((r) => r.data),
+    onSuccess: (data) => {
+      toast.success(data.message || 'Fares generated.')
+      setShowGenerate(false)
+      generateForm.reset()
+      invalidate()
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to generate fares.')
+    },
+  })
+
+  const onSubmitGenerate = (values: { route: string; ticket_type: string; base_fare: string; step: string }) => {
+    generateMutation.mutate(values)
+  }
+
   const columns: Column<FareRow>[] = [
     {
       key: 'route', header: 'Route',
@@ -101,11 +382,19 @@ export default function FaresPage() {
     { key: 'base_fare', header: 'Fare', render: (r) => `Rs. ${r.base_fare}` },
     { key: 'peak_fare', header: 'Peak Fare', render: (r) => `Rs. ${r.peak_fare}` },
     {
-      key: 'id', header: '',
+      key: 'id', header: 'Actions',
       render: (r) => (
-        <Button variant="ghost" size="sm" onClick={() => setViewTarget(r)} title="View">
-          <Eye className="h-4 w-4 text-gray-500" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" onClick={() => setViewTarget(r)} title="View">
+            <Eye className="h-4 w-4 text-gray-500" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => openEdit(r)} title="Edit">
+            <Pencil className="h-4 w-4 text-gray-500" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(r)} title="Delete">
+            <Trash2 className="h-4 w-4 text-red-500" />
+          </Button>
+        </div>
       ),
     },
   ]
@@ -115,7 +404,18 @@ export default function FaresPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">{t('nav.fares')}</h1>
-          <p className="page-subtitle">The official fare rate (भाडादर) for every route you operate — set by platform admins, view only</p>
+          <p className="page-subtitle">The fare rate (भाडादर) for every route you operate — set and maintained by your own team</p>
+        </div>
+        <div className="flex gap-3">
+          <Button variant="outline" leftIcon={<Calculator className="h-4 w-4" />} onClick={() => setShowGenerate(true)}>
+            Generate Fares
+          </Button>
+          <Button variant="outline" leftIcon={<Upload className="h-4 w-4" />} onClick={() => setShowBulk(true)}>
+            Bulk Import
+          </Button>
+          <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setShowAdd(true)}>
+            Add Fare
+          </Button>
         </div>
       </div>
 
@@ -136,7 +436,7 @@ export default function FaresPage() {
           data={fares ?? []}
           keyExtractor={(r) => r.id}
           loading={isLoading}
-          emptyMessage="No fares set up on your routes yet."
+          emptyMessage="No fares set up on your routes yet — add one, bulk import a chart, or generate from a formula."
         />
         <Pagination
           page={pagination.page}
@@ -146,6 +446,200 @@ export default function FaresPage() {
           onPageChange={pagination.setPage}
         />
       </div>
+
+      {/* Generate a whole fare chart from a formula */}
+      <Modal open={showGenerate} onClose={() => setShowGenerate(false)} title="Generate Fares" size="md">
+        <form onSubmit={generateForm.handleSubmit(onSubmitGenerate)} noValidate className="space-y-4 p-6">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Route <span className="text-red-500">*</span>
+            </label>
+            <select className={selectClass} {...generateForm.register('route', { required: true })}>
+              <option value="">Select route</option>
+              {(myRoutes ?? []).map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Ticket Type <span className="text-red-500">*</span>
+            </label>
+            <select className={selectClass} defaultValue={defaultTicketTypeId} {...generateForm.register('ticket_type', { required: true })}>
+              <option value="">Select ticket type</option>
+              {(ticketTypes ?? []).map((tt) => <option key={tt.id} value={tt.id}>{tt.name_en}</option>)}
+            </select>
+          </div>
+          {generateRouteId && (!generateRouteStops || generateRouteStops.length < 2) && (
+            <p className="text-xs text-amber-600">This route needs at least 2 stops before fares can be generated.</p>
+          )}
+          {generateRouteId && generateRouteStops && generateRouteStops.length >= 2 && (
+            <p className="text-xs text-gray-500">
+              {generateRouteStops.length} stops → up to {pairCount} fare(s) will be generated (fewer if some pairs already have a fare).
+            </p>
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Base Fare (NPR)" hint="Fare for stops 1 apart"
+              type="number" step="0.01" min="0" required
+              error={generateForm.formState.errors.base_fare?.message}
+              {...generateForm.register('base_fare', { required: 'Required', min: { value: 0, message: 'Cannot be negative' } })}
+            />
+            <Input
+              label="Step (NPR per stop)" hint="Added per extra stop apart"
+              type="number" step="0.01" min="0" required
+              error={generateForm.formState.errors.step?.message}
+              {...generateForm.register('step', { required: 'Required', min: { value: 0, message: 'Cannot be negative' } })}
+            />
+          </div>
+          <div className="flex justify-end gap-3 border-t pt-4">
+            <Button variant="secondary" type="button" onClick={() => setShowGenerate(false)}>Cancel</Button>
+            <Button type="submit" loading={generateMutation.isPending}>Generate Fares</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Add single fare */}
+      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Fare" size="lg">
+        <form onSubmit={addForm.handleSubmit(onSubmitAdd)} noValidate className="space-y-4 p-6">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Route <span className="text-red-500">*</span>
+            </label>
+            <select className={selectClass} {...addForm.register('route', { required: true })}>
+              <option value="">Select route</option>
+              {(myRoutes ?? []).map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Ticket Type <span className="text-red-500">*</span>
+            </label>
+            <select className={selectClass} defaultValue={defaultTicketTypeId} {...addForm.register('ticket_type', { required: true })}>
+              <option value="">Select ticket type</option>
+              {(ticketTypes ?? []).map((tt) => <option key={tt.id} value={tt.id}>{tt.name_en}</option>)}
+            </select>
+            <p className="mt-1 text-xs text-gray-400">
+              A leg needs one fare row per Ticket Type — add this same leg again for each other type (Student, Senior Citizen, ...) it should apply to.
+            </p>
+          </div>
+          {addRouteId && (!addRouteStops || addRouteStops.length === 0) && (
+            <p className="text-xs text-amber-600">This route has no stops yet — add stops to the route first to pick them here, or leave From/To blank for a flat fare.</p>
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Zone From (stop)</label>
+              <StopSelect stops={addRouteStops ?? []} allowFlat {...addForm.register('zone_from')} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Zone To (stop)</label>
+              <StopSelect stops={toOptionsAfter(addRouteStops ?? [], addFromName)} allowFlat {...addForm.register('zone_to')} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Fare (NPR)" type="number" step="0.01" min="0" required
+              error={addForm.formState.errors.base_fare?.message}
+              {...addForm.register('base_fare', { required: 'Required', min: { value: 0, message: 'Cannot be negative' } })}
+            />
+            <Input
+              label="Peak Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Fare"
+              error={addForm.formState.errors.peak_fare?.message}
+              {...addForm.register('peak_fare', { min: { value: 0, message: 'Cannot be negative' } })}
+            />
+          </div>
+          <div className="flex justify-end gap-3 border-t pt-4">
+            <Button variant="secondary" type="button" onClick={() => setShowAdd(false)}>Cancel</Button>
+            <Button type="submit" loading={createMutation.isPending}>Add Fare</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Bulk import a whole fare chart */}
+      <Modal open={showBulk} onClose={() => setShowBulk(false)} title="Bulk Import Fares" size="full">
+        <form onSubmit={bulkForm.handleSubmit(onSubmitBulk)} noValidate className="space-y-4 p-6">
+          <p className="text-sm text-gray-500">
+            Pick a route and its stops load below automatically, one row per consecutive leg
+            (A→B, B→C, ...) — just fill in the fare for each. Add more rows for a through-fare
+            that skips stops. A fare applies both directions automatically, so there's no need
+            to also enter the reverse leg. This batch prices one Ticket Type — re-run it with a
+            different type selected to price the same legs for Student, Senior Citizen, etc.
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Route <span className="text-red-500">*</span>
+              </label>
+              <select className={selectClass} {...bulkForm.register('route', { required: true })}>
+                <option value="">Select route</option>
+                {(myRoutes ?? []).map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Ticket Type <span className="text-red-500">*</span>
+              </label>
+              <select className={selectClass} defaultValue={defaultTicketTypeId} {...bulkForm.register('ticket_type', { required: true })}>
+                <option value="">Select ticket type</option>
+                {(ticketTypes ?? []).map((tt) => <option key={tt.id} value={tt.id}>{tt.name_en}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {bulkRouteId && (!bulkRouteStops || bulkRouteStops.length < 2) && (
+            <p className="text-xs text-amber-600">This route needs at least 2 stops before legs can be suggested here.</p>
+          )}
+
+          <div className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] gap-2 px-1 text-xs font-medium text-gray-500">
+            <span>From stop</span>
+            <span>To stop</span>
+            <span>Fare</span>
+            <span>Peak fare (optional)</span>
+            <span />
+          </div>
+          <div className="max-h-96 space-y-2 overflow-y-auto rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+            {fields.map((field, index) => {
+              const rowFromName = bulkForm.watch(`fares.${index}.zone_from`)
+              return (
+                <div key={field.id} className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-center gap-2">
+                  <StopSelect stops={bulkRouteStops ?? []} defaultValue={field.zone_from} {...bulkForm.register(`fares.${index}.zone_from` as const, { required: true })} />
+                  <StopSelect stops={toOptionsAfter(bulkRouteStops ?? [], rowFromName)} defaultValue={field.zone_to} {...bulkForm.register(`fares.${index}.zone_to` as const, { required: true })} />
+                  <Input
+                    type="number" step="0.01" min="0"
+                    error={bulkForm.formState.errors.fares?.[index]?.base_fare?.message}
+                    {...bulkForm.register(`fares.${index}.base_fare` as const, { required: 'Required', min: { value: 0, message: 'Cannot be negative' } })}
+                  />
+                  <Input
+                    type="number" step="0.01" min="0"
+                    error={bulkForm.formState.errors.fares?.[index]?.peak_fare?.message}
+                    {...bulkForm.register(`fares.${index}.peak_fare` as const, { min: { value: 0, message: 'Cannot be negative' } })}
+                  />
+                  <Button
+                    variant="ghost" size="sm" type="button"
+                    onClick={() => remove(index)}
+                    disabled={fields.length === 1}
+                  >
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+
+          <Button
+            variant="secondary" size="sm" type="button"
+            leftIcon={<Plus className="h-4 w-4" />}
+            onClick={() => append(emptyBulkRow)}
+          >
+            Add Row
+          </Button>
+
+          <div className="flex justify-end gap-3 border-t pt-4">
+            <Button variant="secondary" type="button" onClick={() => setShowBulk(false)}>Cancel</Button>
+            <Button type="submit" loading={bulkMutation.isPending}>
+              Import {fields.length} Fare{fields.length !== 1 ? 's' : ''}
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* View a fare (read-only) */}
       <Modal open={!!viewTarget} onClose={() => setViewTarget(null)} title="Fare Details" size="sm">
@@ -161,11 +655,83 @@ export default function FaresPage() {
             <div className="flex justify-between"><span className="text-gray-500">Senior Citizen Fare</span><span className="font-medium">Rs. {viewTarget.senior_citizen_fare}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Child Fare</span><span className="font-medium">Rs. {viewTarget.child_fare}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Created</span><span className="font-medium">{new Date(viewTarget.created_at).toLocaleString()}</span></div>
-            <div className="flex justify-end border-t pt-4">
+            <div className="flex justify-end gap-2 border-t pt-4">
               <Button variant="secondary" onClick={() => setViewTarget(null)}>Close</Button>
+              <Button onClick={() => { setViewTarget(null); openEdit(viewTarget) }}>Edit</Button>
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Edit a fare */}
+      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Fare" size="lg">
+        <form onSubmit={editForm.handleSubmit(onSubmitEdit)} noValidate className="space-y-4 p-6">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Route <span className="text-red-500">*</span>
+            </label>
+            <select className={selectClass} {...editForm.register('route', { required: true })}>
+              <option value="">Select route</option>
+              {(myRoutes ?? []).map((r) => <option key={r.id} value={r.id}>{r.route_code} — {r.name_en}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Ticket Type <span className="text-red-500">*</span>
+            </label>
+            <select className={selectClass} {...editForm.register('ticket_type', { required: true })}>
+              <option value="">Select ticket type</option>
+              {(ticketTypes ?? []).map((tt) => <option key={tt.id} value={tt.id}>{tt.name_en}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Zone From (stop)</label>
+              <StopSelect stops={editRouteStops ?? []} allowFlat {...editForm.register('zone_from')} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Zone To (stop)</label>
+              <StopSelect stops={toOptionsAfter(editRouteStops ?? [], editFromName)} allowFlat {...editForm.register('zone_to')} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Fare (NPR)" type="number" step="0.01" min="0" required
+              error={editForm.formState.errors.base_fare?.message}
+              {...editForm.register('base_fare', { required: 'Required', min: { value: 0, message: 'Cannot be negative' } })}
+            />
+            <Input
+              label="Peak Fare (NPR)" type="number" step="0.01" min="0" hint="Defaults to Fare"
+              error={editForm.formState.errors.peak_fare?.message}
+              {...editForm.register('peak_fare', { min: { value: 0, message: 'Cannot be negative' } })}
+            />
+          </div>
+          <div className="flex justify-end gap-3 border-t pt-4">
+            <Button variant="secondary" type="button" onClick={() => setEditTarget(null)}>Cancel</Button>
+            <Button type="submit" loading={updateMutation.isPending}>Save</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Delete a fare */}
+      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Fare" size="sm">
+        <div className="space-y-4 p-6">
+          <p className="text-sm text-gray-600">
+            Delete the fare for {deleteTarget?.route ? (routeById[deleteTarget.route]?.route_code ?? deleteTarget.route) : 'this route'}
+            {deleteTarget?.zone_from && deleteTarget?.zone_to ? ` (${deleteTarget.zone_from} → ${deleteTarget.zone_to})` : ''}?
+            This can't be undone, though the same fare can always be re-added.
+          </p>
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button
+              variant="danger"
+              loading={deleteMutation.isPending}
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   )
