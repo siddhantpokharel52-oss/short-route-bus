@@ -426,6 +426,7 @@ class GroupCompositionRuleSerializer(serializers.ModelSerializer):
 
 class OwnerSerializer(serializers.ModelSerializer):
     vehicle_count = serializers.SerializerMethodField()
+    is_activated = serializers.SerializerMethodField()
     phone = serializers.CharField(required=True)
     email = serializers.EmailField(required=True)
 
@@ -433,11 +434,11 @@ class OwnerSerializer(serializers.ModelSerializer):
         model = Owner
         fields = [
             "id", "name", "phone", "email", "user_id", "temp_password",
-            "is_active", "created_at", "vehicle_count",
+            "is_active", "is_activated", "created_at", "vehicle_count",
         ]
         # temp_password is only ever set by create-login and cleared by
         # ChangePasswordView -- never directly writable through this serializer.
-        read_only_fields = ["id", "created_at", "vehicle_count", "temp_password"]
+        read_only_fields = ["id", "created_at", "vehicle_count", "temp_password", "is_activated"]
 
     def validate_phone(self, value):
         if not re.fullmatch(r"\d{10}", value):
@@ -446,3 +447,10 @@ class OwnerSerializer(serializers.ModelSerializer):
 
     def get_vehicle_count(self, obj):
         return obj.vehicles.filter(is_deleted=False).count()
+
+    def get_is_activated(self, obj):
+        # True once the owner has actually logged in and set their own
+        # password -- ChangePasswordView clears temp_password the moment
+        # that happens. A user_id with no temp_password ever set (created
+        # some other way) also counts as activated; no login at all does not.
+        return bool(obj.user_id) and not bool(obj.temp_password)

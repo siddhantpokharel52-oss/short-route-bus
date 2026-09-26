@@ -20,6 +20,8 @@ import { useForm, Controller } from 'react-hook-form'
 interface VehicleForm {
   // Category
   category: string
+  // Owner
+  owner: string
   // Basic
   registration_no: string
   vehicle_type: string
@@ -54,6 +56,14 @@ const FIELDS_WITH_CLIENT_RULES = new Set([
   'category', 'registration_no', 'vehicle_type', 'make', 'model',
   'year', 'chassis_no', 'capacity_seated', 'fuel_type',
 ])
+
+// An owner who hasn't logged in and set their own password yet is still
+// selectable (staff usually knows who owns a bus before that owner ever
+// logs in) -- just flagged, so nobody assigns a bus expecting the owner
+// to already have working access.
+function ownerOptionLabel(o: { name: string; is_activated: boolean }, t: (k: string, o?: Record<string, unknown>) => string) {
+  return o.is_activated ? o.name : `${o.name} (${t('fleet.ownerNotActivated', { defaultValue: 'Not activated' })})`
+}
 
 // ─── Section heading ──────────────────────────────────────────────────────────
 function Section({ icon: Icon, title }: { icon: React.ElementType; title: string }) {
@@ -156,6 +166,7 @@ export default function FleetPage() {
     mutationFn: (form: VehicleForm) => {
       const payload: VehicleCreatePayload = {
         category: form.category,
+        owner: form.owner || undefined,
         registration_no: form.registration_no,
         vehicle_type: form.vehicle_type as Vehicle['vehicle_type'],
         make: form.make,
@@ -510,7 +521,7 @@ export default function FleetPage() {
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
                   <option value="">— No owner —</option>
                   {owners.map((o) => (
-                    <option key={o.id} value={o.id}>{o.name}</option>
+                    <option key={o.id} value={o.id}>{ownerOptionLabel(o, t)}</option>
                   ))}
                 </select>
               </div>
@@ -696,6 +707,20 @@ export default function FleetPage() {
                     <option value="">— Select category —</option>
                     {categories.map((c) => (
                       <option key={c.id} value={c.id}>{c.code} — {c.name_en}</option>
+                    ))}
+                  </SelectField>
+                )}
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Controller
+                name="owner"
+                control={control}
+                render={({ field }) => (
+                  <SelectField label={t('fleet.labels.owner', { defaultValue: 'Owner' })} {...field}>
+                    <option value="">— No owner —</option>
+                    {owners.map((o) => (
+                      <option key={o.id} value={o.id}>{ownerOptionLabel(o, t)}</option>
                     ))}
                   </SelectField>
                 )}

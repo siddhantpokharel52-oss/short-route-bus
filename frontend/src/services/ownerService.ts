@@ -8,6 +8,7 @@ export interface Owner {
   user_id: string | null
   temp_password: string
   is_active: boolean
+  is_activated: boolean
   vehicle_count: number
   created_at: string
 }
