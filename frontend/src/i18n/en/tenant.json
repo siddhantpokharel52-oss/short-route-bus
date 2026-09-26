@@ -62,7 +62,7 @@
       "location": "Location",
       "kmh": "km/h"
     },
-    "searchPlaceholder": "Search by registration number, make, model…",
+    "searchPlaceholder": "Search by registration number, make, model, or owner name…",
     "vehicleDetails": "Vehicle Details",
     "editVehicle": "Edit Vehicle",
     "deleteVehicle": "Delete Vehicle",

@@ -32,8 +32,12 @@ def api_response(data=None, message="Success", success=True, errors=None, status
 class VehicleViewSet(ModelViewSet):
     serializer_class = VehicleSerializer
     permission_classes = [IsFleetRole]
-    filterset_fields = ["status", "fuel_type", "make"]
-    search_fields = ["registration_no", "make", "model", "chassis_no"]
+    filterset_fields = ["status", "fuel_type", "make", "owner"]
+    # owner__name (the structured link) and owner_name (the free-text
+    # fallback for vehicles never linked to a real Owner record) are both
+    # searched, so a plate/make/model search box also finds "which buses
+    # does this owner have" either way data happens to be entered.
+    search_fields = ["registration_no", "make", "model", "chassis_no", "owner__name", "owner_name"]
     ordering_fields = ["registration_no", "make", "created_at", "status"]
 
     def get_permissions(self):

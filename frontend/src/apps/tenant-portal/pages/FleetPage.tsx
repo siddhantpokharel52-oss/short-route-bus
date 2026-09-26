@@ -449,6 +449,15 @@ export default function FleetPage() {
       ),
     },
     {
+      key: 'owner_display_name',
+      header: t('fleet.labels.owner', { defaultValue: 'Owner' }),
+      render: (v) => v.owner_display_name ? (
+        <span className="text-sm text-gray-700">{v.owner_display_name}</span>
+      ) : (
+        <span className="text-xs text-gray-400">—</span>
+      ),
+    },
+    {
       key: 'capacity_seated',
       header: t('fleet.columns.capacity'),
       render: (v) => (
