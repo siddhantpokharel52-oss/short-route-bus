@@ -37,12 +37,34 @@ class VehicleViewSet(ModelViewSet):
     ordering_fields = ["registration_no", "make", "created_at", "status"]
 
     def get_permissions(self):
+        if self.action == "my_vehicles":
+            return [IsOwner()]
         if self.action in ("list", "retrieve"):
             return [CanViewVehicles()]
         return [IsFleetRole()]
 
     def get_queryset(self):
         return Vehicle.objects.filter(is_deleted=False)
+
+    @action(detail=False, methods=["get"], url_path="my-vehicles")
+    def my_vehicles(self, request):
+        """GET /fleet/vehicles/my-vehicles/ -- an Owner seeing their own
+        buses' actual details (registration, category, capacity, insurance/
+        fitness status, availability), not just the earnings numbers
+        /analytics/owner/summary/ already shows. IsOwner alone would let an
+        owner read the plain /fleet/vehicles/ list too if it weren't for
+        CanViewVehicles excluding OWNER outright -- this is the one
+        intentional, narrowly-scoped hole in that lockdown: an owner's own
+        vehicles only, nothing tenant-wide."""
+        try:
+            owner = Owner.objects.get(user_id=request.user.id)
+        except Owner.DoesNotExist:
+            return api_response(
+                success=False, message="No owner profile is linked to this account.",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        vehicles = Vehicle.objects.filter(is_deleted=False, owner=owner)
+        return api_response(data=VehicleSerializer(vehicles, many=True).data)
 
     def perform_create(self, serializer):
         serializer.save(created_by_id=self.request.user.id)

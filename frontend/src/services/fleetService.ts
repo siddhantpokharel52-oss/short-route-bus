@@ -104,6 +104,11 @@ const fleetService = {
       await apiClient.delete(`/fleet/vehicles/${id}/`)
     },
 
+    myVehicles: async (): Promise<Vehicle[]> => {
+      const { data } = await apiClient.get<ApiResponse<Vehicle[]>>('/fleet/vehicles/my-vehicles/')
+      return data.data ?? []
+    },
+
     documents: async (vehicleId: string): Promise<VehicleDocument[]> => {
       const { data } = await apiClient.get<ApiResponse<VehicleDocument[]>>(
         `/fleet/vehicles/${vehicleId}/documents/`

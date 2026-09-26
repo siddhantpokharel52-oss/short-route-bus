@@ -15,12 +15,19 @@ import {
 } from 'recharts'
 import { StatCard } from '@components/shared/StatCard'
 import { Table, Column } from '@components/shared/Table'
-import { Wallet, Bus, Banknote, CreditCard, TrendingUp } from 'lucide-react'
+import { Badge } from '@components/shared/Badge'
+import { Modal } from '@components/shared/Modal'
+import { DateDisplay } from '@components/shared/DateDisplay'
+import { Button } from '@components/shared/Button'
+import { Wallet, Bus, Banknote, CreditCard, TrendingUp, Eye, Hash, Gauge, Route as RouteIcon, ShieldCheck } from 'lucide-react'
 import ownerService, {
   OwnerDashboardPerBus, OwnerDashboardRoute, OwnerDashboardTrendPoint,
 } from '@services/ownerService'
+import fleetService, { Vehicle } from '@services/fleetService'
+import apiClient from '@services/api'
 import { formatNPR } from '@utils/nepaliDate'
 import { useUiStore } from '@store/uiStore'
+import { cn } from '@utils/cn'
 
 function fmtDate(iso: string) {
   const parts = iso.split('-')
@@ -43,6 +50,19 @@ function ChartEmpty({ height = 220, label }: { height?: number; label: string })
   )
 }
 
+// ─── Detail row helper ────────────────────────────────────────────────────────
+function DetailRow({ label, value, dateValue }: { label: string; value?: string | number | null; dateValue?: string | null }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs font-medium uppercase tracking-wide text-gray-400">{label}</span>
+      {dateValue
+        ? <DateDisplay date={dateValue} className="text-sm text-gray-900" />
+        : <span className="text-sm text-gray-900">{value ?? '—'}</span>
+      }
+    </div>
+  )
+}
+
 function MiniStat({
   icon, label, value, color = 'text-gray-900',
 }: { icon: React.ReactNode; label: string; value: string | number; color?: string }) {
@@ -61,6 +81,8 @@ export default function MyEarningsPage() {
   const { t } = useTranslation('tenant')
   const { language } = useUiStore()
   const [trendDays, setTrendDays] = useState(30)
+  const [viewTarget, setViewTarget] = useState<Vehicle | null>(null)
+  const [viewStep, setViewStep] = useState(0)
   const fmtMoney = (v: number) => formatNPR(v, language as 'en' | 'ne')
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
@@ -68,6 +90,40 @@ export default function MyEarningsPage() {
     queryFn: () => ownerService.dashboardSummary(),
     staleTime: 30_000,
   })
+
+  // Full vehicle records for this owner's own buses -- the earnings summary
+  // above only ever carries {vehicle_id, bus_number, rides, revenue}, not
+  // the actual vehicle (registration, category, insurance status, ...) an
+  // owner would also want to check.
+  const { data: myVehicles = [] } = useQuery({
+    queryKey: ['owner-my-vehicles'],
+    queryFn: () => fleetService.vehicles.myVehicles(),
+    staleTime: 30_000,
+  })
+
+  const { data: routes = [] } = useQuery({
+    queryKey: ['routes-for-owner-vehicle-view'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/platform/routes/?page_size=200')
+      return (data.data?.results ?? data.data ?? []) as { id: string; route_code?: string; name_en?: string }[]
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const openVehicleView = (vehicleId: string) => {
+    const vehicle = myVehicles.find((v) => v.id === vehicleId)
+    if (!vehicle) return
+    setViewTarget(vehicle)
+    setViewStep(0)
+  }
+
+  const VIEW_STEPS: { label: string; icon: React.ElementType }[] = [
+    { label: t('fleet.sections.basicInfo', { defaultValue: 'Basic Information' }), icon: Bus },
+    { label: t('fleet.sections.vehicleId', { defaultValue: 'Vehicle Identification' }), icon: Hash },
+    { label: t('fleet.sections.capacitySpecs', { defaultValue: 'Capacity & Specifications' }), icon: Gauge },
+    { label: t('fleet.sections.operational', { defaultValue: 'Operational Information' }), icon: RouteIcon },
+    { label: t('fleet.sections.insurance', { defaultValue: 'Insurance & Compliance' }), icon: ShieldCheck },
+  ]
 
   const { data: trend = [], isLoading: trendLoading } = useQuery({
     queryKey: ['owner-dashboard-trend', trendDays],
@@ -81,6 +137,17 @@ export default function MyEarningsPage() {
     { key: 'bus_number', header: t('myEarnings.bus', { defaultValue: 'Bus' }), render: (b) => <span className="font-medium text-gray-900">{b.bus_number}</span> },
     { key: 'rides', header: t('myEarnings.rides', { defaultValue: 'Rides' }), render: (b) => b.rides },
     { key: 'revenue', header: t('myEarnings.revenue', { defaultValue: 'Revenue' }), render: (b) => fmtMoney(b.revenue) },
+    {
+      key: 'vehicle_id', header: '',
+      render: (b) => (
+        <button
+          onClick={() => openVehicleView(b.vehicle_id)}
+          className="inline-flex items-center gap-1 rounded-lg bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200 transition-colors"
+        >
+          <Eye className="h-3 w-3" /> {t('common.view', { defaultValue: 'View' })}
+        </button>
+      ),
+    },
   ]
 
   const routeColumns: Column<OwnerDashboardRoute>[] = [
@@ -238,6 +305,110 @@ export default function MyEarningsPage() {
         </div>
         <Table columns={routeColumns} data={summary?.revenue_by_route ?? []} keyExtractor={(r) => r.route_id} loading={summaryLoading} emptyMessage={t('myEarnings.noRouteData', { defaultValue: 'No route data yet.' })} />
       </div>
+
+      {/* ── Vehicle detail (read-only) ───────────────────────────────────── */}
+      <Modal
+        open={!!viewTarget}
+        onClose={() => setViewTarget(null)}
+        title={`${t('fleet.vehicleDetails', { defaultValue: 'Vehicle Details' })} — ${viewTarget?.registration_no ?? ''}`}
+        size="full"
+      >
+        {viewTarget && (
+          <div className="space-y-6 p-6">
+            <div className="flex items-center gap-2 overflow-x-auto border-b pb-3">
+              {VIEW_STEPS.map((step, index) => {
+                const StepIcon = step.icon
+                const isCurrent = index === viewStep
+                return (
+                  <button
+                    key={step.label}
+                    type="button"
+                    onClick={() => setViewStep(index)}
+                    className={cn(
+                      'flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                      isCurrent ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                    )}
+                  >
+                    <StepIcon className="h-3.5 w-3.5" />
+                    {step.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {viewStep === 0 && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <DetailRow label={t('fleet.labels.registrationNo', { defaultValue: 'Registration No.' })} value={viewTarget.registration_no} />
+                <DetailRow label={t('common.columns.busNumber', { defaultValue: 'Bus Number' })} value={viewTarget.bus_number} />
+                <DetailRow label={t('fleet.labels.category', { defaultValue: 'Category' })} value={viewTarget.category_name ? `${viewTarget.category_code} — ${viewTarget.category_name}` : undefined} />
+                <DetailRow label={t('fleet.columns.type', { defaultValue: 'Type' })} value={t(`fleet.vehicleTypes.${viewTarget.vehicle_type}`, { defaultValue: viewTarget.vehicle_type?.replace('_', ' ') })} />
+                <DetailRow label={t('fleet.labels.manufacturer', { defaultValue: 'Manufacturer' })} value={viewTarget.make} />
+                <DetailRow label={t('fleet.labels.model', { defaultValue: 'Model' })} value={viewTarget.model} />
+                <DetailRow label={t('fleet.labels.yearOfManufacture', { defaultValue: 'Year' })} value={viewTarget.year} />
+                <DetailRow label={t('fleet.labels.color', { defaultValue: 'Color' })} value={viewTarget.color} />
+              </div>
+            )}
+
+            {viewStep === 1 && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <DetailRow label={t('fleet.labels.chassisVin', { defaultValue: 'Chassis No.' })} value={viewTarget.chassis_no} />
+                <DetailRow label={t('fleet.labels.engineNumber', { defaultValue: 'Engine No.' })} value={viewTarget.engine_no} />
+              </div>
+            )}
+
+            {viewStep === 2 && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <DetailRow label={t('fleet.labels.seatingCapacity', { defaultValue: 'Seating Capacity' })} value={viewTarget.capacity_seated} />
+                <DetailRow label={t('fleet.labels.standingCapacityOpt', { defaultValue: 'Standing Capacity' })} value={viewTarget.capacity_standing} />
+                <DetailRow label={t('fleet.fuelType', { defaultValue: 'Fuel Type' })} value={t(`fleet.fuelTypes.${viewTarget.fuel_type}`, { defaultValue: viewTarget.fuel_type })} />
+                <DetailRow label={t('fleet.labels.engineCapacityCc', { defaultValue: 'Engine Capacity (CC)' })} value={viewTarget.engine_capacity_cc} />
+              </div>
+            )}
+
+            {viewStep === 3 && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs font-medium uppercase tracking-wide text-gray-400">{t('common.status', { defaultValue: 'Status' })}</span>
+                  <Badge variant={viewTarget.status === 'ACTIVE' || viewTarget.status === 'AVAILABLE' ? 'success' : viewTarget.status === 'ASSIGNED' || viewTarget.status === 'IN_SERVICE' ? 'info' : 'warning'} dot>
+                    {t(`fleet.statuses.${viewTarget.status}`, { defaultValue: viewTarget.status?.replace('_', ' ') })}
+                  </Badge>
+                </div>
+                <DetailRow
+                  label={t('fleet.labels.routeAssigned', { defaultValue: 'Route Assigned' })}
+                  value={(() => {
+                    const r = routes.find((r) => r.id === viewTarget.assigned_route_id)
+                    return r ? `${r.route_code ? `${r.route_code} — ` : ''}${r.name_en ?? r.id}` : undefined
+                  })()}
+                />
+                <DetailRow label={t('fleet.labels.odometer', { defaultValue: 'Odometer' })} value={viewTarget.odometer_km != null ? `${viewTarget.odometer_km.toLocaleString()} km` : undefined} />
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs font-medium uppercase tracking-wide text-gray-400">{t('fleet.labels.availableForTrip', { defaultValue: 'Available for Trip' })}</span>
+                  <Badge variant={viewTarget.is_available_for_trip ? 'success' : 'warning'}>
+                    {viewTarget.is_available_for_trip ? t('common.yes') : t('common.no')}
+                  </Badge>
+                </div>
+              </div>
+            )}
+
+            {viewStep === 4 && (() => {
+              const insDoc = viewTarget.documents?.find((d) => d.doc_type === 'INSURANCE')
+              const fitDoc = viewTarget.documents?.find((d) => d.doc_type === 'FITNESS')
+              return (
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                  <DetailRow label={t('fleet.labels.insurancePolicyNo', { defaultValue: 'Insurance Policy No.' })} value={insDoc?.doc_no} />
+                  <DetailRow label={t('fleet.labels.insuranceExpiryDate', { defaultValue: 'Insurance Expiry Date' })} dateValue={insDoc?.expiry_date} />
+                  <DetailRow label={t('fleet.labels.fitnessCertNo', { defaultValue: 'Fitness Cert No.' })} value={fitDoc?.doc_no} />
+                  <DetailRow label={t('fleet.labels.fitnessExpiryDate', { defaultValue: 'Fitness Expiry Date' })} dateValue={fitDoc?.expiry_date} />
+                </div>
+              )
+            })()}
+
+            <div className="flex justify-end border-t pt-4">
+              <Button variant="secondary" onClick={() => setViewTarget(null)}>{t('common.close', { defaultValue: 'Close' })}</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
