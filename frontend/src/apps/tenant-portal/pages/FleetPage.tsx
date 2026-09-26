@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, AlertCircle, Bus, Hash, Gauge, Route, ShieldCheck, Eye, Pencil, Trash2, Info, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -8,6 +8,7 @@ import { Table, Column, Pagination } from '@components/shared/Table'
 import { Badge, statusVariant } from '@components/shared/Badge'
 import { Modal } from '@components/shared/Modal'
 import { NepaliDateInput } from '@components/shared/NepaliDateInput'
+import { DateDisplay } from '@components/shared/DateDisplay'
 import { usePagination } from '@hooks/usePagination'
 import fleetService, { Vehicle, VehicleCreatePayload, VehicleUpdatePayload } from '@services/fleetService'
 import vehicleCategoryService from '@services/vehicleCategoryService'
@@ -95,6 +96,19 @@ function SelectField({
   )
 }
 
+// ─── Detail row helper ────────────────────────────────────────────────────────
+function DetailRow({ label, value, dateValue }: { label: string; value?: string | number | null; dateValue?: string | null }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs font-medium uppercase tracking-wide text-gray-400">{label}</span>
+      {dateValue
+        ? <DateDisplay date={dateValue} className="text-sm text-gray-900" />
+        : <span className="text-sm text-gray-900">{value ?? '—'}</span>
+      }
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function FleetPage() {
   const { t } = useTranslation('tenant')
@@ -106,20 +120,20 @@ export default function FleetPage() {
 
   // View / Edit / Delete state
   const [viewTarget, setViewTarget] = useState<Vehicle | null>(null)
-  const [editTarget, setEditTarget] = useState<Vehicle | null>(null)
+  const [viewStep, setViewStep] = useState(0)
   const [deleteTarget, setDeleteTarget] = useState<Vehicle | null>(null)
-  // Edit form state
-  const [editType, setEditType] = useState('')
+  // Edit is a two-step flow, same shape as Drivers'/Collectors': pick a
+  // section (editPickerTarget), then edit just that section's fields
+  // (editTarget + editSection).
+  const [editPickerTarget, setEditPickerTarget] = useState<Vehicle | null>(null)
+  const [editTarget, setEditTarget] = useState<Vehicle | null>(null)
+  const [editSection, setEditSection] = useState(0)
+  // status/odometer are Operational-only, edit-time fields -- not part of
+  // VehicleForm (Add doesn't collect them; a new vehicle defaults to ACTIVE
+  // and 0 km) -- same "kept as its own piece of state" pattern DriversPage
+  // uses for its own edit-only status field.
   const [editStatus, setEditStatus] = useState('')
-  const [editCategory, setEditCategory] = useState('')
-  const [editOwner, setEditOwner] = useState('')
-  const [editColor, setEditColor] = useState('')
-  const [editSeated, setEditSeated] = useState('')
-  const [editStanding, setEditStanding] = useState('')
-  const [editFuel, setEditFuel] = useState('')
-  const [editRouteId, setEditRouteId] = useState('')
-  const [editInsurancePolicyNo, setEditInsurancePolicyNo] = useState('')
-  const [editInsuranceExpiry, setEditInsuranceExpiry] = useState('')
+  const [editOdometer, setEditOdometer] = useState('')
   const [editInsuranceFile, setEditInsuranceFile] = useState<File | null>(null)
 
   // Vehicle list
@@ -263,44 +277,68 @@ export default function FleetPage() {
     },
   })
 
-  // Sync editTarget → edit form fields
-  useEffect(() => {
-    if (!editTarget) return
-    setEditType(editTarget.vehicle_type)
-    setEditStatus(editTarget.status)
-    setEditCategory(editTarget.category ?? '')
-    setEditOwner(editTarget.owner ?? '')
-    setEditColor(editTarget.color ?? '')
-    setEditSeated(String(editTarget.capacity_seated))
-    setEditStanding(String(editTarget.capacity_standing ?? 0))
-    setEditFuel(editTarget.fuel_type)
-    setEditRouteId(editTarget.assigned_route_id ?? '')
-    // Pre-fill insurance from existing documents
-    const insDoc = editTarget.documents?.find((d) => d.doc_type === 'INSURANCE')
-    setEditInsurancePolicyNo(insDoc?.doc_no ?? '')
-    setEditInsuranceExpiry(insDoc?.expiry_date ?? '')
+  // Separate form instance for editing -- seeded per-vehicle, per-section
+  // from chooseEditSection() below, same as DriversPage/ConductorsPage.
+  const editForm = useForm<VehicleForm>()
+
+  // View tabs and Edit's section picker share the same 5 groupings as the
+  // Add Vehicle wizard, so whatever a vehicle shows in View/Edit lines up
+  // exactly with where it was entered at creation time.
+  const VIEW_STEPS: { label: string; icon: React.ElementType }[] = [
+    { label: t('fleet.sections.basicInfo'), icon: Bus },
+    { label: t('fleet.sections.vehicleId'), icon: Hash },
+    { label: t('fleet.sections.capacitySpecs'), icon: Gauge },
+    { label: t('fleet.sections.operational'), icon: Route },
+    { label: t('fleet.sections.insurance'), icon: ShieldCheck },
+  ]
+  const EDIT_SECTIONS: { label: string; icon: React.ElementType; fields: (keyof VehicleForm)[] }[] = [
+    { label: t('fleet.sections.basicInfo'), icon: Bus, fields: ['category', 'owner', 'vehicle_type', 'make', 'model', 'year', 'color'] },
+    { label: t('fleet.sections.vehicleId'), icon: Hash, fields: ['chassis_no', 'engine_no'] },
+    { label: t('fleet.sections.capacitySpecs'), icon: Gauge, fields: ['capacity_seated', 'capacity_standing', 'fuel_type', 'engine_capacity_cc'] },
+    { label: t('fleet.sections.operational'), icon: Route, fields: ['assigned_route_id'] },
+    { label: t('fleet.sections.insurance'), icon: ShieldCheck, fields: ['insurance_policy_no', 'insurance_expiry_date', 'fitness_cert_no', 'fitness_expiry_date'] },
+  ]
+
+  const openEditPicker = (v: Vehicle) => setEditPickerTarget(v)
+  const chooseEditSection = (index: number) => {
+    if (!editPickerTarget) return
+    const insDoc = editPickerTarget.documents?.find((d) => d.doc_type === 'INSURANCE')
+    const fitDoc = editPickerTarget.documents?.find((d) => d.doc_type === 'FITNESS')
+    setEditTarget(editPickerTarget)
+    setEditSection(index)
+    setEditStatus(editPickerTarget.status ?? '')
+    setEditOdometer(String(editPickerTarget.odometer_km ?? 0))
     setEditInsuranceFile(null)
-  }, [editTarget])
+    editForm.reset({
+      category: editPickerTarget.category ?? '',
+      owner: editPickerTarget.owner ?? '',
+      vehicle_type: editPickerTarget.vehicle_type,
+      make: editPickerTarget.make ?? '',
+      model: editPickerTarget.model ?? '',
+      year: String(editPickerTarget.year ?? ''),
+      color: editPickerTarget.color ?? '',
+      chassis_no: editPickerTarget.chassis_no ?? '',
+      engine_no: editPickerTarget.engine_no ?? '',
+      capacity_seated: String(editPickerTarget.capacity_seated ?? ''),
+      capacity_standing: String(editPickerTarget.capacity_standing ?? 0),
+      fuel_type: editPickerTarget.fuel_type,
+      engine_capacity_cc: editPickerTarget.engine_capacity_cc != null ? String(editPickerTarget.engine_capacity_cc) : '',
+      assigned_route_id: editPickerTarget.assigned_route_id ?? '',
+      insurance_policy_no: insDoc?.doc_no ?? '',
+      insurance_expiry_date: insDoc?.expiry_date ?? '',
+      fitness_cert_no: fitDoc?.doc_no ?? '',
+      fitness_expiry_date: fitDoc?.expiry_date ?? '',
+      registration_no: '',
+    })
+    setEditPickerTarget(null)
+  }
+  const closeEdit = () => { setEditTarget(null); setEditInsuranceFile(null) }
 
   const updateVehicleMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const payload: VehicleUpdatePayload = {
-        category: editCategory || null,
-        owner: editOwner || null,
-        vehicle_type: editType as Vehicle['vehicle_type'],
-        status: editStatus as Vehicle['status'],
-        color: editColor,
-        capacity_seated: Number(editSeated),
-        capacity_standing: Number(editStanding),
-        fuel_type: editFuel as Vehicle['fuel_type'],
-        assigned_route_id: editRouteId || null,
-      }
-      if (editInsurancePolicyNo && editInsuranceExpiry) {
-        payload.insurance_policy_no = editInsurancePolicyNo
-        payload.insurance_expiry_date = editInsuranceExpiry
-      }
+    mutationFn: async (payload: VehicleUpdatePayload) => {
+      const id = editTarget!.id
       const result = await fleetService.vehicles.update(id, payload)
-      if (editInsuranceFile) {
+      if (editSection === 4 && editInsuranceFile) {
         const insDoc = result.documents?.find((d) => d.doc_type === 'INSURANCE')
         if (insDoc) {
           await fleetService.attachDocumentFile(id, insDoc.id, editInsuranceFile)
@@ -312,8 +350,7 @@ export default function FleetPage() {
     },
     onSuccess: () => {
       toast.success('Vehicle updated.')
-      setEditTarget(null)
-      setEditInsuranceFile(null)
+      closeEdit()
       qc.invalidateQueries({ queryKey: ['vehicles'] })
     },
     onError: (err: unknown) => {
@@ -321,6 +358,48 @@ export default function FleetPage() {
       toast.error(e?.response?.data?.message || (err as Error).message || 'Failed to update vehicle')
     },
   })
+
+  // Scoped to whichever section was chosen in the picker -- only that
+  // section's fields go in the PATCH, matching DriversPage/ConductorsPage.
+  const handleUpdate = (values: VehicleForm) => {
+    let payload: VehicleUpdatePayload = {}
+    if (editSection === 0) {
+      payload = {
+        category: values.category || null,
+        owner: values.owner || null,
+        vehicle_type: values.vehicle_type as Vehicle['vehicle_type'],
+        make: values.make,
+        model: values.model,
+        year: Number(values.year),
+        color: values.color,
+      }
+    } else if (editSection === 1) {
+      payload = { chassis_no: values.chassis_no, engine_no: values.engine_no }
+    } else if (editSection === 2) {
+      payload = {
+        capacity_seated: Number(values.capacity_seated),
+        capacity_standing: Number(values.capacity_standing) || 0,
+        fuel_type: values.fuel_type as Vehicle['fuel_type'],
+        engine_capacity_cc: values.engine_capacity_cc ? Number(values.engine_capacity_cc) : undefined,
+      }
+    } else if (editSection === 3) {
+      payload = {
+        assigned_route_id: values.assigned_route_id || null,
+        status: editStatus as Vehicle['status'],
+        odometer_km: Number(editOdometer) || 0,
+      }
+    } else if (editSection === 4) {
+      if (values.insurance_policy_no && values.insurance_expiry_date) {
+        payload.insurance_policy_no = values.insurance_policy_no
+        payload.insurance_expiry_date = values.insurance_expiry_date
+      }
+      if (values.fitness_cert_no && values.fitness_expiry_date) {
+        payload.fitness_cert_no = values.fitness_cert_no
+        payload.fitness_expiry_date = values.fitness_expiry_date
+      }
+    }
+    updateVehicleMutation.mutate(payload)
+  }
 
   const deleteVehicleMutation = useMutation({
     mutationFn: (id: string) => fleetService.vehicles.delete(id),
@@ -411,13 +490,13 @@ export default function FleetPage() {
       render: (v) => (
         <div className="flex items-center gap-1">
           <button
-            onClick={() => setViewTarget(v)}
+            onClick={() => { setViewTarget(v); setViewStep(0) }}
             className="inline-flex items-center gap-1 rounded-lg bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200 transition-colors"
           >
             <Eye className="h-3 w-3" /> {t('common.view')}
           </button>
           <button
-            onClick={() => setEditTarget(v)}
+            onClick={() => openEditPicker(v)}
             className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
           >
             <Pencil className="h-3 w-3" /> {t('common.edit')}
@@ -468,223 +547,343 @@ export default function FleetPage() {
       </div>
 
       {/* ── View Vehicle Modal ───────────────────────────────────────────────── */}
-      {viewTarget && (
-        <Modal open={!!viewTarget} onClose={() => setViewTarget(null)} title={t('fleet.vehicleDetails')} size="md">
-          <div className="p-5 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl bg-gray-50 p-3">
-                <p className="text-xs text-gray-400 mb-0.5">{t('fleet.labels.registrationNo')}</p>
-                <p className="font-mono font-bold text-gray-900">{viewTarget.registration_no}</p>
-              </div>
-              <div className="rounded-xl bg-gray-50 p-3">
-                <p className="text-xs text-gray-400 mb-0.5">{t('fleet.columns.type')}</p>
-                <Badge variant="neutral">{t(`fleet.vehicleTypes.${viewTarget.vehicle_type}`, { defaultValue: viewTarget.vehicle_type?.replace('_', ' ') })}</Badge>
-              </div>
-              <div className="rounded-xl bg-gray-50 p-3">
-                <p className="text-xs text-gray-400 mb-0.5">{t('fleet.labels.brandModel')}</p>
-                <p className="text-sm font-semibold text-gray-800">{viewTarget.make} {viewTarget.model}</p>
-                <p className="text-xs text-gray-500">{viewTarget.year} · {viewTarget.color || '—'}</p>
-              </div>
-              <div className="rounded-xl bg-gray-50 p-3">
-                <p className="text-xs text-gray-400 mb-0.5">{t('common.status')}</p>
-                <Badge variant={viewTarget.status === 'ACTIVE' || viewTarget.status === 'AVAILABLE' ? 'success' : viewTarget.status === 'ASSIGNED' || viewTarget.status === 'IN_SERVICE' ? 'info' : 'warning'} dot>
-                  {t(`fleet.statuses.${viewTarget.status}`, { defaultValue: viewTarget.status?.replace('_', ' ') })}
-                </Badge>
-              </div>
-              <div className="rounded-xl bg-gray-50 p-3">
-                <p className="text-xs text-gray-400 mb-0.5">{t('fleet.columns.capacity')}</p>
-                <p className="text-sm text-gray-800">
-                  {viewTarget.capacity_seated} {t('fleet.seated')}
-                  {viewTarget.capacity_standing > 0 && <span className="text-gray-500"> +{viewTarget.capacity_standing} {t('fleet.standing')}</span>}
-                </p>
-              </div>
-              <div className="rounded-xl bg-gray-50 p-3">
-                <p className="text-xs text-gray-400 mb-0.5">{t('fleet.fuelType')}</p>
-                <p className="text-sm text-gray-800">{t(`fleet.fuelTypes.${viewTarget.fuel_type}`, { defaultValue: viewTarget.fuel_type })}</p>
-              </div>
-              {viewTarget.chassis_no && (
-                <div className="rounded-xl bg-gray-50 p-3">
-                  <p className="text-xs text-gray-400 mb-0.5">{t('fleet.labels.chassisNo')}</p>
-                  <code className="text-xs text-gray-700">{viewTarget.chassis_no}</code>
-                </div>
-              )}
-              {viewTarget.engine_no && (
-                <div className="rounded-xl bg-gray-50 p-3">
-                  <p className="text-xs text-gray-400 mb-0.5">{t('fleet.labels.engineNo')}</p>
-                  <code className="text-xs text-gray-700">{viewTarget.engine_no}</code>
-                </div>
-              )}
-              <div className="rounded-xl bg-gray-50 p-3">
-                <p className="text-xs text-gray-400 mb-0.5">{t('fleet.labels.odometer')}</p>
-                <p className="text-sm text-gray-800">{viewTarget.odometer_km?.toLocaleString() ?? '—'} km</p>
-              </div>
-              <div className="rounded-xl bg-gray-50 p-3">
-                <p className="text-xs text-gray-400 mb-0.5">{t('fleet.labels.availableForTrip')}</p>
-                <Badge variant={viewTarget.is_available_for_trip ? 'success' : 'warning'}>
-                  {viewTarget.is_available_for_trip ? t('common.yes') : t('common.no')}
-                </Badge>
-              </div>
+      <Modal
+        open={!!viewTarget}
+        onClose={() => setViewTarget(null)}
+        title={`${t('fleet.vehicleDetails')} — ${viewTarget?.registration_no ?? ''}`}
+        size="full"
+      >
+        {viewTarget && (
+          <div className="space-y-6 p-6">
+            {/* Nothing to validate here -- every section is freely clickable,
+                unlike the Add Vehicle wizard's gated steps. */}
+            <div className="flex items-center gap-2 overflow-x-auto border-b pb-3">
+              {VIEW_STEPS.map((step, index) => {
+                const StepIcon = step.icon
+                const isCurrent = index === viewStep
+                return (
+                  <button
+                    key={step.label}
+                    type="button"
+                    onClick={() => setViewStep(index)}
+                    className={cn(
+                      'flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                      isCurrent ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                    )}
+                  >
+                    <StepIcon className="h-3.5 w-3.5" />
+                    {step.label}
+                  </button>
+                )
+              })}
             </div>
-            <div className="flex justify-end gap-2 border-t pt-3">
+
+            {viewStep === 0 && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <DetailRow label={t('fleet.labels.registrationNo')} value={viewTarget.registration_no} />
+                <DetailRow label={t('common.columns.busNumber', { defaultValue: 'Bus Number' })} value={viewTarget.bus_number} />
+                <DetailRow label={t('fleet.labels.category', { defaultValue: 'Category' })} value={viewTarget.category_name ? `${viewTarget.category_code} — ${viewTarget.category_name}` : undefined} />
+                <DetailRow label={t('fleet.labels.owner', { defaultValue: 'Owner' })} value={viewTarget.owner_display_name} />
+                <DetailRow label={t('fleet.columns.type')} value={t(`fleet.vehicleTypes.${viewTarget.vehicle_type}`, { defaultValue: viewTarget.vehicle_type?.replace('_', ' ') })} />
+                <DetailRow label={t('fleet.labels.manufacturer')} value={viewTarget.make} />
+                <DetailRow label={t('fleet.labels.model')} value={viewTarget.model} />
+                <DetailRow label={t('fleet.labels.yearOfManufacture')} value={viewTarget.year} />
+                <DetailRow label={t('fleet.labels.color')} value={viewTarget.color} />
+              </div>
+            )}
+
+            {viewStep === 1 && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <DetailRow label={t('fleet.labels.chassisVin')} value={viewTarget.chassis_no} />
+                <DetailRow label={t('fleet.labels.engineNumber')} value={viewTarget.engine_no} />
+              </div>
+            )}
+
+            {viewStep === 2 && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <DetailRow label={t('fleet.labels.seatingCapacity')} value={viewTarget.capacity_seated} />
+                <DetailRow label={t('fleet.labels.standingCapacityOpt')} value={viewTarget.capacity_standing} />
+                <DetailRow label={t('fleet.fuelType')} value={t(`fleet.fuelTypes.${viewTarget.fuel_type}`, { defaultValue: viewTarget.fuel_type })} />
+                <DetailRow label={t('fleet.labels.engineCapacityCc')} value={viewTarget.engine_capacity_cc} />
+              </div>
+            )}
+
+            {viewStep === 3 && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs font-medium uppercase tracking-wide text-gray-400">{t('common.status')}</span>
+                  <Badge variant={viewTarget.status === 'ACTIVE' || viewTarget.status === 'AVAILABLE' ? 'success' : viewTarget.status === 'ASSIGNED' || viewTarget.status === 'IN_SERVICE' ? 'info' : 'warning'} dot>
+                    {t(`fleet.statuses.${viewTarget.status}`, { defaultValue: viewTarget.status?.replace('_', ' ') })}
+                  </Badge>
+                </div>
+                <DetailRow
+                  label={t('fleet.labels.routeAssigned')}
+                  value={(() => {
+                    const r = (routes as { id: string; route_code?: string; name_en?: string }[]).find((r) => r.id === viewTarget.assigned_route_id)
+                    return r ? `${r.route_code ? `${r.route_code} — ` : ''}${r.name_en ?? r.id}` : undefined
+                  })()}
+                />
+                <DetailRow label={t('fleet.labels.odometer')} value={viewTarget.odometer_km != null ? `${viewTarget.odometer_km.toLocaleString()} km` : undefined} />
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs font-medium uppercase tracking-wide text-gray-400">{t('fleet.labels.availableForTrip')}</span>
+                  <Badge variant={viewTarget.is_available_for_trip ? 'success' : 'warning'}>
+                    {viewTarget.is_available_for_trip ? t('common.yes') : t('common.no')}
+                  </Badge>
+                </div>
+              </div>
+            )}
+
+            {viewStep === 4 && (() => {
+              const insDoc = viewTarget.documents?.find((d) => d.doc_type === 'INSURANCE')
+              const fitDoc = viewTarget.documents?.find((d) => d.doc_type === 'FITNESS')
+              return (
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                  <DetailRow label={t('fleet.labels.insurancePolicyNo')} value={insDoc?.doc_no} />
+                  <DetailRow label={t('fleet.labels.insuranceExpiryDate')} dateValue={insDoc?.expiry_date} />
+                  <DetailRow label={t('fleet.labels.fitnessCertNo')} value={fitDoc?.doc_no} />
+                  <DetailRow label={t('fleet.labels.fitnessExpiryDate')} dateValue={fitDoc?.expiry_date} />
+                </div>
+              )
+            })()}
+
+            <div className="flex justify-end gap-2 border-t pt-4">
               <Button variant="secondary" onClick={() => setViewTarget(null)}>{t('common.close')}</Button>
-              <Button onClick={() => { setViewTarget(null); setEditTarget(viewTarget) }}>{t('fleet.editVehicle')}</Button>
+              <Button onClick={() => { setViewTarget(null); openEditPicker(viewTarget) }}>{t('fleet.editVehicle')}</Button>
             </div>
           </div>
-        </Modal>
-      )}
+        )}
+      </Modal>
 
-      {/* ── Edit Vehicle Modal ────────────────────────────────────────────────── */}
-      {editTarget && (
-        <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={t('fleet.editTitle', { reg: editTarget.registration_no })} size="md">
-          <div className="p-5 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('fleet.labels.category', { defaultValue: 'Category' })}</label>
-                <select value={editCategory} onChange={(e) => setEditCategory(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
-                  <option value="">— No category —</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>{c.code} — {c.name_en}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="col-span-2">
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('fleet.labels.owner', { defaultValue: 'Owner' })}</label>
-                <select value={editOwner} onChange={(e) => setEditOwner(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
-                  <option value="">— No owner —</option>
-                  {owners.map((o) => (
-                    <option key={o.id} value={o.id}>{ownerOptionLabel(o, t)}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('fleet.labels.vehicleType')}</label>
-                <select value={editType} onChange={(e) => setEditType(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
-                  <option value="BUS">{t('fleet.vehicleTypes.BUS')}</option>
-                  <option value="MICROBUS">{t('fleet.vehicleTypes.MICROBUS')}</option>
-                  <option value="MINIBUS">{t('fleet.vehicleTypes.MINIBUS')}</option>
-                  <option value="TEMPO">{t('fleet.vehicleTypes.TEMPO')}</option>
-                  <option value="ELECTRIC_BUS">{t('fleet.vehicleTypes.ELECTRIC_BUS')}</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('common.status')}</label>
-                <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
-                  <option value="ACTIVE">{t('fleet.statuses.ACTIVE')}</option>
-                  <option value="AVAILABLE">{t('fleet.statuses.AVAILABLE')}</option>
-                  <option value="ASSIGNED">{t('fleet.statuses.ASSIGNED')}</option>
-                  <option value="IN_SERVICE">{t('fleet.statuses.IN_SERVICE')}</option>
-                  <option value="IN_MAINTENANCE">{t('fleet.statuses.IN_MAINTENANCE')}</option>
-                  <option value="INACTIVE">{t('fleet.statuses.INACTIVE')}</option>
-                  <option value="RETIRED">{t('fleet.statuses.RETIRED')}</option>
-                  <option value="BREAKDOWN">{t('fleet.statuses.BREAKDOWN')}</option>
-                  <option value="RESERVE">{t('fleet.statuses.RESERVE', { defaultValue: 'Reserve' })}</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('fleet.labels.color')}</label>
-                <input value={editColor} onChange={(e) => setEditColor(e.target.value)}
-                  placeholder="e.g. Red & White"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('fleet.fuelType')}</label>
-                <select value={editFuel} onChange={(e) => setEditFuel(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
-                  <option value="DIESEL">{t('fleet.fuelTypes.DIESEL')}</option>
-                  <option value="PETROL">{t('fleet.fuelTypes.PETROL')}</option>
-                  <option value="CNG">{t('fleet.fuelTypes.CNG')}</option>
-                  <option value="ELECTRIC">{t('fleet.fuelTypes.ELECTRIC')}</option>
-                  <option value="HYBRID">{t('fleet.fuelTypes.HYBRID')}</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('fleet.labels.seatingCapacity')}</label>
-                <input type="number" min={1} value={editSeated} onChange={(e) => setEditSeated(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('fleet.labels.standingCapacity')}</label>
-                <input type="number" min={0} value={editStanding} onChange={(e) => setEditStanding(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
-              </div>
-              <div className="col-span-2">
-                <label className="mb-1 block text-sm font-medium text-gray-700">{t('fleet.labels.assignedRoute')}</label>
-                <select value={editRouteId} onChange={(e) => setEditRouteId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
-                  <option value="">{t('fleet.notAssigned')}</option>
-                  {(routes as { id: string; route_number?: string; name?: string; route_code?: string; name_en?: string }[]).map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.route_code ?? r.route_number ?? ''}{(r.route_code ?? r.route_number) ? ' — ' : ''}{r.name_en ?? r.name ?? r.id}
-                    </option>
-                  ))}
-                </select>
-              </div>
+      {/* ── Edit: choose a section ────────────────────────────────────────── */}
+      <Modal
+        open={!!editPickerTarget}
+        onClose={() => setEditPickerTarget(null)}
+        title={t('fleet.editSectionPickerTitle', { defaultValue: 'What do you want to edit?' })}
+        size="sm"
+      >
+        {editPickerTarget && (
+          <div className="p-6 space-y-4">
+            <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+              <strong>{editPickerTarget.registration_no}</strong> · {editPickerTarget.make} {editPickerTarget.model}
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {EDIT_SECTIONS.map((section, index) => {
+                const SectionIcon = section.icon
+                return (
+                  <button
+                    key={section.label}
+                    type="button"
+                    onClick={() => chooseEditSection(index)}
+                    className="flex flex-col items-center gap-2 rounded-lg border border-gray-200 px-3 py-4 text-center text-sm font-medium text-gray-700 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700 transition-colors"
+                  >
+                    <SectionIcon className="h-5 w-5" />
+                    {section.label}
+                  </button>
+                )
+              })}
             </div>
-
-            {/* ── Insurance (controls "Available for Trip") ─────────────────── */}
-            <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
-              <div className="mb-3 flex items-start gap-2">
-                <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-500" />
-                <div>
-                  <p className="text-xs font-semibold text-blue-700">{t('fleet.insuranceNote')}</p>
-                  <p className="text-xs text-blue-600 mt-0.5">{t('fleet.insuranceDesc')}</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">{t('fleet.labels.insurancePolicyNo')}</label>
-                  <input
-                    value={editInsurancePolicyNo}
-                    onChange={(e) => setEditInsurancePolicyNo(e.target.value)}
-                    placeholder="e.g. NIC/VH/2024/001234"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                  />
-                </div>
-                <div>
-                  <NepaliDateInput
-                    label={t('fleet.labels.insuranceExpiryDate')}
-                    value={editInsuranceExpiry}
-                    onChange={setEditInsuranceExpiry}
-                  />
-                </div>
-              </div>
-              <div className="mt-3">
-                <label className="mb-1 block text-xs font-medium text-gray-700">Insurance Document</label>
-                {editTarget.documents?.find((d) => d.doc_type === 'INSURANCE') ? (
-                  <p className="mb-1 text-xs text-blue-600">
-                    A document is already on file — choose a new file below to replace it.
-                  </p>
-                ) : null}
-                <input
-                  type="file"
-                  accept="image/*,.pdf"
-                  onChange={(e) => setEditInsuranceFile(e.target.files?.[0] ?? null)}
-                  className="w-full text-xs text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-blue-700 hover:file:bg-blue-200"
-                />
-                {editInsuranceFile && !(editInsurancePolicyNo && editInsuranceExpiry) && (
-                  <p className="mt-1 text-xs text-amber-600">
-                    Fill in the policy number and expiry date above too — the document attaches to that record.
-                  </p>
-                )}
-              </div>
+            <div className="flex justify-end border-t pt-4">
+              <Button variant="secondary" onClick={() => setEditPickerTarget(null)}>{t('common.cancel')}</Button>
             </div>
+          </div>
+        )}
+      </Modal>
 
-            <div className="flex justify-end gap-2 border-t pt-3">
-              <Button variant="secondary" onClick={() => setEditTarget(null)}>{t('common.cancel')}</Button>
-              <Button
-                loading={updateVehicleMutation.isPending}
-                onClick={() => updateVehicleMutation.mutate(editTarget.id)}
+      {/* ── Edit: the chosen section's fields ─────────────────────────────── */}
+      <Modal
+        open={!!editTarget}
+        onClose={closeEdit}
+        title={`${t('fleet.editTitle', { reg: editTarget?.registration_no ?? '' })} — ${EDIT_SECTIONS[editSection].label}`}
+        size="md"
+      >
+        {editTarget && (
+          <form onSubmit={editForm.handleSubmit(handleUpdate)} className="space-y-4 p-6">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                <strong>{editTarget.registration_no}</strong> · {editTarget.make} {editTarget.model}
+              </p>
+              <button
+                type="button"
+                onClick={() => { setEditPickerTarget(editTarget); setEditTarget(null) }}
+                className="text-xs font-medium text-primary-600 hover:text-primary-700"
               >
+                {t('fleet.changeSection', { defaultValue: 'Change section' })}
+              </button>
+            </div>
+
+            {editSection === 0 && <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Controller
+                  name="category"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <SelectField label={t('fleet.labels.category', { defaultValue: 'Category' })} {...field}>
+                      <option value="">— No category —</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>{c.code} — {c.name_en}</option>
+                      ))}
+                    </SelectField>
+                  )}
+                />
+                <Controller
+                  name="owner"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <SelectField label={t('fleet.labels.owner', { defaultValue: 'Owner' })} {...field}>
+                      <option value="">— No owner —</option>
+                      {owners.map((o) => (
+                        <option key={o.id} value={o.id}>{ownerOptionLabel(o, t)}</option>
+                      ))}
+                    </SelectField>
+                  )}
+                />
+                <Controller
+                  name="vehicle_type"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <SelectField label={t('fleet.labels.vehicleType')} {...field}>
+                      <option value="BUS">{t('fleet.vehicleTypes.BUS')}</option>
+                      <option value="MICROBUS">{t('fleet.vehicleTypes.MICROBUS')}</option>
+                      <option value="MINIBUS">{t('fleet.vehicleTypes.MINIBUS')}</option>
+                      <option value="TEMPO">{t('fleet.vehicleTypes.TEMPO')}</option>
+                      <option value="ELECTRIC_BUS">{t('fleet.vehicleTypes.ELECTRIC_BUS')}</option>
+                    </SelectField>
+                  )}
+                />
+                <Input label={t('fleet.labels.manufacturer')} {...editForm.register('make')} />
+                <Input label={t('fleet.labels.model')} {...editForm.register('model')} />
+                <Input label={t('fleet.labels.yearOfManufacture')} type="number" {...editForm.register('year')} />
+                <Input label={t('fleet.labels.color')} {...editForm.register('color')} />
+              </div>
+            </>}
+
+            {editSection === 1 && <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input label={t('fleet.labels.chassisVin')} {...editForm.register('chassis_no')} />
+                <Input label={t('fleet.labels.engineNumber')} {...editForm.register('engine_no')} />
+              </div>
+            </>}
+
+            {editSection === 2 && <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input label={t('fleet.labels.seatingCapacity')} type="number" min={1} {...editForm.register('capacity_seated')} />
+                <Input label={t('fleet.labels.standingCapacityOpt')} type="number" min={0} {...editForm.register('capacity_standing')} />
+                <Controller
+                  name="fuel_type"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <SelectField label={t('fleet.fuelType')} {...field}>
+                      <option value="DIESEL">{t('fleet.fuelTypes.DIESEL')}</option>
+                      <option value="PETROL">{t('fleet.fuelTypes.PETROL')}</option>
+                      <option value="CNG">{t('fleet.fuelTypes.CNG')}</option>
+                      <option value="ELECTRIC">{t('fleet.fuelTypes.ELECTRIC')}</option>
+                      <option value="HYBRID">{t('fleet.fuelTypes.HYBRID')}</option>
+                    </SelectField>
+                  )}
+                />
+                <Input label={t('fleet.labels.engineCapacityCc')} type="number" min={0} {...editForm.register('engine_capacity_cc')} />
+              </div>
+            </>}
+
+            {editSection === 3 && <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Controller
+                  name="assigned_route_id"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <SelectField label={t('fleet.labels.routeAssigned')} {...field}>
+                      <option value="">{t('fleet.notAssigned')}</option>
+                      {(routes as { id: string; route_code?: string; name_en?: string }[]).map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.route_code ? `${r.route_code} — ` : ''}{r.name_en ?? r.id}
+                        </option>
+                      ))}
+                    </SelectField>
+                  )}
+                />
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">{t('common.status')}</label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  >
+                    <option value="ACTIVE">{t('fleet.statuses.ACTIVE')}</option>
+                    <option value="AVAILABLE">{t('fleet.statuses.AVAILABLE')}</option>
+                    <option value="ASSIGNED">{t('fleet.statuses.ASSIGNED')}</option>
+                    <option value="IN_SERVICE">{t('fleet.statuses.IN_SERVICE')}</option>
+                    <option value="IN_MAINTENANCE">{t('fleet.statuses.IN_MAINTENANCE')}</option>
+                    <option value="INACTIVE">{t('fleet.statuses.INACTIVE')}</option>
+                    <option value="RETIRED">{t('fleet.statuses.RETIRED')}</option>
+                    <option value="BREAKDOWN">{t('fleet.statuses.BREAKDOWN')}</option>
+                    <option value="RESERVE">{t('fleet.statuses.RESERVE', { defaultValue: 'Reserve' })}</option>
+                  </select>
+                </div>
+                <Input
+                  label={t('fleet.labels.odometer')}
+                  type="number"
+                  min={0}
+                  value={editOdometer}
+                  onChange={(e) => setEditOdometer(e.target.value)}
+                />
+              </div>
+            </>}
+
+            {editSection === 4 && <>
+              <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 space-y-3">
+                <div className="flex items-start gap-2">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-500" />
+                  <div>
+                    <p className="text-xs font-semibold text-blue-700">{t('fleet.insuranceNote')}</p>
+                    <p className="text-xs text-blue-600 mt-0.5">{t('fleet.insuranceDesc')}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Input label={t('fleet.labels.insurancePolicyNo')} {...editForm.register('insurance_policy_no')} />
+                  <Controller
+                    name="insurance_expiry_date"
+                    control={editForm.control}
+                    render={({ field }) => (
+                      <NepaliDateInput label={t('fleet.labels.insuranceExpiryDate')} value={field.value} onChange={field.onChange} />
+                    )}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Insurance Document</label>
+                  {editTarget.documents?.find((d) => d.doc_type === 'INSURANCE') ? (
+                    <p className="mb-1 text-xs text-blue-600">
+                      A document is already on file — choose a new file below to replace it.
+                    </p>
+                  ) : null}
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => setEditInsuranceFile(e.target.files?.[0] ?? null)}
+                    className="w-full text-xs text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-blue-700 hover:file:bg-blue-200"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input label={t('fleet.labels.fitnessCertNo')} {...editForm.register('fitness_cert_no')} />
+                <Controller
+                  name="fitness_expiry_date"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <NepaliDateInput label={t('fleet.labels.fitnessExpiryDate')} value={field.value} onChange={field.onChange} />
+                  )}
+                />
+              </div>
+            </>}
+
+            <div className="flex justify-end gap-3 border-t pt-4">
+              <Button type="button" variant="secondary" onClick={closeEdit}>{t('common.cancel')}</Button>
+              <Button type="submit" loading={updateVehicleMutation.isPending}>
                 {t('common.save')}
               </Button>
             </div>
-          </div>
-        </Modal>
-      )}
+          </form>
+        )}
+      </Modal>
 
       {/* ── Delete Vehicle Modal ──────────────────────────────────────────────── */}
       {deleteTarget && (
