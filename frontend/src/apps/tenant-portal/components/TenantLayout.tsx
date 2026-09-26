@@ -318,7 +318,11 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
                     { to: '/tenant/profile/preferences', icon: SlidersHorizontal, label: t('profile.preferences', { defaultValue: 'Preferences' }) },
                     { to: '/tenant/profile/notifications', icon: BellRing, label: t('profile.notifications', { defaultValue: 'Notification' }) },
                     { to: '/tenant/profile/report-issue', icon: Bug, label: t('profile.reportIssue', { defaultValue: 'Report Issue' }) },
-                    { to: '/tenant/roles', icon: ShieldCheck, label: t('nav.rolesPermissions') },
+                    // Roles & Permissions deliberately not duplicated here --
+                    // it's an admin function (managing everyone's access),
+                    // not a personal setting, so it stays discoverable only
+                    // in the main nav alongside Owners/Drivers/Analytics,
+                    // not tucked inside a menu that reads as "my own stuff."
                   ].map((item) => (
                     <DropdownMenu.Item key={item.to}>
                       {({ active }) => (
