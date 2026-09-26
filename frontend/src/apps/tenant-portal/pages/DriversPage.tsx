@@ -998,7 +998,25 @@ export default function DriversPage() {
         <form
           onSubmit={handleSubmit((d) => createMutation.mutate(d))}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !isLastStep) { e.preventDefault(); handleNext() }
+            // Enter must never reach the browser's native "submit via GET to
+            // the current URL" fallback -- on the last step, !isLastStep was
+            // false so this handler used to do nothing, leaving Enter to
+            // fall through to that native submit, which reloads the whole
+            // page and silently discards every step's data (confirmed live:
+            // pressing Enter in Basic Salary on the last step navigated to
+            // a fresh GET /tenant/drivers, no POST ever fired). Always
+            // intercept Enter here instead, and on the last step trigger
+            // the real React-controlled submit via requestSubmit() rather
+            // than letting the keypress do anything by default. Exempted:
+            // the Medical Conditions textarea, where Enter should insert a
+            // newline like any other multi-line field.
+            if (e.key !== 'Enter' || (e.target as HTMLElement).tagName === 'TEXTAREA') return
+            e.preventDefault()
+            if (isLastStep) {
+              e.currentTarget.requestSubmit()
+            } else {
+              handleNext()
+            }
           }}
           className="space-y-6 p-6"
         >

@@ -1016,7 +1016,21 @@ export default function ConductorsPage() {
         <form
           onSubmit={handleSubmit((d) => createMutation.mutate(d))}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !isLastStep) { e.preventDefault(); handleNext() }
+            // Same fix as DriversPage.tsx -- on the last step, Enter used to
+            // fall through to the browser's native "submit via GET to the
+            // current URL" behavior (confirmed live: reloaded the page,
+            // discarded the whole wizard, no POST ever fired). Always
+            // intercept Enter here and, on the last step, trigger the real
+            // React-controlled submit via requestSubmit() instead. Exempted:
+            // any future multi-line textarea, where Enter should insert a
+            // newline, not submit or advance.
+            if (e.key !== 'Enter' || (e.target as HTMLElement).tagName === 'TEXTAREA') return
+            e.preventDefault()
+            if (isLastStep) {
+              e.currentTarget.requestSubmit()
+            } else {
+              handleNext()
+            }
           }}
           className="space-y-6 p-6"
         >
