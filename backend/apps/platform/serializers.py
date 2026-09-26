@@ -228,9 +228,20 @@ class RouteDiversionSerializer(serializers.ModelSerializer):
 
 
 class TicketTypeSerializer(serializers.ModelSerializer):
+    # True for the platform-wide defaults (tenant=None) every tenant shares
+    # and can use but never edit; False for a type a tenant created for
+    # itself. tenant itself is exposed too (read-only -- injected server-side
+    # by TicketTypeViewSet.perform_create(), never client-settable) so the
+    # frontend doesn't have to infer ownership from is_global alone.
+    is_global = serializers.SerializerMethodField()
+
     class Meta:
         model = TicketType
-        fields = ["id", "code", "name_en", "name_ne", "description", "is_transferable", "is_active"]
+        fields = ["id", "code", "name_en", "name_ne", "description", "is_transferable", "is_active", "tenant", "is_global"]
+        read_only_fields = ["id", "tenant", "is_global"]
+
+    def get_is_global(self, obj):
+        return obj.tenant_id is None
 
 
 class FareMatrixSerializer(serializers.ModelSerializer):
@@ -241,6 +252,22 @@ class FareMatrixSerializer(serializers.ModelSerializer):
             "base_fare", "peak_fare", "student_fare", "senior_citizen_fare", "child_fare", "created_at",
         ]
         read_only_fields = ["id", "created_at"]
+
+    def validate_ticket_type(self, value):
+        # TicketType is now genuinely per-tenant (tenant=None means a
+        # platform-wide default). DRF's auto-generated PK field would
+        # otherwise let a tenant attach a fare to ANY ticket type by ID,
+        # including another tenant's private one -- this is the one place
+        # that lookup happens on the plain create()/update() path (bulk-
+        # import and generate-from-formula go through
+        # FareMatrixViewSet._resolve_ticket_type instead, scoped the same
+        # way).
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request else None
+        if user and getattr(user, "is_authenticated", False) and not user.is_platform_role:
+            if value.tenant_id and value.tenant.schema_name != user.tenant_schema:
+                raise serializers.ValidationError("This ticket type belongs to a different tenant.")
+        return value
 
     def validate(self, data):
         zone_from = data.get("zone_from", getattr(self.instance, "zone_from", ""))

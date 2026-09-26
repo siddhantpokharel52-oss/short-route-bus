@@ -24,6 +24,7 @@ import ReportIssuePage from './pages/ReportIssuePage'
 import RoutesPage from './pages/RoutesPage'
 import StopsPage from './pages/StopsPage'
 import FaresPage from './pages/FaresPage'
+import TicketTypesPage from './pages/TicketTypesPage'
 import AccountingPage from './pages/AccountingPage'
 import PaymentIntegrationPage from './pages/PaymentIntegrationPage'
 // ── New operations modules ────────────────────────────────────────────────────
@@ -77,6 +78,7 @@ export default function TenantApp() {
         <Route path="routes" element={<RoutesPage />} />
         <Route path="stops" element={<StopsPage />} />
         <Route path="fares" element={<FaresPage />} />
+        <Route path="ticket-types" element={<TicketTypesPage />} />
 
         {/* ── New: Fleet & Dispatch Operations ─────────────────────────── */}
         <Route path="live-tracking" element={<LiveTrackingPage />} />

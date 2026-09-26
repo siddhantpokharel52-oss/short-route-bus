@@ -743,16 +743,69 @@ class RouteViewSet(ModelViewSet):
         return api_response(data=RouteDemandSerializer(created, many=True).data, message="Route demand saved.")
 
 class TicketTypeViewSet(ModelViewSet):
+    """Genuinely per-tenant now (moved off the super-admin app, per direct
+    instruction) -- tenant=None rows are platform-wide defaults every
+    tenant can see and use but only platform staff can write; tenant=<X>
+    rows are private to tenant X, writable only by that tenant. See
+    TicketType's own docstring for the full reasoning."""
     queryset = TicketType.objects.filter(is_active=True)
     serializer_class = TicketTypeSerializer
 
     def get_permissions(self):
         if self.action in ["list", "retrieve"]:
             return [AllowAny()]
-        return [IsPlatformRole()]
+        return [CanViewFares()]  # coarse gate; ownership is checked per-request below
+
+    def get_queryset(self):
+        qs = TicketType.objects.filter(is_active=True)
+        user = self.request.user
+        if not (user and user.is_authenticated):
+            # Anonymous callers (e.g. the public fare-inquiry endpoint) --
+            # platform-wide defaults only, never a specific tenant's private types.
+            return qs.filter(tenant__isnull=True)
+        if user.is_platform_role:
+            return qs
+        if user.role not in CanViewFares._tenant_roles:
+            return qs.filter(tenant__isnull=True)
+        return qs.filter(Q(tenant__isnull=True) | Q(tenant__schema_name=user.tenant_schema))
+
+    def _resolve_tenant(self, user):
+        from backend.apps.tenants.models import Tenant
+        return Tenant.objects.filter(schema_name=user.tenant_schema).first()
+
+    def _can_write(self, user, instance_tenant_id):
+        if user.is_platform_role:
+            return instance_tenant_id is None  # platform maintains only the shared defaults
+        if user.role not in CanViewFares._tenant_roles:
+            return False
+        my_tenant = self._resolve_tenant(user)
+        return bool(instance_tenant_id) and bool(my_tenant) and str(instance_tenant_id) == str(my_tenant.id)
+
+    def perform_create(self, serializer):
+        # tenant is never client-settable (read_only on the serializer) --
+        # always injected server-side from who's actually asking, same
+        # convention as conductor_id/vehicle_id elsewhere in this codebase.
+        user = self.request.user
+        serializer.save(tenant=None if user.is_platform_role else self._resolve_tenant(user))
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not self._can_write(request.user, instance.tenant_id):
+            return api_response(
+                success=False,
+                message="You can only edit ticket types your own tenant created.",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        return super().update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        if not self._can_write(request.user, instance.tenant_id):
+            return api_response(
+                success=False,
+                message="You can only delete ticket types your own tenant created.",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
         fare_count = FareMatrix.objects.filter(ticket_type=instance).count()
         if fare_count:
             return api_response(
@@ -869,14 +922,20 @@ class FareMatrixViewSet(ModelViewSet):
             except Route.DoesNotExist:
                 return None, f"No route matches '{value}' (tried id and route_code)."
 
-    def _resolve_ticket_type(self, value):
+    def _resolve_ticket_type(self, value, user=None):
         if not value:
             return None, "ticket_type is required."
+        qs = TicketType.objects.all()
+        if user is not None and not user.is_platform_role:
+            # TicketType is per-tenant now -- never resolve to another
+            # tenant's private type, only the shared defaults or this
+            # tenant's own.
+            qs = qs.filter(Q(tenant__isnull=True) | Q(tenant__schema_name=user.tenant_schema))
         try:
-            return TicketType.objects.get(pk=value), None
+            return qs.get(pk=value), None
         except (TicketType.DoesNotExist, ValueError, TypeError, DjangoValidationError):
             try:
-                return TicketType.objects.get(code__iexact=str(value)), None
+                return qs.get(code__iexact=str(value)), None
             except TicketType.DoesNotExist:
                 return None, f"No ticket type matches '{value}' (tried id and code)."
 
@@ -927,7 +986,7 @@ class FareMatrixViewSet(ModelViewSet):
                 errors.append({"row": i, "error": "This route isn't actively assigned to your tenant."})
                 continue
 
-            ticket_type, tt_err = self._resolve_ticket_type(row.get("ticket_type", default_ticket_type_val))
+            ticket_type, tt_err = self._resolve_ticket_type(row.get("ticket_type", default_ticket_type_val), user=request.user)
             if tt_err:
                 errors.append({"row": i, "error": tt_err})
                 continue
@@ -1008,8 +1067,16 @@ class FareMatrixViewSet(ModelViewSet):
         if not self._can_write_route(request.user, route):
             return self._forbidden_route_response()
 
-        default_ticket_type_id = TicketType.objects.values_list("id", flat=True).first()
-        ticket_type, tt_err = self._resolve_ticket_type(request.data.get("ticket_type") or default_ticket_type_id)
+        # Scoped the same way _resolve_ticket_type itself scopes -- picking
+        # an unscoped "first ticket type in the whole table" as the fallback
+        # could otherwise land on a different tenant's private type now that
+        # TicketType is per-tenant, which _resolve_ticket_type would then
+        # correctly (but confusingly) reject as invisible.
+        default_qs = TicketType.objects.filter(is_active=True)
+        if not request.user.is_platform_role:
+            default_qs = default_qs.filter(Q(tenant__isnull=True) | Q(tenant__schema_name=request.user.tenant_schema))
+        default_ticket_type_id = default_qs.values_list("id", flat=True).first()
+        ticket_type, tt_err = self._resolve_ticket_type(request.data.get("ticket_type") or default_ticket_type_id, user=request.user)
         if tt_err:
             return api_response(success=False, message=tt_err, status_code=status.HTTP_400_BAD_REQUEST)
 

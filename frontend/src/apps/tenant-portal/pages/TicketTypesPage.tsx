@@ -1,16 +1,20 @@
 /**
- * TicketTypesPage — manage the passenger/ticket categories (Adult, Student,
- * Senior, ...) that FareMatrix prices against. Platform-wide reference data,
- * not tenant-specific -- there's no tenant-portal counterpart, same as
- * Routes/Stops.
+ * TicketTypesPage (tenant-portal) — manage this tenant's own passenger/
+ * ticket categories (Adult, Student, ...) that Fares are priced against.
+ * Moved off the super-admin app, per direct instruction: TicketType is
+ * genuinely per-tenant now (backend/apps/platform/models.py's TicketType,
+ * tenant=None rows are platform-wide defaults). This page shows both --
+ * the shared defaults every tenant already has (view only, "Platform
+ * default" badge, no Edit/Delete) and this tenant's own custom types
+ * (fully editable) -- creating a new one here always creates it as this
+ * tenant's own, never a shared default (only platform staff can still
+ * manage those, from Django admin now that the super-admin page is gone).
  *
  * Note: the backend's list/retrieve queryset only ever returns
- * is_active=True ticket types (TicketTypeViewSet.queryset filters on it) --
- * so a deactivated type disappears from this page entirely with no way to
- * reactivate it through this UI or the API (it 404s on retrieve too, since
- * the same filtered queryset backs that action). To keep this page from
- * being a one-way trap, it intentionally does not expose an "is_active"
- * toggle -- only Django admin can currently undo a deactivation.
+ * is_active=True ticket types -- so a deactivated type disappears from
+ * this page entirely with no way to reactivate it through this UI or the
+ * API. To keep this page from being a one-way trap, it intentionally does
+ * not expose an "is_active" toggle.
  */
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -24,6 +28,7 @@ import { Modal } from '@components/shared/Modal'
 import apiClient from '@services/api'
 import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
+import { useTranslation } from 'react-i18next'
 
 interface TicketType {
   id: string
@@ -32,6 +37,7 @@ interface TicketType {
   name_ne: string
   description: string
   is_transferable: boolean
+  is_global: boolean
 }
 
 interface TicketTypeFormValues {
@@ -49,20 +55,21 @@ function flattenErrors(errors: Record<string, string[] | string>): string {
 }
 
 export default function TicketTypesPage() {
+  const { t } = useTranslation('tenant')
   const qc = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
   const [editing, setEditing] = useState<TicketType | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<TicketType | null>(null)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['ticket-types'],
+    queryKey: ['ticket-types-tenant'],
     queryFn: async () => {
       const { data } = await apiClient.get('/platform/ticket-types/', { params: { page_size: 100 } })
       return (data.data ?? []) as TicketType[]
     },
   })
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['ticket-types'] })
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['ticket-types-tenant'] })
 
   const addForm = useForm<TicketTypeFormValues>({
     defaultValues: { is_transferable: false },
@@ -72,7 +79,7 @@ export default function TicketTypesPage() {
     mutationFn: (payload: TicketTypeFormValues) =>
       apiClient.post('/platform/ticket-types/', payload).then((r) => r.data),
     onSuccess: () => {
-      toast.success('Ticket type created.')
+      toast.success(t('ticketTypes.created', { defaultValue: 'Ticket type created.' }))
       setShowAdd(false)
       addForm.reset({ is_transferable: false })
       invalidate()
@@ -89,7 +96,7 @@ export default function TicketTypesPage() {
     mutationFn: (payload: TicketTypeFormValues) =>
       apiClient.patch(`/platform/ticket-types/${editing?.id}/`, payload).then((r) => r.data),
     onSuccess: () => {
-      toast.success('Ticket type updated.')
+      toast.success(t('ticketTypes.updated', { defaultValue: 'Ticket type updated.' }))
       setEditing(null)
       invalidate()
     },
@@ -110,7 +117,7 @@ export default function TicketTypesPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.delete(`/platform/ticket-types/${id}/`),
     onSuccess: () => {
-      toast.success('Ticket type deleted.')
+      toast.success(t('ticketTypes.deleted', { defaultValue: 'Ticket type deleted.' }))
       setDeleteTarget(null)
       invalidate()
     },
@@ -135,8 +142,14 @@ export default function TicketTypesPage() {
       render: (r) => <Badge variant={r.is_transferable ? 'success' : 'neutral'} dot>{r.is_transferable ? 'Yes' : 'No'}</Badge>,
     },
     {
+      key: 'is_global', header: 'Source',
+      render: (r) => r.is_global
+        ? <Badge variant="info">{t('ticketTypes.platformDefault', { defaultValue: 'Platform default' })}</Badge>
+        : <Badge variant="neutral">{t('ticketTypes.yourOwn', { defaultValue: 'Your own' })}</Badge>,
+    },
+    {
       key: 'id', header: '',
-      render: (r) => (
+      render: (r) => r.is_global ? null : (
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" onClick={() => openEdit(r)}>Edit</Button>
           <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(r)}>
@@ -151,11 +164,15 @@ export default function TicketTypesPage() {
     <div className="space-y-6">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Ticket Types</h1>
-          <p className="page-subtitle">Passenger categories (Adult, Student, ...) that fares are priced against</p>
+          <h1 className="page-title">{t('ticketTypes.title', { defaultValue: 'Ticket Types' })}</h1>
+          <p className="page-subtitle">
+            {t('ticketTypes.subtitle', {
+              defaultValue: 'Passenger categories that fares are priced against — platform defaults plus any you add yourself',
+            })}
+          </p>
         </div>
         <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setShowAdd(true)}>
-          Add Ticket Type
+          {t('ticketTypes.addTicketType', { defaultValue: 'Add Ticket Type' })}
         </Button>
       </div>
 
@@ -169,11 +186,11 @@ export default function TicketTypesPage() {
         />
       </div>
 
-      {/* Add */}
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Ticket Type" size="lg">
+      {/* Add -- always creates one owned by this tenant */}
+      <Modal open={showAdd} onClose={() => setShowAdd(false)} title={t('ticketTypes.addTicketType', { defaultValue: 'Add Ticket Type' })} size="lg">
         <form onSubmit={addForm.handleSubmit((d) => createMutation.mutate(d))} className="space-y-4 p-6">
           <Input
-            label="Code" placeholder="e.g. STUDENT" required
+            label="Code" placeholder="e.g. VIP" required
             {...addForm.register('code', { required: true })}
           />
           <div className="grid grid-cols-2 gap-4">
@@ -192,7 +209,7 @@ export default function TicketTypesPage() {
         </form>
       </Modal>
 
-      {/* Edit */}
+      {/* Edit -- only ever opened for a row this tenant owns */}
       <Modal open={!!editing} onClose={() => setEditing(null)} title={`Edit ${editing?.code ?? ''}`} size="lg">
         <form onSubmit={editForm.handleSubmit((d) => updateMutation.mutate(d))} className="space-y-4 p-6">
           <Input label="Code" required {...editForm.register('code', { required: true })} />

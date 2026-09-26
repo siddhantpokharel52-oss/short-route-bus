@@ -329,14 +329,32 @@ class RouteDiversion(models.Model):
 
 
 class TicketType(models.Model):
+    """A passenger/ticket category (Adult, Student, ...) that FareMatrix
+    prices against. Genuinely per-tenant now (moved off the super-admin app,
+    per direct instruction): tenant=None rows are platform-wide defaults,
+    visible to and usable by every tenant but writable only by platform
+    staff; tenant=<X> rows are private to tenant X -- created, edited, and
+    deleted only by that tenant, invisible to every other tenant. This is a
+    row-level scope (a nullable FK), not a schema-level one, since
+    TicketType lives in SHARED_APPS alongside Route/FareMatrix -- same
+    pattern RouteAssignment already uses to attach a tenant to shared-schema
+    data. Existing rows were all platform-wide defaults before this change
+    and keep working identically (tenant=None) for every tenant that
+    already references them."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    code = models.CharField(max_length=20, unique=True)
+    code = models.CharField(max_length=20)
     name_en = models.CharField(max_length=100)
     name_ne = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     is_transferable = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
+    tenant = models.ForeignKey(
+        "tenants.Tenant", null=True, blank=True, on_delete=models.CASCADE, related_name="ticket_types",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [["tenant", "code"]]
 
     def __str__(self):
         return f"{self.code} - {self.name_en}"

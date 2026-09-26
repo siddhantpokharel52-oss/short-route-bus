@@ -6,7 +6,7 @@ import {
   Wrench, UserCheck, BarChart3, Menu, X,
   Bell, LogOut, Route, MapPin, BookOpen,
   Zap, Activity, ShieldCheck, Wallet, Wallet2, Layers, Users2, CalendarRange, CalendarDays, CreditCard,
-  UserCog, KeyRound, SlidersHorizontal, BellRing, Bug, ChevronsUpDown,
+  UserCog, KeyRound, SlidersHorizontal, BellRing, Bug, ChevronsUpDown, Tags,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -101,6 +101,7 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
             { to: '/tenant/routes', icon: Route, label: t('nav.routes') },
             { to: '/tenant/stops', icon: MapPin, label: t('nav.busStops') },
             { to: '/tenant/fares', icon: Wallet, label: t('nav.fares') },
+            { to: '/tenant/ticket-types', icon: Tags, label: t('nav.ticketTypes', { defaultValue: 'Ticket Types' }) },
           ],
         },
         {
