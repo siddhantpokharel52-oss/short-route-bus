@@ -19,7 +19,8 @@ import { Badge } from '@components/shared/Badge'
 import { Modal } from '@components/shared/Modal'
 import { DateDisplay } from '@components/shared/DateDisplay'
 import { Button } from '@components/shared/Button'
-import { Wallet, Bus, Banknote, CreditCard, TrendingUp, Eye, Hash, Gauge, Route as RouteIcon, ShieldCheck } from 'lucide-react'
+import { Input } from '@components/shared/Input'
+import { Wallet, Bus, Banknote, CreditCard, TrendingUp, Eye, Hash, Gauge, Route as RouteIcon, ShieldCheck, Search } from 'lucide-react'
 import ownerService, {
   OwnerDashboardPerBus, OwnerDashboardRoute, OwnerDashboardTrendPoint,
 } from '@services/ownerService'
@@ -83,6 +84,7 @@ export default function MyEarningsPage() {
   const [trendDays, setTrendDays] = useState(30)
   const [viewTarget, setViewTarget] = useState<Vehicle | null>(null)
   const [viewStep, setViewStep] = useState(0)
+  const [busSearch, setBusSearch] = useState('')
   const fmtMoney = (v: number) => formatNPR(v, language as 'en' | 'ne')
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
@@ -149,6 +151,19 @@ export default function MyEarningsPage() {
       ),
     },
   ]
+
+  // Matches by bus_number (already on the summary row) and, when the full
+  // vehicle record has loaded, registration_no too -- an owner is just as
+  // likely to remember a plate number as a display name.
+  const filteredPerBus = (summary?.per_bus ?? []).filter((b) => {
+    if (!busSearch.trim()) return true
+    const q = busSearch.trim().toLowerCase()
+    const vehicle = myVehicles.find((v) => v.id === b.vehicle_id)
+    return (
+      b.bus_number?.toLowerCase().includes(q) ||
+      vehicle?.registration_no?.toLowerCase().includes(q)
+    )
+  })
 
   const routeColumns: Column<OwnerDashboardRoute>[] = [
     {
@@ -292,10 +307,27 @@ export default function MyEarningsPage() {
 
       {/* ── Per-bus breakdown ─────────────────────────────────────────────── */}
       <div className="card p-0 overflow-hidden">
-        <div className="border-b border-gray-100 px-5 py-3">
+        <div className="border-b border-gray-100 px-5 py-3 space-y-3">
           <p className="text-sm font-semibold text-gray-700">{t('myEarnings.perBus', { defaultValue: 'Per-Bus Breakdown' })}</p>
+          <Input
+            placeholder={t('myEarnings.searchPlaceholder', { defaultValue: 'Search by bus number or registration…' })}
+            leftAddon={<Search className="h-4 w-4" />}
+            value={busSearch}
+            onChange={(e) => setBusSearch(e.target.value)}
+            className="max-w-sm"
+          />
         </div>
-        <Table columns={perBusColumns} data={summary?.per_bus ?? []} keyExtractor={(b) => b.vehicle_id} loading={summaryLoading} emptyMessage={t('myEarnings.noBuses', { defaultValue: 'No buses assigned to you yet.' })} />
+        <Table
+          columns={perBusColumns}
+          data={filteredPerBus}
+          keyExtractor={(b) => b.vehicle_id}
+          loading={summaryLoading}
+          emptyMessage={
+            busSearch
+              ? t('myEarnings.noBusesMatch', { defaultValue: 'No buses match your search.' })
+              : t('myEarnings.noBuses', { defaultValue: 'No buses assigned to you yet.' })
+          }
+        />
       </div>
 
       {/* ── Revenue by route ──────────────────────────────────────────────── */}
