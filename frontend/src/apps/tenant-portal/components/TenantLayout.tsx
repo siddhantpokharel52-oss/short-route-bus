@@ -1,10 +1,12 @@
-import { ReactNode, useState, useEffect } from 'react'
+import { Fragment, ReactNode, useState, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
+import { Menu as DropdownMenu, Transition } from '@headlessui/react'
 import {
   LayoutDashboard, Bus, Users, Ticket,
-  Wrench, UserCheck, BarChart3, Settings, Menu, X,
+  Wrench, UserCheck, BarChart3, Menu, X,
   Bell, LogOut, Route, MapPin, BookOpen,
   Zap, Activity, ShieldCheck, Wallet, Wallet2, Layers, Users2, CalendarRange, CalendarDays, CreditCard,
+  UserCog, KeyRound, SlidersHorizontal, BellRing, Bug, ChevronsUpDown,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -130,11 +132,12 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
         // Pinned, ungrouped: Analytics cuts across every group above rather
         // than belonging to one; Roles & Permissions governs every existing
         // account platform-wide, not just newly-enrolled ones, so it stays
-        // out of Enrollment on purpose; Settings is the usual single pinned
-        // utility item at the very bottom of any admin nav.
+        // out of Enrollment on purpose. Settings/Change Profile/Change
+        // Password/Preferences/Notification/Report Issue all moved into the
+        // Profile dropdown below the nav (see the user-info block at the
+        // bottom of the sidebar) -- no separate "Settings" nav item anymore.
         { to: '/tenant/analytics', icon: BarChart3, label: t('nav.analytics') },
         { to: '/tenant/roles', icon: ShieldCheck, label: t('nav.rolesPermissions') },
-        { to: '/tenant/settings', icon: Settings, label: t('nav.settings') },
       ]
 
   // Company info — same query key as Settings page so it's served from cache.
@@ -249,25 +252,78 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
           })}
         </nav>
 
-        {/* User info */}
-        <div className="border-t border-gray-200 p-4 dark:border-gray-700">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 text-primary-700 text-xs font-bold dark:bg-primary-900 dark:text-primary-300">
-              {user?.fullName.charAt(0)}
+        {/* User info + Profile dropdown */}
+        <div className="border-t border-gray-200 p-3 dark:border-gray-700">
+          <DropdownMenu as="div" className="relative">
+            <div className="flex items-center gap-1">
+              <DropdownMenu.Button className="flex flex-1 min-w-0 items-center gap-3 rounded-lg p-1 text-left hover:bg-gray-100 dark:hover:bg-gray-800">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary-700 text-xs font-bold dark:bg-primary-900 dark:text-primary-300">
+                  {user?.fullName.charAt(0)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="truncate text-xs font-medium text-gray-900 dark:text-white">
+                    {user?.fullName}
+                  </p>
+                  <p className="truncate text-xs text-gray-400">{user?.email}</p>
+                </div>
+                <ChevronsUpDown className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+              </DropdownMenu.Button>
+              <button
+                onClick={handleLogout}
+                title={t('nav.logout', { defaultValue: 'Log out' })}
+                className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="truncate text-xs font-medium text-gray-900 dark:text-white">
-                {user?.fullName}
-              </p>
-              <p className="truncate text-xs text-gray-400">{user?.email}</p>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800"
+
+            <Transition
+              as={Fragment}
+              enter="transition ease-out duration-100"
+              enterFrom="transform opacity-0 scale-95"
+              enterTo="transform opacity-100 scale-100"
+              leave="transition ease-in duration-75"
+              leaveFrom="transform opacity-100 scale-100"
+              leaveTo="transform opacity-0 scale-95"
             >
-              <LogOut className="h-4 w-4" />
-            </button>
-          </div>
+              <DropdownMenu.Items className="absolute bottom-full left-0 right-0 z-50 mb-2 origin-bottom overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg focus:outline-none dark:border-gray-700 dark:bg-gray-800">
+                {/* Basic info -- name/email/role/company, already on file,
+                    same data the sidebar header and this trigger already
+                    show, surfaced again here so the menu reads standalone. */}
+                <div className="border-b border-gray-100 p-4 dark:border-gray-700">
+                  <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">{user?.fullName}</p>
+                  <p className="truncate text-xs text-gray-400">{user?.email}</p>
+                  <p className="mt-1 text-xs text-gray-400">{user?.role?.replace(/_/g, ' ')}</p>
+                </div>
+
+                <div className="p-1.5">
+                  {[
+                    { to: '/tenant/profile', icon: UserCog, label: t('profile.changeProfile', { defaultValue: 'Change Profile' }) },
+                    { to: '/tenant/profile/password', icon: KeyRound, label: t('profile.changePassword', { defaultValue: 'Change Password' }) },
+                    { to: '/tenant/profile/preferences', icon: SlidersHorizontal, label: t('profile.preferences', { defaultValue: 'Preferences' }) },
+                    { to: '/tenant/profile/notifications', icon: BellRing, label: t('profile.notifications', { defaultValue: 'Notification' }) },
+                    { to: '/tenant/profile/report-issue', icon: Bug, label: t('profile.reportIssue', { defaultValue: 'Report Issue' }) },
+                    { to: '/tenant/roles', icon: ShieldCheck, label: t('nav.rolesPermissions') },
+                  ].map((item) => (
+                    <DropdownMenu.Item key={item.to}>
+                      {({ active }) => (
+                        <NavLink
+                          to={item.to}
+                          className={cn(
+                            'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200',
+                            active && 'bg-gray-100 dark:bg-gray-700'
+                          )}
+                        >
+                          <item.icon className="h-4 w-4 flex-shrink-0" />
+                          {item.label}
+                        </NavLink>
+                      )}
+                    </DropdownMenu.Item>
+                  ))}
+                </div>
+              </DropdownMenu.Items>
+            </Transition>
+          </DropdownMenu>
         </div>
       </aside>
 

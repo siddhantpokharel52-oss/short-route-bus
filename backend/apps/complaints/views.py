@@ -1,10 +1,13 @@
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.utils import timezone
-from .models import Complaint, ComplaintAssignment, ComplaintResolution
-from .serializers import ComplaintSerializer, ComplaintAssignmentSerializer, ComplaintResolutionSerializer
+from .models import Complaint, ComplaintAssignment, ComplaintResolution, StaffIssueReport
+from .serializers import (
+    ComplaintSerializer, ComplaintAssignmentSerializer, ComplaintResolutionSerializer,
+    StaffIssueReportSerializer,
+)
 from backend.apps.users.permissions import IsOperationsRole, IsPlatformRole
 
 
@@ -54,3 +57,19 @@ class ComplaintViewSet(ModelViewSet):
         complaint.status = Complaint.Status.RESOLVED
         complaint.save(update_fields=["status"])
         return api_response(data=serializer.data, message="Complaint resolved.")
+
+
+class MyIssueReportViewSet(ModelViewSet):
+    """A staff member reporting a problem with the app, and seeing their own
+    past reports' status -- self-service, any authenticated user, scoped to
+    their own rows only (never another user's reports, and no cross-tenant
+    listing -- this is already a tenant-scoped model)."""
+    serializer_class = StaffIssueReportSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):
+        return StaffIssueReport.objects.filter(reported_by_id=self.request.user.id)
+
+    def perform_create(self, serializer):
+        serializer.save(reported_by_id=self.request.user.id)

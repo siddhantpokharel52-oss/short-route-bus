@@ -65,3 +65,35 @@ class ComplaintResolution(models.Model):
     resolved_at = models.DateTimeField(auto_now_add=True)
     resolution_notes = models.TextField()
     satisfaction_rating = models.PositiveSmallIntegerField(null=True, blank=True)
+
+
+class StaffIssueReport(models.Model):
+    """A tenant-portal user (any staff role) reporting a problem with the
+    software itself -- "Report Issue" in the profile menu. Deliberately a
+    separate model from Complaint above: that one is passenger-facing,
+    about bus service quality (late bus, driver behavior, etc.); this one
+    is staff-facing, about the app they're using. Sharing one model would
+    mean either a fake passenger_id for staff reports or a fake bus/route
+    for a login bug -- neither fits."""
+    class Category(models.TextChoices):
+        BUG = "BUG", "Bug / Something's broken"
+        QUESTION = "QUESTION", "Question"
+        FEATURE_REQUEST = "FEATURE_REQUEST", "Feature Request"
+        OTHER = "OTHER", "Other"
+
+    class Status(models.TextChoices):
+        OPEN = "OPEN", "Open"
+        IN_PROGRESS = "IN_PROGRESS", "In Progress"
+        RESOLVED = "RESOLVED", "Resolved"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    reported_by_id = models.UUIDField()
+    category = models.CharField(max_length=20, choices=Category.choices, default=Category.OTHER)
+    subject = models.CharField(max_length=255)
+    description = models.TextField()
+    status = models.CharField(max_length=15, choices=Status.choices, default=Status.OPEN)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["reported_by_id", "-created_at"])]

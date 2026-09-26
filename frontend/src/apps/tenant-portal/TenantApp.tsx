@@ -16,7 +16,11 @@ import SchedulingPage from './pages/SchedulingPage'
 import TicketingPage from './pages/TicketingPage'
 import MaintenancePage from './pages/MaintenancePage'
 import TenantAnalyticsPage from './pages/TenantAnalyticsPage'
-import TenantSettingsPage from './pages/TenantSettingsPage'
+import ChangeProfilePage from './pages/ChangeProfilePage'
+import ChangePasswordPage from './pages/ChangePasswordPage'
+import PreferencesPage from './pages/PreferencesPage'
+import NotificationsPage from './pages/NotificationsPage'
+import ReportIssuePage from './pages/ReportIssuePage'
 import RoutesPage from './pages/RoutesPage'
 import StopsPage from './pages/StopsPage'
 import FaresPage from './pages/FaresPage'
@@ -86,7 +90,11 @@ export default function TenantApp() {
         <Route path="analytics" element={<TenantAnalyticsPage />} />
         <Route path="accounting" element={<AccountingPage />} />
         <Route path="payment-integration" element={<PaymentIntegrationPage />} />
-        <Route path="settings" element={<TenantSettingsPage />} />
+        <Route path="profile" element={<ChangeProfilePage />} />
+        <Route path="profile/password" element={<ChangePasswordPage />} />
+        <Route path="profile/preferences" element={<PreferencesPage />} />
+        <Route path="profile/notifications" element={<NotificationsPage />} />
+        <Route path="profile/report-issue" element={<ReportIssuePage />} />
         <Route path="roles" element={<RolesPermissionsPage />} />
       </Routes>
     </TenantLayout>
