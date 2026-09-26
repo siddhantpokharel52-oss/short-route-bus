@@ -11,6 +11,7 @@ import { isValidEmail, EMAIL_VALIDATION_MESSAGE } from '@utils/email'
 import { useAuthStore } from '@store/authStore'
 import ownerService, { Owner } from '@services/ownerService'
 import { sanitizePhoneDigits, isValidPhone, PHONE_VALIDATION_MESSAGE } from '@utils/phone'
+import { PhotoUploadField } from '@components/shared/PhotoUploadField'
 
 interface OwnerProfileForm {
   name: string
@@ -30,6 +31,7 @@ interface OwnerProfileForm {
 function OwnerProfileForm() {
   const { t } = useTranslation('tenant')
   const qc = useQueryClient()
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['owner-my-profile'],
@@ -39,9 +41,10 @@ function OwnerProfileForm() {
   const { register, handleSubmit, formState: { errors } } = useForm<OwnerProfileForm>({ values: profile as Owner })
 
   const mutation = useMutation({
-    mutationFn: (payload: OwnerProfileForm) => ownerService.updateMyProfile(payload),
+    mutationFn: (payload: OwnerProfileForm) => ownerService.updateMyProfile(payload, photoFile),
     onSuccess: () => {
       toast.success(t('profile.ownerProfileUpdated', { defaultValue: 'Profile updated.' }))
+      setPhotoFile(null)
       qc.invalidateQueries({ queryKey: ['owner-my-profile'] })
     },
     onError: (err: any) => {
@@ -59,6 +62,11 @@ function OwnerProfileForm() {
         <p className="text-sm text-gray-400">…</p>
       ) : (
         <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
+          <PhotoUploadField
+            label={t('profile.profilePhoto', { defaultValue: 'Profile Photo' })}
+            existingUrl={profile?.profile_photo}
+            onFileChange={setPhotoFile}
+          />
           <Input label={t('owners.name', { defaultValue: 'Name' })} required error={errors.name?.message} {...register('name', { required: 'Required' })} />
           <Input
             label={t('owners.phone', { defaultValue: 'Phone' })}

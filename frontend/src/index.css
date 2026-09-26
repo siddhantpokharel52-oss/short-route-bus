@@ -44,7 +44,13 @@
 @layer components {
   /* Sidebar layout */
   .sidebar {
-    @apply fixed left-0 top-0 h-full w-[var(--sidebar-width)] overflow-y-auto;
+    /* flex-col + h-full so the nav's own flex-1/overflow-y-auto pushes the
+       Profile block to the bottom of the sidebar regardless of how many
+       nav items are above it -- previously the sidebar itself scrolled as
+       one block with no flex context, so flex-1 on <nav> was inert and
+       Profile just sat directly under the last nav item (visibly wrong for
+       a short nav, e.g. OWNER's single "My Earnings" item). */
+    @apply fixed left-0 top-0 flex h-full w-[var(--sidebar-width)] flex-col overflow-hidden;
     @apply bg-white shadow-sm dark:bg-gray-900;
     @apply border-r border-gray-200 dark:border-gray-700;
     transition: transform 0.2s ease-in-out;

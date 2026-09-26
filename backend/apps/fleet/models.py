@@ -126,6 +126,7 @@ class Owner(models.Model):
     phone = models.CharField(max_length=20, blank=True)
     email = models.EmailField(blank=True)
     bank_account_no = models.CharField(max_length=50, blank=True)
+    profile_photo = models.ImageField(upload_to="owner_photos/", null=True, blank=True)
     # Links to the shared-schema User who can log in and see this owner's own
     # dashboard -- bare UUID, not FK, matching staff.Driver/Conductor's own
     # established convention for referencing a User from a tenant-scoped model.

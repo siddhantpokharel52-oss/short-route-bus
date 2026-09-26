@@ -6,6 +6,7 @@ export interface Owner {
   phone: string
   email: string
   bank_account_no: string
+  profile_photo: string | null
   user_id: string | null
   temp_password: string
   is_active: boolean
@@ -84,8 +85,20 @@ const ownerService = {
     return data.data
   },
 
-  updateMyProfile: async (payload: Partial<Pick<Owner, 'name' | 'phone' | 'email' | 'bank_account_no'>>): Promise<Owner> => {
-    const { data } = await apiClient.patch<ApiResponse<Owner>>('/fleet/owners/me/', payload)
+  updateMyProfile: async (
+    payload: Partial<Pick<Owner, 'name' | 'phone' | 'email' | 'bank_account_no'>>,
+    photoFile?: File | null,
+  ): Promise<Owner> => {
+    if (!photoFile) {
+      const { data } = await apiClient.patch<ApiResponse<Owner>>('/fleet/owners/me/', payload)
+      return data.data
+    }
+    const fd = new FormData()
+    Object.entries(payload).forEach(([key, value]) => fd.append(key, value ?? ''))
+    fd.append('profile_photo', photoFile)
+    const { data } = await apiClient.patch<ApiResponse<Owner>>('/fleet/owners/me/', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
     return data.data
   },
 
