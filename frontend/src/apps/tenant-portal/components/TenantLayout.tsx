@@ -41,13 +41,20 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type NavItem = { to: string; icon: any; label: string }
+  // Either a standalone link or a labeled group of links. Groups exist
+  // purely for visual organization of the general-staff nav below (19 flat
+  // items was too much to scan) -- they carry no access-control meaning,
+  // same as the rest of this array; backend permission_classes are what
+  // actually gate page-level data.
+  type NavEntry = NavItem | { section: string; items: NavItem[] }
+
   // Owner Dashboard (Team Implementation Guide §3.7): an owner sees "their
   // earnings, their trends, nothing else" -- so unlike every other role,
   // OWNER gets a dedicated one-item nav rather than flowing through the
   // general admin/ops array below (which is otherwise shown unfiltered to
   // every tenant role -- backend permission_classes are what actually gate
   // page-level data access, this array is nav-visibility only).
-  const navItems: NavItem[] = user?.role === 'OWNER'
+  const navItems: NavEntry[] = user?.role === 'OWNER'
     ? [{ to: '/tenant/my-earnings', icon: Wallet, label: t('nav.myEarnings', { defaultValue: 'My Earnings' }) }]
     : user?.role === 'CONDUCTOR'
     ? [
@@ -61,26 +68,71 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
         { to: '/tenant/ticketing', icon: Ticket, label: t('nav.ticketing') },
       ]
     : [
+        // Pinned, ungrouped -- this is the landing page, not a peer of the
+        // items inside Operations.
         { to: '/tenant/live-tracking', icon: LayoutDashboard, label: t('nav.dashboard') },
-        { to: '/tenant/operations', icon: Activity, label: t('nav.todaysTrips') },
-        { to: '/tenant/dispatch', icon: Zap, label: t('nav.scheduler') },
-        { to: '/tenant/routes', icon: Route, label: t('nav.routes') },
-        { to: '/tenant/stops', icon: MapPin, label: t('nav.busStops') },
-        { to: '/tenant/fares', icon: Wallet, label: t('nav.fares') },
-        { to: '/tenant/fleet', icon: Bus, label: t('nav.fleetManagement') },
-        { to: '/tenant/vehicle-categories', icon: Layers, label: t('nav.vehicleCategories', { defaultValue: 'Vehicle Categories' }) },
-        { to: '/tenant/vehicle-groups', icon: Users2, label: t('nav.vehicleGroups', { defaultValue: 'Vehicle Groups' }) },
-        { to: '/tenant/owners', icon: Wallet2, label: t('nav.owners', { defaultValue: 'Owners' }) },
-        ...(user?.role === 'DRIVER'
-          ? [{ to: '/tenant/my-roster', icon: CalendarDays, label: t('nav.myRoster', { defaultValue: 'My Roster' }) }]
-          : [{ to: '/tenant/roster-periods', icon: CalendarRange, label: t('nav.rosterPeriods', { defaultValue: 'Roster Periods' }) }]),
-        { to: '/tenant/drivers', icon: UserCheck, label: t('nav.drivers') },
-        { to: '/tenant/conductors', icon: Users, label: t('nav.collectors') },
-        { to: '/tenant/ticketing', icon: Ticket, label: t('nav.ticketing') },
-        { to: '/tenant/maintenance', icon: Wrench, label: t('nav.maintenance') },
+
+        // Owners/Drivers/Collectors share one real mechanic (an "Add"
+        // record plus a separate "Create Login" step that issues a temp
+        // password and forces a change on first sign-in) -- Enrollment
+        // names that shared shape, rather than splitting Owners into a
+        // vehicle-flavored group and Drivers/Collectors into a people-
+        // flavored one.
+        {
+          section: t('nav.groups.enrollment', { defaultValue: 'Enrollment' }),
+          items: [
+            { to: '/tenant/owners', icon: Wallet2, label: t('nav.owners', { defaultValue: 'Owners' }) },
+            { to: '/tenant/drivers', icon: UserCheck, label: t('nav.drivers') },
+            { to: '/tenant/conductors', icon: Users, label: t('nav.collectors') },
+          ],
+        },
+        {
+          section: t('nav.groups.operations', { defaultValue: 'Operations' }),
+          items: [
+            { to: '/tenant/operations', icon: Activity, label: t('nav.todaysTrips') },
+            { to: '/tenant/dispatch', icon: Zap, label: t('nav.scheduler') },
+          ],
+        },
+        {
+          section: t('nav.groups.network', { defaultValue: 'Network' }),
+          items: [
+            { to: '/tenant/routes', icon: Route, label: t('nav.routes') },
+            { to: '/tenant/stops', icon: MapPin, label: t('nav.busStops') },
+            { to: '/tenant/fares', icon: Wallet, label: t('nav.fares') },
+          ],
+        },
+        {
+          section: t('nav.groups.fleet', { defaultValue: 'Fleet' }),
+          items: [
+            { to: '/tenant/fleet', icon: Bus, label: t('nav.fleetManagement') },
+            { to: '/tenant/vehicle-categories', icon: Layers, label: t('nav.vehicleCategories', { defaultValue: 'Vehicle Categories' }) },
+            { to: '/tenant/vehicle-groups', icon: Users2, label: t('nav.vehicleGroups', { defaultValue: 'Vehicle Groups' }) },
+            { to: '/tenant/maintenance', icon: Wrench, label: t('nav.maintenance') },
+          ],
+        },
+        {
+          section: t('nav.groups.roster', { defaultValue: 'Roster' }),
+          items: [
+            user?.role === 'DRIVER'
+              ? { to: '/tenant/my-roster', icon: CalendarDays, label: t('nav.myRoster', { defaultValue: 'My Roster' }) }
+              : { to: '/tenant/roster-periods', icon: CalendarRange, label: t('nav.rosterPeriods', { defaultValue: 'Roster Periods' }) },
+          ],
+        },
+        {
+          section: t('nav.groups.finance', { defaultValue: 'Finance' }),
+          items: [
+            { to: '/tenant/ticketing', icon: Ticket, label: t('nav.ticketing') },
+            { to: '/tenant/accounting', icon: BookOpen, label: t('nav.accounting') },
+            { to: '/tenant/payment-integration', icon: CreditCard, label: t('nav.paymentIntegration', { defaultValue: 'Payment Integration' }) },
+          ],
+        },
+
+        // Pinned, ungrouped: Analytics cuts across every group above rather
+        // than belonging to one; Roles & Permissions governs every existing
+        // account platform-wide, not just newly-enrolled ones, so it stays
+        // out of Enrollment on purpose; Settings is the usual single pinned
+        // utility item at the very bottom of any admin nav.
         { to: '/tenant/analytics', icon: BarChart3, label: t('nav.analytics') },
-        { to: '/tenant/accounting', icon: BookOpen, label: t('nav.accounting') },
-        { to: '/tenant/payment-integration', icon: CreditCard, label: t('nav.paymentIntegration', { defaultValue: 'Payment Integration' }) },
         { to: '/tenant/roles', icon: ShieldCheck, label: t('nav.rolesPermissions') },
         { to: '/tenant/settings', icon: Settings, label: t('nav.settings') },
       ]
@@ -148,24 +200,53 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
 
         {/* Nav */}
         <nav className="flex-1 space-y-0.5 p-3 overflow-y-auto">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium',
-                  'transition-colors duration-150',
-                  isActive
-                    ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300'
-                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'
-                )
-              }
-            >
-              <item.icon className="h-4 w-4 flex-shrink-0" />
-              <span className="flex-1">{item.label}</span>
-            </NavLink>
-          ))}
+          {navItems.map((entry) => {
+            if ('section' in entry) {
+              return (
+                <div key={entry.section} className="pt-3 first:pt-0">
+                  <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                    {entry.section}
+                  </p>
+                  {entry.items.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      className={({ isActive }) =>
+                        cn(
+                          'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium',
+                          'transition-colors duration-150',
+                          isActive
+                            ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300'
+                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'
+                        )
+                      }
+                    >
+                      <item.icon className="h-4 w-4 flex-shrink-0" />
+                      <span className="flex-1">{item.label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              )
+            }
+            return (
+              <NavLink
+                key={entry.to}
+                to={entry.to}
+                className={({ isActive }) =>
+                  cn(
+                    'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium',
+                    'transition-colors duration-150',
+                    isActive
+                      ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300'
+                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'
+                  )
+                }
+              >
+                <entry.icon className="h-4 w-4 flex-shrink-0" />
+                <span className="flex-1">{entry.label}</span>
+              </NavLink>
+            )
+          })}
         </nav>
 
         {/* User info */}
