@@ -314,10 +314,18 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
                 <div className="p-1.5">
                   {[
                     { to: '/tenant/profile', icon: UserCog, label: t('profile.changeProfile', { defaultValue: 'Change Profile' }) },
-                    { to: '/tenant/profile/password', icon: KeyRound, label: t('profile.changePassword', { defaultValue: 'Change Password' }) },
-                    { to: '/tenant/profile/preferences', icon: SlidersHorizontal, label: t('profile.preferences', { defaultValue: 'Preferences' }) },
-                    { to: '/tenant/profile/notifications', icon: BellRing, label: t('profile.notifications', { defaultValue: 'Notification' }) },
-                    { to: '/tenant/profile/report-issue', icon: Bug, label: t('profile.reportIssue', { defaultValue: 'Report Issue' }) },
+                    // OWNER's only unlocked route besides My Earnings is
+                    // /tenant/profile itself (TenantApp.tsx's redirect
+                    // guard) -- Password/Preferences/Notification/Report
+                    // Issue would just bounce an owner straight back to My
+                    // Earnings, so they're skipped for that role rather than
+                    // shown as dead menu items.
+                    ...(user?.role === 'OWNER' ? [] : [
+                      { to: '/tenant/profile/password', icon: KeyRound, label: t('profile.changePassword', { defaultValue: 'Change Password' }) },
+                      { to: '/tenant/profile/preferences', icon: SlidersHorizontal, label: t('profile.preferences', { defaultValue: 'Preferences' }) },
+                      { to: '/tenant/profile/notifications', icon: BellRing, label: t('profile.notifications', { defaultValue: 'Notification' }) },
+                      { to: '/tenant/profile/report-issue', icon: Bug, label: t('profile.reportIssue', { defaultValue: 'Report Issue' }) },
+                    ]),
                     // Roles & Permissions deliberately not duplicated here --
                     // it's an admin function (managing everyone's access),
                     // not a personal setting, so it stays discoverable only

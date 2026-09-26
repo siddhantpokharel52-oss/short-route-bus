@@ -433,7 +433,7 @@ class OwnerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Owner
         fields = [
-            "id", "name", "phone", "email", "user_id", "temp_password",
+            "id", "name", "phone", "email", "bank_account_no", "user_id", "temp_password",
             "is_active", "is_activated", "created_at", "vehicle_count",
         ]
         # temp_password is only ever set by create-login and cleared by

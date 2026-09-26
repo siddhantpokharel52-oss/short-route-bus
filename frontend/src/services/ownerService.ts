@@ -5,6 +5,7 @@ export interface Owner {
   name: string
   phone: string
   email: string
+  bank_account_no: string
   user_id: string | null
   temp_password: string
   is_active: boolean
@@ -76,6 +77,16 @@ const ownerService = {
 
   delete: async (id: string): Promise<void> => {
     await apiClient.delete(`/fleet/owners/${id}/`)
+  },
+
+  getMyProfile: async (): Promise<Owner> => {
+    const { data } = await apiClient.get<ApiResponse<Owner>>('/fleet/owners/me/')
+    return data.data
+  },
+
+  updateMyProfile: async (payload: Partial<Pick<Owner, 'name' | 'phone' | 'email' | 'bank_account_no'>>): Promise<Owner> => {
+    const { data } = await apiClient.patch<ApiResponse<Owner>>('/fleet/owners/me/', payload)
+    return data.data
   },
 
   dashboardSummary: async (): Promise<OwnerDashboardSummary> => {

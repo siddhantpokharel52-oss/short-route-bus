@@ -27,6 +27,7 @@ interface OwnerForm {
   name: string
   phone: string
   email: string
+  bank_account_no: string
 }
 
 /**
@@ -120,13 +121,13 @@ export default function OwnersPage() {
 
   const openCreate = () => {
     setEditTarget(null)
-    reset({ name: '', phone: '', email: '' })
+    reset({ name: '', phone: '', email: '', bank_account_no: '' })
     setShowForm(true)
   }
 
   const openEdit = (owner: Owner) => {
     setEditTarget(owner)
-    reset({ name: owner.name, phone: owner.phone, email: owner.email })
+    reset({ name: owner.name, phone: owner.phone, email: owner.email, bank_account_no: owner.bank_account_no ?? '' })
     setShowForm(true)
   }
 
@@ -264,6 +265,7 @@ export default function OwnersPage() {
               } />
               <DetailRow label={t('owners.phone', { defaultValue: 'Phone' })} value={viewTarget.phone} />
               <DetailRow label={t('owners.email', { defaultValue: 'Email' })} value={viewTarget.email} />
+              <DetailRow label={t('owners.bankAccountNo', { defaultValue: 'Bank Account No.' })} value={viewTarget.bank_account_no} />
               <DetailRow label={t('owners.buses', { defaultValue: 'Buses' })} value={<Badge variant="info">{viewTarget.vehicle_count}</Badge>} />
             </div>
             <div className="border-t pt-4">
@@ -300,6 +302,11 @@ export default function OwnersPage() {
               required: 'Required',
               validate: (v) => isValidEmail(v) || EMAIL_VALIDATION_MESSAGE,
             })}
+          />
+          <Input
+            label={t('owners.bankAccountNo', { defaultValue: 'Bank Account No.' })}
+            placeholder="e.g. 0123456789012"
+            {...register('bank_account_no')}
           />
           {editTarget && (
             <div className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">

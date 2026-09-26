@@ -16,7 +16,7 @@ from .serializers import (
     GroupCompositionRuleSerializer, GroupDriverAssignmentSerializer,
     GroupConductorAssignmentSerializer, OwnerSerializer,
 )
-from backend.apps.users.permissions import IsFleetRole, IsOperationsRole, CanViewVehicles
+from backend.apps.users.permissions import IsFleetRole, IsOperationsRole, CanViewVehicles, IsOwner
 
 
 def api_response(data=None, message="Success", success=True, errors=None, status_code=200):
@@ -147,8 +147,40 @@ class OwnerViewSet(ModelViewSet):
     search_fields = ["name", "phone", "email"]
     ordering_fields = ["name", "created_at"]
 
+    def get_permissions(self):
+        # "me" is the owner viewing/editing their own profile -- IsFleetRole
+        # would 403 an OWNER outright, same class of gap TicketViewSet's
+        # create() override exists for.
+        if self.action == "me":
+            return [IsOwner()]
+        return super().get_permissions()
+
     def get_queryset(self):
         return Owner.objects.all()
+
+    @action(detail=False, methods=["get", "patch"], url_path="me")
+    def me(self, request):
+        """
+        GET/PATCH /fleet/owners/me/ -- the Team Implementation Guide's "when
+        the Owner logs in, their profile shows Name, Email, Phone, Bank
+        Account No." ask. Deliberately its own action rather than reusing
+        ChangeProfilePage's existing /operator/company/ endpoint -- that one
+        is IsOperationsRole-gated tenant/company identity, not this owner's
+        own contact record, and an OWNER has no access to it at all.
+        """
+        try:
+            owner = Owner.objects.get(user_id=request.user.id)
+        except Owner.DoesNotExist:
+            return api_response(
+                success=False, message="No owner profile is linked to this account.",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        if request.method == "GET":
+            return api_response(data=OwnerSerializer(owner).data)
+        serializer = OwnerSerializer(owner, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return api_response(data=serializer.data, message="Profile updated.")
 
     @action(detail=True, methods=["post"], url_path="create-login")
     def create_login(self, request, pk=None):

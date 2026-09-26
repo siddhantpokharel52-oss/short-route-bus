@@ -2,12 +2,95 @@ import { useState, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Save, Building2, Upload, ImageIcon, X } from 'lucide-react'
+import { Save, Building2, UserCog, Upload, ImageIcon, X } from 'lucide-react'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
 import apiClient from '@services/api'
 import toast from 'react-hot-toast'
 import { isValidEmail, EMAIL_VALIDATION_MESSAGE } from '@utils/email'
+import { useAuthStore } from '@store/authStore'
+import ownerService, { Owner } from '@services/ownerService'
+import { sanitizePhoneDigits, isValidPhone, PHONE_VALIDATION_MESSAGE } from '@utils/phone'
+
+interface OwnerProfileForm {
+  name: string
+  phone: string
+  email: string
+  bank_account_no: string
+}
+
+/**
+ * The OWNER role's version of "Change Profile" -- Team Implementation
+ * Guide ask: name, email, phone, and bank account no. An OWNER has no
+ * access to /operator/company/ (IsOperationsRole-gated tenant/company
+ * data, not their own record), so this is a genuinely different form,
+ * not a variant of the one below -- backed by Owner.objects, not
+ * BusCompany.
+ */
+function OwnerProfileForm() {
+  const { t } = useTranslation('tenant')
+  const qc = useQueryClient()
+
+  const { data: profile, isLoading } = useQuery({
+    queryKey: ['owner-my-profile'],
+    queryFn: () => ownerService.getMyProfile(),
+  })
+
+  const { register, handleSubmit, formState: { errors } } = useForm<OwnerProfileForm>({ values: profile as Owner })
+
+  const mutation = useMutation({
+    mutationFn: (payload: OwnerProfileForm) => ownerService.updateMyProfile(payload),
+    onSuccess: () => {
+      toast.success(t('profile.ownerProfileUpdated', { defaultValue: 'Profile updated.' }))
+      qc.invalidateQueries({ queryKey: ['owner-my-profile'] })
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || t('profile.ownerProfileUpdateFailed', { defaultValue: 'Failed to update profile.' }))
+    },
+  })
+
+  return (
+    <div className="card mx-auto max-w-md">
+      <h2 className="mb-5 flex items-center gap-2 font-semibold">
+        <UserCog className="h-5 w-5 text-primary-600" />
+        {t('profile.yourDetails', { defaultValue: 'Your Details' })}
+      </h2>
+      {isLoading ? (
+        <p className="text-sm text-gray-400">…</p>
+      ) : (
+        <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
+          <Input label={t('owners.name', { defaultValue: 'Name' })} required error={errors.name?.message} {...register('name', { required: 'Required' })} />
+          <Input
+            label={t('owners.phone', { defaultValue: 'Phone' })}
+            maxLength={10}
+            inputMode="numeric"
+            error={errors.phone?.message}
+            {...register('phone', {
+              validate: (v) => !v || isValidPhone(v) || PHONE_VALIDATION_MESSAGE,
+              onChange: (e) => { e.target.value = sanitizePhoneDigits(e.target.value) },
+            })}
+          />
+          <Input
+            label={t('owners.email', { defaultValue: 'Email' })}
+            type="email"
+            error={errors.email?.message}
+            {...register('email', {
+              validate: (v) => !v || isValidEmail(v) || EMAIL_VALIDATION_MESSAGE,
+            })}
+          />
+          <Input
+            label={t('owners.bankAccountNo', { defaultValue: 'Bank Account No.' })}
+            placeholder="e.g. 0123456789012"
+            {...register('bank_account_no')}
+          />
+          <Button type="submit" leftIcon={<Save className="h-4 w-4" />} loading={mutation.isPending}>
+            {t('settings.save')}
+          </Button>
+        </form>
+      )}
+    </div>
+  )
+}
 
 // Extract a browser-accessible path from whatever the backend returns.
 // Backend DRF ImageField can return either an absolute URL (with Django hostname)
@@ -36,10 +119,27 @@ interface CompanyForm {
  * identity data (name, logo, contact info) -- there's no separate
  * per-person profile concept in this app (no photo/bio on User), so this
  * is what "my profile" means for a tenant-portal user today.
+ *
+ * OWNER is the one exception: an Owner isn't tenant staff and has no
+ * access to /operator/company/ at all (IsOperationsRole-gated), so their
+ * "Change Profile" shows their own Owner record (name/email/phone/bank
+ * account no.) instead -- see OwnerProfileForm above.
  */
 export default function ChangeProfilePage() {
   const { t } = useTranslation('tenant')
   const qc = useQueryClient()
+  const { user } = useAuthStore()
+
+  if (user?.role === 'OWNER') {
+    return (
+      <div className="space-y-6">
+        <div className="page-header">
+          <h1 className="page-title">{t('profile.changeProfile', { defaultValue: 'Change Profile' })}</h1>
+        </div>
+        <OwnerProfileForm />
+      </div>
+    )
+  }
 
   const logoInputRef = useRef<HTMLInputElement>(null)
   const [logoFile, setLogoFile] = useState<File | null>(null)

@@ -38,17 +38,19 @@ export default function TenantApp() {
   const location = useLocation()
 
   // Owner Dashboard (Team Implementation Guide §3.7): an owner's only real
-  // page is My Earnings. The nav already hides every other link, and the
-  // underlying APIs already reject an owner's requests, but a typed or
-  // bookmarked URL could still land here and render an empty, broken-looking
-  // page shell with nothing to show. Redirect away before that happens,
-  // rather than let a page render that the owner was never meant to reach.
+  // page is My Earnings, plus their own Change Profile (name/email/phone/
+  // bank account no. -- ChangeProfilePage branches on role for this one).
+  // The nav already hides every other link, and the underlying APIs already
+  // reject an owner's requests, but a typed or bookmarked URL could still
+  // land here and render an empty, broken-looking page shell with nothing
+  // to show. Redirect away before that happens, rather than let a page
+  // render that the owner was never meant to reach.
   if (user?.role === 'OWNER') {
     if (user.mustChangePassword) {
       if (!location.pathname.endsWith('/set-new-password')) {
         return <Navigate to="set-new-password" replace />
       }
-    } else if (!location.pathname.endsWith('/my-earnings')) {
+    } else if (!location.pathname.endsWith('/my-earnings') && !location.pathname.endsWith('/profile')) {
       return <Navigate to="my-earnings" replace />
     }
   }
