@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, AlertCircle, Bus, Hash, Gauge, Route, ShieldCheck, Eye, Pencil, Trash2, Info } from 'lucide-react'
+import { Plus, Search, AlertCircle, Bus, Hash, Gauge, Route, ShieldCheck, Eye, Pencil, Trash2, Info, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
@@ -15,6 +15,7 @@ import ownerService from '@services/ownerService'
 import apiClient from '@services/api'
 import toast from 'react-hot-toast'
 import { useForm, Controller } from 'react-hook-form'
+import { cn } from '@utils/cn'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface VehicleForm {
@@ -155,12 +156,43 @@ export default function FleetPage() {
     staleTime: 5 * 60 * 1000,
   })
 
-  const { register, handleSubmit, reset, control, setError, formState: { errors } } = useForm<VehicleForm>({
+  const { register, handleSubmit, reset, control, setError, trigger, formState: { errors } } = useForm<VehicleForm>({
     defaultValues: {
       vehicle_type: 'BUS',
       fuel_type: 'DIESEL',
     },
   })
+
+  // Add Vehicle wizard: one section per step, same shape as Drivers'/
+  // Collectors' Add wizard -- nothing is saved server-side until the final
+  // step's real submit; currentStep/maxStepReached are purely client-side
+  // navigation state.
+  const [currentStep, setCurrentStep] = useState(0)
+  const [maxStepReached, setMaxStepReached] = useState(0)
+  const STEPS: { label: string; icon: React.ElementType; fields: (keyof VehicleForm)[] }[] = [
+    { label: t('fleet.sections.basicInfo'), icon: Bus, fields: ['category', 'registration_no', 'vehicle_type', 'make', 'model', 'year'] },
+    { label: t('fleet.sections.vehicleId'), icon: Hash, fields: ['chassis_no'] },
+    { label: t('fleet.sections.capacitySpecs'), icon: Gauge, fields: ['capacity_seated', 'fuel_type'] },
+    { label: t('fleet.sections.operational'), icon: Route, fields: [] },
+    { label: t('fleet.sections.insurance'), icon: ShieldCheck, fields: [] },
+  ]
+  const isLastStep = currentStep === STEPS.length - 1
+
+  const resetWizard = () => { setCurrentStep(0); setMaxStepReached(0) }
+
+  const goToStep = (index: number) => {
+    if (index <= maxStepReached) setCurrentStep(index)
+  }
+
+  const handleNext = async () => {
+    const valid = await trigger(STEPS[currentStep].fields)
+    if (!valid) return
+    const next = Math.min(currentStep + 1, STEPS.length - 1)
+    setCurrentStep(next)
+    setMaxStepReached((m) => Math.max(m, next))
+  }
+
+  const handleBack = () => setCurrentStep((s) => Math.max(s - 1, 0))
 
   const createMutation = useMutation({
     mutationFn: (form: VehicleForm) => {
@@ -191,6 +223,7 @@ export default function FleetPage() {
       toast.success('Vehicle added successfully!')
       setShowCreate(false)
       reset()
+      resetWizard()
       qc.invalidateQueries({ queryKey: ['vehicles'] })
     },
     onError: (err: unknown) => {
@@ -685,56 +718,101 @@ export default function FleetPage() {
       {/* ── Add Vehicle Modal ─────────────────────────────────────────────── */}
       <Modal
         open={showCreate}
-        onClose={() => { setShowCreate(false); reset() }}
+        onClose={() => { setShowCreate(false); reset(); resetWizard() }}
         title={t('fleet.addVehicle')}
-        size="lg"
+        size="full"
       >
-        <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} noValidate className="space-y-6 p-6">
+        <form
+          onSubmit={handleSubmit((d) => createMutation.mutate(d))}
+          noValidate
+          onKeyDown={(e) => {
+            // Same fix as Drivers'/Collectors' Add wizard: never let Enter
+            // fall through to the browser's native "submit via GET to the
+            // current URL" fallback, which would reload the page and
+            // silently discard every step's data.
+            if (e.key !== 'Enter' || (e.target as HTMLElement).tagName === 'TEXTAREA') return
+            e.preventDefault()
+            if (isLastStep) {
+              e.currentTarget.requestSubmit()
+            } else {
+              handleNext()
+            }
+          }}
+          className="space-y-6 p-6"
+        >
+          {/* ── Step indicator ──────────────────────────────────────────────── */}
+          <div className="flex items-center overflow-x-auto pb-2">
+            {STEPS.map((step, index) => {
+              const isDone = index < maxStepReached
+              const isCurrent = index === currentStep
+              const isUnlocked = index <= maxStepReached
+              const StepIcon = step.icon
+              return (
+                <div key={step.label} className="flex items-center">
+                  <button
+                    type="button"
+                    disabled={!isUnlocked}
+                    onClick={() => goToStep(index)}
+                    className={cn(
+                      'flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                      isCurrent && 'bg-primary-600 text-white',
+                      !isCurrent && isDone && 'bg-primary-50 text-primary-700 hover:bg-primary-100 cursor-pointer',
+                      !isCurrent && !isDone && isUnlocked && 'bg-gray-100 text-gray-600 hover:bg-gray-200 cursor-pointer',
+                      !isUnlocked && 'bg-gray-50 text-gray-300 cursor-not-allowed',
+                    )}
+                  >
+                    {isDone
+                      ? <Check className="h-3.5 w-3.5" />
+                      : <StepIcon className="h-3.5 w-3.5" />}
+                    {step.label}
+                  </button>
+                  {index < STEPS.length - 1 && (
+                    <div className={cn('h-px w-6 shrink-0', isDone ? 'bg-primary-300' : 'bg-gray-200')} />
+                  )}
+                </div>
+              )
+            })}
+          </div>
 
           {/* ── Basic Information ──────────────────────────────────────────── */}
+          {currentStep === 0 && <>
           <Section icon={Bus} title={t('fleet.sections.basicInfo')} />
           <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2">
             <p className="text-xs text-blue-600">{t('fleet.busIdNote')}</p>
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <Controller
-                name="category"
-                control={control}
-                rules={{ required: 'Category is required' }}
-                render={({ field }) => (
-                  <SelectField label={t('fleet.labels.category', { defaultValue: 'Category' })} required error={errors.category?.message} {...field}>
-                    <option value="">— Select category —</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>{c.code} — {c.name_en}</option>
-                    ))}
-                  </SelectField>
-                )}
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <Controller
-                name="owner"
-                control={control}
-                render={({ field }) => (
-                  <SelectField label={t('fleet.labels.owner', { defaultValue: 'Owner' })} {...field}>
-                    <option value="">— No owner —</option>
-                    {owners.map((o) => (
-                      <option key={o.id} value={o.id}>{ownerOptionLabel(o, t)}</option>
-                    ))}
-                  </SelectField>
-                )}
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <Input
-                label={t('fleet.labels.busRegistrationNo')}
-                required
-                placeholder="e.g. Ba 1 Kha 2345"
-                error={errors.registration_no?.message}
-                {...register('registration_no', { required: 'Registration number is required' })}
-              />
-            </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Controller
+              name="category"
+              control={control}
+              rules={{ required: 'Category is required' }}
+              render={({ field }) => (
+                <SelectField label={t('fleet.labels.category', { defaultValue: 'Category' })} required error={errors.category?.message} {...field}>
+                  <option value="">— Select category —</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.code} — {c.name_en}</option>
+                  ))}
+                </SelectField>
+              )}
+            />
+            <Controller
+              name="owner"
+              control={control}
+              render={({ field }) => (
+                <SelectField label={t('fleet.labels.owner', { defaultValue: 'Owner' })} {...field}>
+                  <option value="">— No owner —</option>
+                  {owners.map((o) => (
+                    <option key={o.id} value={o.id}>{ownerOptionLabel(o, t)}</option>
+                  ))}
+                </SelectField>
+              )}
+            />
+            <Input
+              label={t('fleet.labels.busRegistrationNo')}
+              required
+              placeholder="e.g. Ba 1 Kha 2345"
+              error={errors.registration_no?.message}
+              {...register('registration_no', { required: 'Registration number is required' })}
+            />
             <Controller
               name="vehicle_type"
               control={control}
@@ -779,8 +857,10 @@ export default function FleetPage() {
               {...register('color')}
             />
           </div>
+          </>}
 
           {/* ── Vehicle Identification ─────────────────────────────────────── */}
+          {currentStep === 1 && <>
           <Section icon={Hash} title={t('fleet.sections.vehicleId')} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input
@@ -796,10 +876,12 @@ export default function FleetPage() {
               {...register('engine_no')}
             />
           </div>
+          </>}
 
           {/* ── Capacity & Specifications ──────────────────────────────────── */}
+          {currentStep === 2 && <>
           <Section icon={Gauge} title={t('fleet.sections.capacitySpecs')} />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Input
               label={t('fleet.labels.seatingCapacity')}
               type="number"
@@ -838,8 +920,10 @@ export default function FleetPage() {
               {...register('engine_capacity_cc')}
             />
           </div>
+          </>}
 
           {/* ── Operational Information ────────────────────────────────────── */}
+          {currentStep === 3 && <>
           <Section icon={Route} title={t('fleet.sections.operational')} />
           <SelectField label={t('fleet.labels.routeAssigned')} {...register('assigned_route_id')}>
             <option value="">{t('fleet.notAssigned')}</option>
@@ -849,8 +933,10 @@ export default function FleetPage() {
               </option>
             ))}
           </SelectField>
+          </>}
 
           {/* ── Insurance & Compliance ─────────────────────────────────────── */}
+          {currentStep === 4 && <>
           <Section icon={ShieldCheck} title={t('fleet.sections.insurance')} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input
@@ -886,19 +972,35 @@ export default function FleetPage() {
               )}
             />
           </div>
+          </>}
 
           {/* ── Actions ───────────────────────────────────────────────────── */}
-          <div className="flex justify-end gap-3 border-t pt-4">
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() => { setShowCreate(false); reset() }}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button type="submit" loading={createMutation.isPending} leftIcon={<Plus className="h-4 w-4" />}>
-              {t('fleet.addVehicle')}
-            </Button>
+          <div className="flex justify-between gap-3 border-t pt-4">
+            <div>
+              {currentStep > 0 && (
+                <Button variant="secondary" type="button" leftIcon={<ChevronLeft className="h-4 w-4" />} onClick={handleBack}>
+                  {t('common.back', { defaultValue: 'Back' })}
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => { setShowCreate(false); reset(); resetWizard() }}
+              >
+                {t('common.cancel')}
+              </Button>
+              {isLastStep ? (
+                <Button type="submit" loading={createMutation.isPending} leftIcon={<Plus className="h-4 w-4" />}>
+                  {t('fleet.addVehicle')}
+                </Button>
+              ) : (
+                <Button type="button" rightIcon={<ChevronRight className="h-4 w-4" />} onClick={handleNext}>
+                  {t('common.next', { defaultValue: 'Next' })}
+                </Button>
+              )}
+            </div>
           </div>
         </form>
       </Modal>
