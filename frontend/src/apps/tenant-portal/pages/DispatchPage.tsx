@@ -36,6 +36,7 @@ import { DateDisplay } from '@components/shared/DateDisplay'
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface RouteOption { id: string; route_code: string; name_en: string }
 interface DriverOption { id: string; full_name: string; employee_id: string }
+interface ConductorOption { id: string; full_name: string; employee_id: string }
 
 // ─── Form types ───────────────────────────────────────────────────────────────
 interface AssignForm {
@@ -43,6 +44,7 @@ interface AssignForm {
   route_id: string
   vehicle_id: string
   driver_id: string
+  conductor_id: string
   shift_start: string
   shift_end: string
 }
@@ -153,6 +155,7 @@ export default function DispatchPage() {
   const [editRouteId, setEditRouteId] = useState('')
   const [editVehicleId, setEditVehicleId] = useState('')
   const [editDriverId, setEditDriverId] = useState('')
+  const [editConductorId, setEditConductorId] = useState('')
   const [editShiftStart, setEditShiftStart] = useState('05:00')
   const [editShiftEnd, setEditShiftEnd] = useState('21:00')
   const [editNotes, setEditNotes] = useState('')
@@ -188,15 +191,35 @@ export default function DispatchPage() {
     },
   })
 
-  const { data: driversRaw } = useQuery({
+  const { data: drivers = [] } = useQuery<DriverOption[]>({
     queryKey: ['drivers-dispatch'],
     queryFn: async () => {
-      const { data } = await apiClient.get<ApiResponse<{ results?: DriverOption[] } | DriverOption[]>>('/operator/drivers/')
-      if (Array.isArray(data.data)) return data.data
-      return (data.data as { results?: DriverOption[] }).results ?? []
+      const { data } = await apiClient.get<ApiResponse<{ results?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>>>(
+        '/operator/drivers/', { params: { page_size: 500 } }
+      )
+      const list = Array.isArray(data.data) ? data.data : (data.data as { results?: Array<Record<string, unknown>> }).results ?? []
+      return list.map((d) => ({
+        id: d.id as string,
+        full_name: (d.full_name_en as string) ?? '',
+        employee_id: d.employee_id as string,
+      }))
     },
   })
-  const drivers: DriverOption[] = (driversRaw ?? []) as DriverOption[]
+
+  const { data: conductors = [] } = useQuery<ConductorOption[]>({
+    queryKey: ['conductors-dispatch'],
+    queryFn: async () => {
+      const { data } = await apiClient.get<ApiResponse<{ results?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>>>(
+        '/operator/conductors/', { params: { page_size: 500 } }
+      )
+      const list = Array.isArray(data.data) ? data.data : (data.data as { results?: Array<Record<string, unknown>> }).results ?? []
+      return list.map((c) => ({
+        id: c.id as string,
+        full_name: (c.full_name_en as string) ?? '',
+        employee_id: c.employee_id as string,
+      }))
+    },
+  })
 
   // ── Assign form ────────────────────────────────────────────────────────────
   const assignForm = useForm<AssignForm>({
@@ -205,6 +228,7 @@ export default function DispatchPage() {
       route_id: '',
       vehicle_id: '',
       driver_id: '',
+      conductor_id: '',
       shift_start: '05:00',
       shift_end: '21:00',
     },
@@ -216,12 +240,13 @@ export default function DispatchPage() {
       route_id: d.route_id,
       vehicle_id: d.vehicle_id,
       driver_id: d.driver_id || null,
+      conductor_id: d.conductor_id || null,
       shift_start: d.shift_start,
       shift_end: d.shift_end,
     }),
     onSuccess: () => {
       toast.success('Bus assigned to route!')
-      assignForm.reset({ date: today, route_id: '', vehicle_id: '', driver_id: '', shift_start: '05:00', shift_end: '21:00' })
+      assignForm.reset({ date: today, route_id: '', vehicle_id: '', driver_id: '', conductor_id: '', shift_start: '05:00', shift_end: '21:00' })
       qc.invalidateQueries({ queryKey: ['today-allocations'] })
       setActiveTab('allocations')
     },
@@ -322,6 +347,7 @@ export default function DispatchPage() {
     setEditRouteId(editTarget.route_id)
     setEditVehicleId(editTarget.vehicle_id)
     setEditDriverId(editTarget.driver_id ?? '')
+    setEditConductorId(editTarget.conductor_id ?? '')
     setEditShiftStart(editTarget.shift_start.slice(0, 5))
     setEditShiftEnd(editTarget.shift_end.slice(0, 5))
     setEditNotes(editTarget.notes ?? '')
@@ -434,7 +460,7 @@ export default function DispatchPage() {
               <table className="min-w-full divide-y divide-gray-100 dark:divide-gray-700">
                 <thead className="bg-gray-50 dark:bg-gray-750">
                   <tr>
-                    {[t('dispatch.columns.bus'), t('dispatch.columns.route'), t('dispatch.columns.driver'), t('dispatch.columns.shift'), t('dispatch.columns.status'), t('dispatch.columns.actions')].map((h) => (
+                    {[t('dispatch.columns.bus'), t('dispatch.columns.route'), t('dispatch.columns.driver'), t('dispatch.columns.conductor', { defaultValue: 'Conductor' }), t('dispatch.columns.shift'), t('dispatch.columns.status'), t('dispatch.columns.actions')].map((h) => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
                         {h}
                       </th>
@@ -459,6 +485,9 @@ export default function DispatchPage() {
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-400">
                         {alloc.driver_name || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-400">
+                        {alloc.conductor_name || '—'}
                       </td>
                       <td className="px-4 py-3 text-xs font-mono text-gray-600 dark:text-gray-400">
                         {formatShiftTime(alloc.shift_start, language)} – {formatShiftTime(alloc.shift_end, language)}
@@ -788,6 +817,20 @@ export default function DispatchPage() {
                 </select>
               </div>
               <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  {t('dispatch.form.conductor', { defaultValue: 'Conductor' })}
+                </label>
+                <select
+                  {...assignForm.register('conductor_id')}
+                  className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="">{t('dispatch.form.selectConductor', { defaultValue: 'Select conductor' })}</option>
+                  {conductors.map((c) => (
+                    <option key={c.id} value={c.id}>{c.full_name} ({c.employee_id})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <Controller
                   name="shift_start"
                   control={assignForm.control}
@@ -1002,6 +1045,7 @@ export default function DispatchPage() {
                   { label: t('dispatch.columns.bus'), value: viewTarget.vehicle_registration || '—' },
                   { label: t('dispatch.columns.route'), value: viewTarget.route_name || '—' },
                   { label: t('dispatch.columns.driver'), value: viewTarget.driver_name || '—' },
+                  { label: t('dispatch.columns.conductor', { defaultValue: 'Conductor' }), value: viewTarget.conductor_name || '—' },
                   { label: t('dispatch.columns.shift'), value: `${formatShiftTime(viewTarget.shift_start, language)} – ${formatShiftTime(viewTarget.shift_end, language)}` },
                 ].map(({ label, value }) => (
                   <div key={label} className="rounded-xl bg-gray-50 dark:bg-gray-700 px-4 py-3">
@@ -1106,6 +1150,21 @@ export default function DispatchPage() {
                   </select>
                 </div>
                 <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    {t('dispatch.form.conductor', { defaultValue: 'Conductor' })}
+                  </label>
+                  <select
+                    value={editConductorId}
+                    onChange={(e) => setEditConductorId(e.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  >
+                    <option value="">{t('dispatch.form.noConductor', { defaultValue: 'No conductor' })}</option>
+                    {conductors.map((c) => (
+                      <option key={c.id} value={c.id}>{c.full_name} ({c.employee_id})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">{t('dispatch.form.status')}</label>
                   <select
                     value={editStatus}
@@ -1164,6 +1223,7 @@ export default function DispatchPage() {
                       route_id: editRouteId,
                       vehicle_id: editVehicleId,
                       driver_id: editDriverId || null,
+                      conductor_id: editConductorId || null,
                       shift_start: editShiftStart,
                       shift_end: editShiftEnd,
                       notes: editNotes,

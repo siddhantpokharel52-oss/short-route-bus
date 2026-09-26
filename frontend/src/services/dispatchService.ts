@@ -16,6 +16,7 @@ export interface DailyAllocation {
   driver_id: string | null
   driver_name: string | null
   conductor_id: string | null
+  conductor_name: string | null
   shift_start: string
   shift_end: string
   status: 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'

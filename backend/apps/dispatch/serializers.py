@@ -6,17 +6,21 @@ class DailyAllocationSerializer(serializers.ModelSerializer):
     route_name = serializers.SerializerMethodField()
     vehicle_registration = serializers.SerializerMethodField()
     driver_name = serializers.SerializerMethodField()
+    conductor_name = serializers.SerializerMethodField()
 
     class Meta:
         model = DailyAllocation
         fields = [
             "id", "date", "route_id", "route_name",
             "vehicle_id", "vehicle_registration",
-            "driver_id", "driver_name", "conductor_id",
+            "driver_id", "driver_name", "conductor_id", "conductor_name",
             "shift_start", "shift_end", "status",
             "notes", "created_at", "created_by_id",
         ]
-        read_only_fields = ["id", "created_at", "route_name", "vehicle_registration", "driver_name"]
+        read_only_fields = [
+            "id", "created_at", "route_name", "vehicle_registration",
+            "driver_name", "conductor_name",
+        ]
 
     def get_route_name(self, obj):
         try:
@@ -42,9 +46,19 @@ class DailyAllocationSerializer(serializers.ModelSerializer):
         try:
             from backend.apps.staff.models import Driver
             d = Driver.objects.get(pk=obj.driver_id)
-            return d.full_name
+            return d.full_name_en
         except Exception:
             return str(obj.driver_id)
+
+    def get_conductor_name(self, obj):
+        if not obj.conductor_id:
+            return None
+        try:
+            from backend.apps.staff.models import Conductor
+            c = Conductor.objects.get(pk=obj.conductor_id)
+            return c.full_name_en
+        except Exception:
+            return str(obj.conductor_id)
 
 
 class DispatchLogSerializer(serializers.ModelSerializer):
