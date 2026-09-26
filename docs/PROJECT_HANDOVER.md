@@ -8,7 +8,7 @@ Route & Group Rotation QA fix series, the Pokhara tenant QA fix series, and
 Owner accounts / login security & form UX) plus current production
 deployment status.
 
-**Last updated:** 2026-09-25
+**Last updated:** 2026-09-26
 
 ---
 
@@ -22,7 +22,7 @@ deployment status.
 | **Route & Group Rotation QA report** (§5) | All 94 issues triaged; every issue that was a real, scopeable bug is fixed and verified live (Critical 5/5, High 21/24, Medium/Low 29/65). The rest (39 issues) are explicitly "Clarify"-status or large standalone features needing a product decision first — not oversights. |
 | **Pokhara tenant QA report** (§6) | All 11 issues fixed and verified live against a real second tenant. Headline finding: Route/Stop weren't filtered by tenant assignment at all — a cross-tenant data leak that had already **corrupted** a tenant's own roster data (real `Duty` rows written against another tenant's routes), not just a display bug. Also closed: two stuck-submit-button/silent-400 form bugs, a genuinely missing "create a login for this conductor/driver" flow (nothing in the product ever built it), a dead-looking-but-actually-guarded button, mislabeled nav links, unseeded tenant branding, and a stray-waypoint map bug. |
 | **Owner accounts / login security & form UX** (§7) | Owner `create-login` + forced temp-password change flow built, verified live end-to-end, and committed. Also fixed in the same pass: a broken `changePassword` endpoint call (wrong URL/field name), admin-password fields rendering in plaintext (`type="text"`), and a password-strength mismatch between frontend (8 chars) and backend (10 chars) validation. |
-| **Production deployment** (§8) | Everything through commit `ef413128` is confirmed live in production as of 2026-09-21. Everything since — §4.5/§4.6's fixes (`c3374338`), §3.1.1's shift-tracking removal (`57f0efbe`, one new migration), §6's Pokhara fixes (`1997e392`, `6e230f3b`, `57994545`), and §7's owner-accounts work — is committed and pushed but **not yet confirmed deployed**; deploy commands are ready, see §8. |
+| **Production deployment** (§8) | Everything through commit `ef413128` is confirmed live on the original server (172.19.0.246) as of 2026-09-21. Everything since — §4.5/§4.6's fixes, §3.1.1's shift-tracking removal, §6's Pokhara fixes, §7's owner-accounts work, and a long stretch of undocumented feature work culminating in commit `236b6b2c` — is pushed to `main` but **not deployed to 172.19.0.246**. A **second server (36.253.137.147)** was stood up from scratch on 2026-09-26 with everything through `236b6b2c` and is fully built and verified working internally, but is **not yet reachable from the public internet** — blocked on an ISP-side port filter, see §8.1. The original server's database was also found to have **zero tenants ever provisioned** despite being labeled production — see §8.1. |
 
 ---
 
@@ -698,13 +698,81 @@ afterward. `npx tsc --noEmit` and `python manage.py check` clean. Migration
 
 ## 8. Production deployment — operational notes
 
-**Server access:** SSH `citybus@172.19.0.246`. Production uses
+**There are now two servers.** Original: SSH `citybus@172.19.0.246`. New
+(stood up 2026-09-26): SSH `ubuntu@36.253.137.147`. Both use
 `docker-compose.prod.yml` **only** — never combine it with the base
 `docker-compose.yml` (different project name, creates a stray parallel
 stack with empty volumes). Repo lives at `~/short-route-bus`, but the
 compose files themselves are one level down at `~/short-route-bus/docker/`
 (run `cd ~/short-route-bus/docker` first — same gotcha as the `.env` file
 below).
+
+### 8.1 New server (36.253.137.147) — built and verified, blocked on ISP port filtering (2026-09-26)
+
+**Why a second server:** the user was handed a new, empty box
+(`ubuntu@36.253.137.147`) and asked to deploy there. Before copying
+anything over, the original server's database was checked directly
+(`psql ... -c "SELECT schema_name, name FROM tenants_tenant;"`) and came
+back **zero rows** — despite being referred to as "prod" throughout this
+project, 172.19.0.246 has **never had a real tenant provisioned on it**.
+This is a load-bearing finding for anyone continuing this deployment: there
+was no real production data to lose or migrate, only the base
+`public`-schema migrations and an empty app.
+
+**What was actually done, in order:**
+1. Dumped 172.19.0.246's `kvbms` database (`pg_dump -Fc`, ~200KB — confirms
+   it really is just the empty public schema, no tenant schemas), archived
+   its media volume and its `/etc/letsencrypt` cert directory, and copied
+   its `docker/.env` — all four moved to the new server via the user's own
+   laptop as a relay (`scp` old→laptop→new).
+2. Installed Docker Engine + Compose plugin from the official apt repo on
+   the new Ubuntu 24.04 box, cloned the repo, placed the copied `.env` at
+   `docker/.env`, restored the DB dump and media volume, extracted the
+   copied cert to `/etc/letsencrypt`.
+3. Built and launched every service (`db`, `redis`, `django`, `fastapi`,
+   `celery`, `celery-beat`, `frontend`, `nginx` — in that order, nginx last
+   so it doesn't start before certs exist). `django`'s own startup
+   `migrate` ran clean, applying every migration through commit `236b6b2c`
+   (18 pending migrations, including all of this session's fleet/platform/
+   ticketing/staff/users changes) with no errors.
+4. Verified the stack actually serves correctly with
+   `curl --resolve citybus.com.np:443:36.253.137.147 https://citybus.com.np/`
+   (forces the right SNI/Host without needing DNS) → real `200 OK` from
+   nginx, correct security headers, TLS handshake against the copied cert
+   succeeded.
+
+**Current blocker — not reachable from the public internet.** Two separate
+things, both outside the server itself:
+- **DNS**: `citybus.com.np` currently resolves to `103.170.75.51` — a
+  *third* IP, neither old server nor new. Someone needs to update the A
+  records (`citybus.com.np`, `www`, `*.citybus.com.np`) at whatever
+  registrar/DNS provider manages this domain, to `36.253.137.147`.
+- **ISP port filter (the real blocker)**: the new server's public IP
+  belongs to **Ncell** (`AS38565`, confirmed via `ipinfo.io` — this is a
+  Nepali ISP connection, not a conventional cloud VPS with a security-group
+  console). `ufw` is inactive and nginx is correctly listening on
+  `0.0.0.0:80`/`:443` (confirmed via `ss -tlnp`) — but from two independent
+  external networks, port `22` (SSH) is reachable while `80` and `443` are
+  not; a `tracepath -p 443` shows packets reaching the destination's own
+  network edge (the last hop resolves as `citybus.com.np` itself) and then
+  going silent — the classic signature of an ISP-side firewall silently
+  dropping inbound web-port traffic, not a server misconfiguration. Also
+  worth flagging: `ip addr show` reports the IP as `dynamic` (DHCP-leased),
+  not confirmed static.
+- **Action needed, not code**: contact Ncell support, ask them to unblock
+  inbound TCP `80`/`443` on this connection and confirm whether the IP is
+  (or can be made) static. Nothing further can be diagnosed or fixed from
+  the server side — Docker, nginx, and the app are all confirmed correctly
+  configured and working internally.
+
+**Also note:** a large amount of feature work committed to `main` before
+this deploy attempt (Route & Group Rotation P0–P3, the NamastePay
+CB1/CB2/CB6/CB9 items, the Bus Owner Dashboard, Fares/Ticket Types moving
+to tenant-portal, the driver/conductor citizenship-photo and
+double-booking fixes, and more) is **not yet reflected elsewhere in this
+handover doc** — §§2–7 above are stale relative to the actual repo state
+as of `236b6b2c`. Treat `git log --oneline` as the source of truth for
+what's actually built until those sections get a real rewrite.
 
 **Ready to deploy, not yet confirmed live — through commit `57994545`.**
 Covers §4.5's real-device testing-pass fixes, §4.6's ticket-issuance
