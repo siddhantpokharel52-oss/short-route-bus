@@ -32,6 +32,7 @@ function OwnerProfileForm() {
   const { t } = useTranslation('tenant')
   const qc = useQueryClient()
   const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [citizenshipPhotoFile, setCitizenshipPhotoFile] = useState<File | null>(null)
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['owner-my-profile'],
@@ -41,10 +42,11 @@ function OwnerProfileForm() {
   const { register, handleSubmit, formState: { errors } } = useForm<OwnerProfileForm>({ values: profile as Owner })
 
   const mutation = useMutation({
-    mutationFn: (payload: OwnerProfileForm) => ownerService.updateMyProfile(payload, photoFile),
+    mutationFn: (payload: OwnerProfileForm) => ownerService.updateMyProfile(payload, photoFile, citizenshipPhotoFile),
     onSuccess: () => {
       toast.success(t('profile.ownerProfileUpdated', { defaultValue: 'Profile updated.' }))
       setPhotoFile(null)
+      setCitizenshipPhotoFile(null)
       qc.invalidateQueries({ queryKey: ['owner-my-profile'] })
     },
     onError: (err: any) => {
@@ -67,6 +69,18 @@ function OwnerProfileForm() {
             existingUrl={profile?.profile_photo}
             onFileChange={setPhotoFile}
           />
+          <div>
+            <PhotoUploadField
+              label={t('profile.citizenshipPhoto', { defaultValue: 'Citizenship Photo' })}
+              existingUrl={profile?.citizenship_photo}
+              onFileChange={setCitizenshipPhotoFile}
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              {t('profile.citizenshipPhotoNotice', {
+                defaultValue: 'Changing this notifies your tenant admin to review it.',
+              })}
+            </p>
+          </div>
           <Input label={t('owners.name', { defaultValue: 'Name' })} required error={errors.name?.message} {...register('name', { required: 'Required' })} />
           <Input
             label={t('owners.phone', { defaultValue: 'Phone' })}

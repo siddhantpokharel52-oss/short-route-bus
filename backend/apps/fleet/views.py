@@ -180,7 +180,27 @@ class OwnerViewSet(ModelViewSet):
         serializer = OwnerSerializer(owner, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        # Flag for the tenant admin -- only when the OWNER themselves
+        # (this action, not the admin's own Add/Edit Owner form) uploads a
+        # new citizenship photo. "citizenship_photo" only appears in
+        # request.data when a file was actually picked this request (same
+        # convention as profile_photo -- the frontend only appends it when
+        # a new file was chosen), so presence alone means "changed".
+        if "citizenship_photo" in request.data:
+            owner.citizenship_photo_flagged_at = timezone.now()
+            owner.save(update_fields=["citizenship_photo_flagged_at"])
+            serializer = OwnerSerializer(owner)
         return api_response(data=serializer.data, message="Profile updated.")
+
+    @action(detail=True, methods=["post"], url_path="acknowledge-citizenship")
+    def acknowledge_citizenship(self, request, pk=None):
+        """POST /fleet/owners/{id}/acknowledge-citizenship/ -- the tenant
+        admin dismissing the "owner changed their citizenship photo" flag
+        after reviewing it on the Owners page."""
+        owner = self.get_object()
+        owner.citizenship_photo_flagged_at = None
+        owner.save(update_fields=["citizenship_photo_flagged_at"])
+        return api_response(data=OwnerSerializer(owner).data)
 
     @action(detail=True, methods=["post"], url_path="create-login")
     def create_login(self, request, pk=None):

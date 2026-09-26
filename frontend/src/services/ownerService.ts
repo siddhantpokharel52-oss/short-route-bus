@@ -7,6 +7,8 @@ export interface Owner {
   email: string
   bank_account_no: string
   profile_photo: string | null
+  citizenship_photo: string | null
+  citizenship_photo_flagged_at: string | null
   user_id: string | null
   temp_password: string
   is_active: boolean
@@ -66,18 +68,37 @@ const ownerService = {
     return Array.isArray(data.data) ? data.data : []
   },
 
-  create: async (payload: OwnerPayload): Promise<Owner> => {
-    const { data } = await apiClient.post('/fleet/owners/', payload)
+  create: async (payload: OwnerPayload, citizenshipPhotoFile?: File | null): Promise<Owner> => {
+    if (!citizenshipPhotoFile) {
+      const { data } = await apiClient.post('/fleet/owners/', payload)
+      return (data as ApiResponse<Owner>).data ?? data
+    }
+    const fd = new FormData()
+    Object.entries(payload).forEach(([key, value]) => fd.append(key, value == null ? '' : String(value)))
+    fd.append('citizenship_photo', citizenshipPhotoFile)
+    const { data } = await apiClient.post('/fleet/owners/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
     return (data as ApiResponse<Owner>).data ?? data
   },
 
-  update: async (id: string, payload: OwnerPayload): Promise<Owner> => {
-    const { data } = await apiClient.patch(`/fleet/owners/${id}/`, payload)
+  update: async (id: string, payload: OwnerPayload, citizenshipPhotoFile?: File | null): Promise<Owner> => {
+    if (!citizenshipPhotoFile) {
+      const { data } = await apiClient.patch(`/fleet/owners/${id}/`, payload)
+      return (data as ApiResponse<Owner>).data ?? data
+    }
+    const fd = new FormData()
+    Object.entries(payload).forEach(([key, value]) => fd.append(key, value == null ? '' : String(value)))
+    fd.append('citizenship_photo', citizenshipPhotoFile)
+    const { data } = await apiClient.patch(`/fleet/owners/${id}/`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
     return (data as ApiResponse<Owner>).data ?? data
   },
 
   delete: async (id: string): Promise<void> => {
     await apiClient.delete(`/fleet/owners/${id}/`)
+  },
+
+  acknowledgeCitizenship: async (id: string): Promise<Owner> => {
+    const { data } = await apiClient.post<ApiResponse<Owner>>(`/fleet/owners/${id}/acknowledge-citizenship/`)
+    return data.data
   },
 
   getMyProfile: async (): Promise<Owner> => {
@@ -88,14 +109,18 @@ const ownerService = {
   updateMyProfile: async (
     payload: Partial<Pick<Owner, 'name' | 'phone' | 'email' | 'bank_account_no'>>,
     photoFile?: File | null,
+    citizenshipPhotoFile?: File | null,
   ): Promise<Owner> => {
-    if (!photoFile) {
+    if (!photoFile && !citizenshipPhotoFile) {
       const { data } = await apiClient.patch<ApiResponse<Owner>>('/fleet/owners/me/', payload)
       return data.data
     }
     const fd = new FormData()
     Object.entries(payload).forEach(([key, value]) => fd.append(key, value ?? ''))
-    fd.append('profile_photo', photoFile)
+    if (photoFile) fd.append('profile_photo', photoFile)
+    // Presence of this key alone is what the backend reads to flag the
+    // change for the tenant admin -- see OwnerViewSet.me().
+    if (citizenshipPhotoFile) fd.append('citizenship_photo', citizenshipPhotoFile)
     const { data } = await apiClient.patch<ApiResponse<Owner>>('/fleet/owners/me/', fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })

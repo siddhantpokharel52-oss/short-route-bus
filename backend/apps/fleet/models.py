@@ -127,6 +127,17 @@ class Owner(models.Model):
     email = models.EmailField(blank=True)
     bank_account_no = models.CharField(max_length=50, blank=True)
     profile_photo = models.ImageField(upload_to="owner_photos/", null=True, blank=True)
+    citizenship_photo = models.ImageField(upload_to="owner_citizenship_photos/", null=True, blank=True)
+    # Set (to now) only when the OWNER themselves changes citizenship_photo
+    # via their own self-service profile update -- never by the tenant
+    # admin's own Add/Edit Owner upload, since the admin doesn't need to be
+    # flagged about their own edit. Cleared back to null by the admin
+    # acknowledging it on the Owners page. This is the "the changed
+    # citizenship will be notified to the tenant" mechanism -- a persistent,
+    # reviewable flag on the one screen an admin already manages owners
+    # from, rather than a new generic notification inbox this app doesn't
+    # otherwise have.
+    citizenship_photo_flagged_at = models.DateTimeField(null=True, blank=True)
     # Links to the shared-schema User who can log in and see this owner's own
     # dashboard -- bare UUID, not FK, matching staff.Driver/Conductor's own
     # established convention for referencing a User from a tenant-scoped model.

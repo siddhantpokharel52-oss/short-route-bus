@@ -8,13 +8,15 @@
  */
 import { useState, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Wallet2, Pencil, Trash2, KeyRound, Eye, EyeOff } from 'lucide-react'
+import { Plus, Wallet2, Pencil, Trash2, KeyRound, Eye, EyeOff, BadgeCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
 import { Table, Column } from '@components/shared/Table'
 import { Badge } from '@components/shared/Badge'
 import { Modal } from '@components/shared/Modal'
+import { PhotoUploadField } from '@components/shared/PhotoUploadField'
+import { getMediaPath } from '@utils/media'
 import ownerService, { Owner, OwnerPayload } from '@services/ownerService'
 import apiClient from '@services/api'
 import toast from 'react-hot-toast'
@@ -28,6 +30,38 @@ interface OwnerForm {
   phone: string
   email: string
   bank_account_no: string
+}
+
+/**
+ * Citizenship photo status -- flat (not uploaded), on file, or flagged
+ * (the owner just replaced it themselves via their own profile, see
+ * OwnerViewSet.me()). Acknowledging clears the flag; the photo itself
+ * stays either way, this is purely "has the admin seen this yet."
+ */
+function CitizenshipStatusCell({ owner, onAcknowledge, acknowledging }: {
+  owner: Owner
+  onAcknowledge: (id: string) => void
+  acknowledging: boolean
+}) {
+  if (owner.citizenship_photo_flagged_at) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <Badge variant="warning" dot>Updated — review</Badge>
+        <button
+          type="button"
+          onClick={() => onAcknowledge(owner.id)}
+          disabled={acknowledging}
+          className="inline-flex items-center gap-1 rounded-lg bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 hover:bg-gray-200"
+        >
+          <BadgeCheck className="h-3 w-3" /> Acknowledge
+        </button>
+      </div>
+    )
+  }
+  if (owner.citizenship_photo) {
+    return <Badge variant="success" dot>On file</Badge>
+  }
+  return <Badge variant="neutral" dot>Not uploaded</Badge>
 }
 
 /**
@@ -111,6 +145,7 @@ export default function OwnersPage() {
   const [loginTarget, setLoginTarget] = useState<Owner | null>(null)
   const [loginEmail, setLoginEmail] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
+  const [citizenshipPhotoFile, setCitizenshipPhotoFile] = useState<File | null>(null)
 
   const { data: owners = [], isLoading } = useQuery({
     queryKey: ['owners'],
@@ -122,22 +157,27 @@ export default function OwnersPage() {
   const openCreate = () => {
     setEditTarget(null)
     reset({ name: '', phone: '', email: '', bank_account_no: '' })
+    setCitizenshipPhotoFile(null)
     setShowForm(true)
   }
 
   const openEdit = (owner: Owner) => {
     setEditTarget(owner)
     reset({ name: owner.name, phone: owner.phone, email: owner.email, bank_account_no: owner.bank_account_no ?? '' })
+    setCitizenshipPhotoFile(null)
     setShowForm(true)
   }
 
   const saveMutation = useMutation({
     mutationFn: (payload: OwnerPayload) =>
-      editTarget ? ownerService.update(editTarget.id, payload) : ownerService.create(payload),
+      editTarget
+        ? ownerService.update(editTarget.id, payload, citizenshipPhotoFile)
+        : ownerService.create(payload, citizenshipPhotoFile),
     onSuccess: () => {
       toast.success(editTarget ? t('owners.updated', { defaultValue: 'Owner updated.' }) : t('owners.created', { defaultValue: 'Owner created.' }))
       qc.invalidateQueries({ queryKey: ['owners'] })
       setShowForm(false)
+      setCitizenshipPhotoFile(null)
       reset()
     },
     onError: (err: unknown) => {
@@ -181,6 +221,18 @@ export default function OwnersPage() {
     },
   })
 
+  const acknowledgeMutation = useMutation({
+    mutationFn: (id: string) => ownerService.acknowledgeCitizenship(id),
+    onSuccess: () => {
+      toast.success(t('owners.citizenshipAcknowledged', { defaultValue: 'Marked as reviewed.' }))
+      qc.invalidateQueries({ queryKey: ['owners'] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || 'Failed to acknowledge.')
+    },
+  })
+
   const columns: Column<Owner>[] = [
     {
       key: 'name', header: t('owners.name', { defaultValue: 'Name' }),
@@ -196,6 +248,10 @@ export default function OwnersPage() {
     {
       key: 'user_id', header: t('owners.loginLinked', { defaultValue: 'Login' }),
       render: (o) => <LoginStatusCell owner={o} />,
+    },
+    {
+      key: 'citizenship_photo', header: t('owners.citizenship', { defaultValue: 'Citizenship' }),
+      render: (o) => <CitizenshipStatusCell owner={o} onAcknowledge={(id) => acknowledgeMutation.mutate(id)} acknowledging={acknowledgeMutation.isPending} />,
     },
     { key: 'is_active', header: t('owners.status', { defaultValue: 'Status' }), render: (o) => <Badge variant={o.is_active ? 'success' : 'neutral'} dot>{o.is_active ? t('owners.active', { defaultValue: 'Active' }) : t('owners.inactive', { defaultValue: 'Inactive' })}</Badge> },
     {
@@ -271,6 +327,25 @@ export default function OwnersPage() {
             <div className="border-t pt-4">
               <DetailRow label={t('owners.loginLinked', { defaultValue: 'Login' })} value={<LoginDetailValue owner={viewTarget} />} />
             </div>
+            <div className="border-t pt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                  {t('owners.citizenship', { defaultValue: 'Citizenship' })}
+                </span>
+                <CitizenshipStatusCell owner={viewTarget} onAcknowledge={(id) => acknowledgeMutation.mutate(id)} acknowledging={acknowledgeMutation.isPending} />
+              </div>
+              {viewTarget.citizenship_photo ? (
+                <img
+                  src={getMediaPath(viewTarget.citizenship_photo) ?? undefined}
+                  alt="Citizenship document"
+                  className="h-40 w-full rounded-lg border border-gray-200 object-contain bg-gray-50"
+                />
+              ) : (
+                <p className="text-sm text-gray-400 italic">
+                  {t('owners.citizenshipNotUploaded', { defaultValue: 'No citizenship photo on file yet.' })}
+                </p>
+              )}
+            </div>
             <div className="flex justify-end border-t pt-4">
               <Button variant="secondary" onClick={() => setViewTarget(null)}>{t('common.close', { defaultValue: 'Close' })}</Button>
             </div>
@@ -307,6 +382,12 @@ export default function OwnersPage() {
             label={t('owners.bankAccountNo', { defaultValue: 'Bank Account No.' })}
             placeholder="e.g. 0123456789012"
             {...register('bank_account_no')}
+          />
+          <PhotoUploadField
+            label={t('owners.citizenshipPhoto', { defaultValue: 'Citizenship Photo' })}
+            hint={t('owners.citizenshipPhotoHint', { defaultValue: 'Optional — can be added later via Edit' })}
+            existingUrl={editTarget?.citizenship_photo}
+            onFileChange={setCitizenshipPhotoFile}
           />
           {editTarget && (
             <div className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">

@@ -433,12 +433,18 @@ class OwnerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Owner
         fields = [
-            "id", "name", "phone", "email", "bank_account_no", "profile_photo", "user_id", "temp_password",
+            "id", "name", "phone", "email", "bank_account_no", "profile_photo",
+            "citizenship_photo", "citizenship_photo_flagged_at", "user_id", "temp_password",
             "is_active", "is_activated", "created_at", "vehicle_count",
         ]
         # temp_password is only ever set by create-login and cleared by
         # ChangePasswordView -- never directly writable through this serializer.
-        read_only_fields = ["id", "created_at", "vehicle_count", "temp_password", "is_activated"]
+        # citizenship_photo_flagged_at is only ever set/cleared by the
+        # owner-update and acknowledge actions below, never directly.
+        read_only_fields = [
+            "id", "created_at", "vehicle_count", "temp_password", "is_activated",
+            "citizenship_photo_flagged_at",
+        ]
 
     def validate_phone(self, value):
         if not re.fullmatch(r"\d{10}", value):
