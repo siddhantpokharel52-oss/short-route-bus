@@ -1,8 +1,14 @@
 name: Deploy to Production
 
+# Disabled from auto-running on push -- this workflow expects AWS/Docker Hub
+# secrets that were never configured and a deploy path (/opt/kvbms) that
+# doesn't match how this project is actually deployed (manual SSH + docker
+# compose directly on the server, see docs/PROJECT_HANDOVER.md §8). It failed
+# on all 113 of its previous automatic runs. Kept as a reference/template --
+# trigger it manually (Actions tab -> Deploy to Production -> Run workflow)
+# once real secrets and the correct deploy path are wired up.
 on:
-  push:
-    branches: [main]
+  workflow_dispatch: {}
 
 jobs:
   deploy:
