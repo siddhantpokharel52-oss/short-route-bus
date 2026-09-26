@@ -71,7 +71,6 @@
     "deleteDesc": "Vehicle {{reg}} ({{make}} {{model}}) will be permanently removed from the fleet.",
     "activeWarning": "This bus is currently {{status}}. Deleting it will unassign it from its active route.",
     "notAssigned": "— Not assigned —",
-    "busIdNote": "Bus ID is generated automatically from the registration number.",
     "insuranceNote": "Insurance — controls \"Available for Trip\"",
     "insuranceDesc": "A vehicle shows Available = Yes only when its status is ACTIVE and a valid (non-expired) insurance document is on file.",
     "seated": "seated",

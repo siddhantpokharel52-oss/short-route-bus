@@ -777,9 +777,6 @@ export default function FleetPage() {
           {/* ── Basic Information ──────────────────────────────────────────── */}
           {currentStep === 0 && <>
           <Section icon={Bus} title={t('fleet.sections.basicInfo')} />
-          <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2">
-            <p className="text-xs text-blue-600">{t('fleet.busIdNote')}</p>
-          </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Controller
               name="category"
