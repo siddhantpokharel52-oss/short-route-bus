@@ -47,9 +47,41 @@ class DailyAllocationViewSet(ModelViewSet):
     def get_queryset(self):
         return DailyAllocation.objects.all()
 
+    def _crew_conflict_message(self, date, driver_id, conductor_id, exclude_id=None):
+        """
+        A driver/conductor can be allocated to any bus, but only one bus per
+        day -- unlike vehicle_id, that's not a DB constraint (unique_together
+        is date+vehicle_id only), so it has to be checked here.
+        """
+        active_statuses = [DailyAllocation.Status.PENDING, DailyAllocation.Status.ACTIVE]
+        for field, label in (("driver_id", "driver"), ("conductor_id", "conductor")):
+            person_id = driver_id if field == "driver_id" else conductor_id
+            if not person_id:
+                continue
+            qs = DailyAllocation.objects.filter(
+                date=date, status__in=active_statuses, **{field: person_id}
+            )
+            if exclude_id:
+                qs = qs.exclude(pk=exclude_id)
+            conflict = qs.first()
+            if conflict:
+                return (
+                    f"This {label} is already allocated to vehicle "
+                    f"{conflict.vehicle_id} on {date}."
+                )
+        return None
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
+        conflict_message = self._crew_conflict_message(
+            serializer.validated_data.get("date"),
+            serializer.validated_data.get("driver_id"),
+            serializer.validated_data.get("conductor_id"),
+        )
+        if conflict_message:
+            return api_response(success=False, message=conflict_message, status_code=400)
 
         from backend.apps.fleet.models import Vehicle
         vehicle_id = request.data.get("vehicle_id")
@@ -88,6 +120,15 @@ class DailyAllocationViewSet(ModelViewSet):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
+
+        conflict_message = self._crew_conflict_message(
+            serializer.validated_data.get("date", instance.date),
+            serializer.validated_data.get("driver_id", instance.driver_id),
+            serializer.validated_data.get("conductor_id", instance.conductor_id),
+            exclude_id=instance.pk,
+        )
+        if conflict_message:
+            return api_response(success=False, message=conflict_message, status_code=400)
 
         old_vehicle_id = str(instance.vehicle_id)
         new_vehicle_id = str(request.data.get("vehicle_id", old_vehicle_id))
@@ -197,12 +238,23 @@ class DailyAllocationViewSet(ModelViewSet):
                 status_code=400,
             )
 
+        resolved_driver_id = request.data.get("driver_id") or old_allocation.driver_id
+        resolved_conductor_id = old_allocation.conductor_id
+        conflict_message = self._crew_conflict_message(
+            old_allocation.date,
+            resolved_driver_id,
+            resolved_conductor_id,
+            exclude_id=old_allocation.pk,
+        )
+        if conflict_message:
+            return api_response(success=False, message=conflict_message, status_code=400)
+
         new_alloc = DailyAllocation.objects.create(
             date=old_allocation.date,
             route_id=old_allocation.route_id,
             vehicle_id=new_vehicle_id,
-            driver_id=request.data.get("driver_id") or old_allocation.driver_id,
-            conductor_id=old_allocation.conductor_id,
+            driver_id=resolved_driver_id,
+            conductor_id=resolved_conductor_id,
             shift_start=old_allocation.shift_start,
             shift_end=old_allocation.shift_end,
             status=DailyAllocation.Status.ACTIVE,
