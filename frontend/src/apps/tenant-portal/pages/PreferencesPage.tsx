@@ -20,7 +20,7 @@ export default function PreferencesPage() {
         <h1 className="page-title">{t('profile.preferences', { defaultValue: 'Preferences' })}</h1>
       </div>
 
-      <div className="card max-w-md space-y-5">
+      <div className="card mx-auto max-w-md space-y-5">
         <h2 className="font-semibold">{t('settings.displayPreferences')}</h2>
 
         <div>

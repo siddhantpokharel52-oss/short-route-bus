@@ -109,7 +109,7 @@ export default function ChangeProfilePage() {
         <p className="page-subtitle">{t('settings.subtitle')}</p>
       </div>
 
-      <div className="card max-w-2xl">
+      <div className="card mx-auto max-w-2xl">
         <h2 className="mb-5 flex items-center gap-2 font-semibold">
           <Building2 className="h-5 w-5 text-primary-600" />
           {t('settings.companyInformation')}

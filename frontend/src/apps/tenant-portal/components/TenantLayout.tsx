@@ -129,15 +129,22 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
           ],
         },
 
-        // Pinned, ungrouped: Analytics cuts across every group above rather
-        // than belonging to one; Roles & Permissions governs every existing
-        // account platform-wide, not just newly-enrolled ones, so it stays
-        // out of Enrollment on purpose. Settings/Change Profile/Change
-        // Password/Preferences/Notification/Report Issue all moved into the
-        // Profile dropdown below the nav (see the user-info block at the
-        // bottom of the sidebar) -- no separate "Settings" nav item anymore.
-        { to: '/tenant/analytics', icon: BarChart3, label: t('nav.analytics') },
-        { to: '/tenant/roles', icon: ShieldCheck, label: t('nav.rolesPermissions') },
+        // Pinned, ungrouped -- given no section label (a divider instead),
+        // so this doesn't visually read as part of Finance just because it
+        // renders right after it. Analytics cuts across every group above
+        // rather than belonging to one; Roles & Permissions governs every
+        // existing account platform-wide, not just newly-enrolled ones, so
+        // it stays out of Enrollment on purpose. Settings/Change Profile/
+        // Change Password/Preferences/Notification/Report Issue all moved
+        // into the Profile dropdown below the nav (the user-info block at
+        // the bottom of the sidebar) -- no separate "Settings" item anymore.
+        {
+          section: '',
+          items: [
+            { to: '/tenant/analytics', icon: BarChart3, label: t('nav.analytics') },
+            { to: '/tenant/roles', icon: ShieldCheck, label: t('nav.rolesPermissions') },
+          ],
+        },
       ]
 
   // Company info — same query key as Settings page so it's served from cache.
@@ -203,13 +210,21 @@ export default function TenantLayout({ children }: TenantLayoutProps) {
 
         {/* Nav */}
         <nav className="flex-1 space-y-0.5 p-3 overflow-y-auto">
-          {navItems.map((entry) => {
+          {navItems.map((entry, index) => {
             if ('section' in entry) {
               return (
-                <div key={entry.section} className="pt-3 first:pt-0">
-                  <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
-                    {entry.section}
-                  </p>
+                <div key={entry.section || `pinned-${index}`} className="pt-3 first:pt-0">
+                  {entry.section ? (
+                    <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                      {entry.section}
+                    </p>
+                  ) : (
+                    // No label -- e.g. Analytics/Roles & Permissions, pinned
+                    // on purpose rather than filed under a group -- but
+                    // still needs a visible break from whatever group came
+                    // right before it, or it reads as part of that group.
+                    <div className="mx-3 mb-2 border-t border-gray-200 dark:border-gray-700" />
+                  )}
                   {entry.items.map((item) => (
                     <NavLink
                       key={item.to}

@@ -51,7 +51,7 @@ export default function NotificationsPage() {
         <h1 className="page-title">{t('profile.notifications', { defaultValue: 'Notification' })}</h1>
       </div>
 
-      <div className="card max-w-md">
+      <div className="card mx-auto max-w-md">
         <h2 className="mb-4 flex items-center gap-2 font-semibold">
           <Bell className="h-5 w-5 text-primary-600" />
           {t('settings.notifications')}

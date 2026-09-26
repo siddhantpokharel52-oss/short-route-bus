@@ -36,7 +36,7 @@ export default function ChangePasswordPage() {
         <h1 className="page-title">{t('profile.changePassword', { defaultValue: 'Change Password' })}</h1>
       </div>
 
-      <div className="card max-w-md">
+      <div className="card mx-auto max-w-md">
         <h2 className="mb-4 font-semibold">{t('settings.changePassword')}</h2>
         <form onSubmit={handleSubmit((d) => passwordMutation.mutate(d))} className="space-y-4">
           <Input
