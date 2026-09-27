@@ -8,7 +8,7 @@ Route & Group Rotation QA fix series, the Pokhara tenant QA fix series, and
 Owner accounts / login security & form UX) plus current production
 deployment status.
 
-**Last updated:** 2026-09-26
+**Last updated:** 2026-09-27
 
 ---
 
@@ -22,7 +22,8 @@ deployment status.
 | **Route & Group Rotation QA report** (§5) | All 94 issues triaged; every issue that was a real, scopeable bug is fixed and verified live (Critical 5/5, High 21/24, Medium/Low 29/65). The rest (39 issues) are explicitly "Clarify"-status or large standalone features needing a product decision first — not oversights. |
 | **Pokhara tenant QA report** (§6) | All 11 issues fixed and verified live against a real second tenant. Headline finding: Route/Stop weren't filtered by tenant assignment at all — a cross-tenant data leak that had already **corrupted** a tenant's own roster data (real `Duty` rows written against another tenant's routes), not just a display bug. Also closed: two stuck-submit-button/silent-400 form bugs, a genuinely missing "create a login for this conductor/driver" flow (nothing in the product ever built it), a dead-looking-but-actually-guarded button, mislabeled nav links, unseeded tenant branding, and a stray-waypoint map bug. |
 | **Owner accounts / login security & form UX** (§7) | Owner `create-login` + forced temp-password change flow built, verified live end-to-end, and committed. Also fixed in the same pass: a broken `changePassword` endpoint call (wrong URL/field name), admin-password fields rendering in plaintext (`type="text"`), and a password-strength mismatch between frontend (8 chars) and backend (10 chars) validation. |
-| **Production deployment** (§8) | Everything through commit `ef413128` is confirmed live on the original server (172.19.0.246) as of 2026-09-21. Everything since — §4.5/§4.6's fixes, §3.1.1's shift-tracking removal, §6's Pokhara fixes, §7's owner-accounts work, and a long stretch of undocumented feature work culminating in commit `236b6b2c` — is pushed to `main` but **not deployed to 172.19.0.246**. A **second server (36.253.137.147)** was stood up from scratch on 2026-09-26 with everything through `236b6b2c` and is fully built and verified working internally, but is **not yet reachable from the public internet** — blocked on an ISP-side port filter, see §8.1. The original server's database was also found to have **zero tenants ever provisioned** despite being labeled production — see §8.1. |
+| **Production deployment** (§8) | Everything through commit `ef413128` is confirmed live on the original server (172.19.0.246) as of 2026-09-21. Everything since — §4.5/§4.6's fixes, §3.1.1's shift-tracking removal, §6's Pokhara fixes, §7's owner-accounts work, §12's dispatch/fleet/maintenance work, and a long stretch of undocumented feature work culminating in commit `0ba28ac1` — is pushed to `main` but **not deployed to 172.19.0.246**. A **second server (36.253.137.147)** was stood up from scratch on 2026-09-26 with everything through `236b6b2c` (not yet the `0ba28ac1` work) and is fully built and verified working internally, but is **not yet reachable from the public internet** — blocked on an ISP-side port filter, see §8.1. The original server's database was also found to have **zero tenants ever provisioned** despite being labeled production — see §8.1. |
+| **Dispatch / Fleet / Maintenance** (§12) | New this session (2026-09-27): driver/conductor double-booking prevention, a conductor picker + fixed name resolution on Dispatch, a Copy Schedule tool (repeat a day's dispatch), a manual End Shift action, resolved bus/route/driver/conductor on Dispatch Logs with a route filter, a fabricated-data bug fix on Add Vehicle's insurance side effect, a real Available toggle on Fleet tied to vehicle status, and a two-way integration between Fleet's toggle and Maintenance scheduling (scheduling service marks a vehicle unavailable; completing or force-overriding it marks it available again). All built and verified live; not yet deployed anywhere. |
 
 ---
 
@@ -1049,3 +1050,84 @@ CityBus knows the answer).
 - Untested areas the QA report itself flags (role enforcement,
   cross-tenant isolation, driver mobile view, real device layouts) still
   need a dedicated pass.
+
+---
+
+## 12. Dispatch / Fleet / Maintenance — 2026-09-27 session
+
+All built and verified live against the running dev stack this session, in
+order. Pushed to `main` through `0ba28ac1`; **not yet deployed anywhere**
+(neither 172.19.0.246 nor the new 36.253.137.147 box, which is itself
+still blocked on the Ncell port issue in §8.1).
+
+- **Driver/conductor double-booking prevention** (`cb4f905a`) —
+  `dispatch.DailyAllocation` only enforced `unique_together` on
+  `(date, vehicle_id)`; nothing stopped the same driver or conductor being
+  allocated to two different buses the same day. Added a check to
+  `create`/`update`/`reassign` on `DailyAllocationViewSet`, naming the
+  conflicting vehicle in the rejection message.
+- **Conductor picker + name-resolution fix on Dispatch** (`236b6b2c`) —
+  the Assign Bus form and Edit modal had no conductor field at all, only
+  driver. Added one, backed by the same `/operator/conductors/` source the
+  Vehicle Groups picker already uses. Found and fixed a real bug in the
+  same pass: `DailyAllocationSerializer.get_driver_name()` called
+  `d.full_name`, a field that doesn't exist on `Driver` (only
+  `full_name_en`) — it was silently falling back to the raw UUID
+  everywhere a driver's name should have shown, the whole time.
+- **Copy Schedule** (`2ad0a771`) — new `POST /dispatch/allocations/copy/`
+  duplicates one or more allocations onto a different date (same bus/
+  route/driver/conductor/shift), re-running the same conflict checks per
+  row so one bad row is skipped with a reason rather than failing the
+  whole batch. Frontend: a "Copy Schedule" tab with a one-click "Repeat
+  Yesterday" plus a select-specific-shifts-and-copy-to-any-date flow.
+- **End Shift** (`dbfedd8c`) — `DailyAllocation.Status.COMPLETED` was
+  defined but never reachable from anywhere; a bus allocated today stayed
+  `ACTIVE`/`PENDING` forever. New
+  `POST /dispatch/allocations/{id}/end-shift/`, dispatcher-triggered
+  (matches Breakdown/Reassign/Remove's own manual, nothing-automatic
+  pattern) — flips status to `COMPLETED`, frees the vehicle, logs it.
+- **Dispatch Logs — resolved fields + route filter** (`5a4efeec`) — the
+  Logs tab showed only a truncated raw vehicle UUID and free-text notes.
+  `DispatchLogSerializer` now resolves `vehicle_registration`,
+  `route_name`, `driver_name`, `conductor_name` (the last two read through
+  the linked `allocation`, since `DispatchLog` has no driver/conductor
+  field of its own), and `GET /dispatch/logs/` gained a `route_id` filter.
+  Frontend Logs tab gained a date picker (was hardcoded to today) and a
+  route dropdown.
+- **CI: `deploy.yml` no longer runs automatically** (`584448f5`) — it had
+  failed on all 113 of its automatic runs ever (missing AWS/Docker Hub
+  secrets, and a deploy path — `/opt/kvbms` — that doesn't match how this
+  project is actually deployed). Switched to `workflow_dispatch` so it's
+  still there as a template but doesn't show red on every push.
+- **Add Vehicle — stop fabricating a `VehicleInsurance` row** (`af4b973e`)
+  — `VehicleSerializer.create()` was silently creating a second insurance
+  record with data the form never asks for and no page ever shows
+  (`provider=""`, `coverage_amount=0`, `premium=0`) — that model has no
+  viewset, no URL, no frontend usage anywhere. Removed the side effect;
+  the real policy number/expiry date still save correctly via
+  `VehicleDocument`, exactly as `update()` already only did.
+- **Fleet "Available" column — real toggle** (`4f95a391`) —
+  `is_available_for_trip` is computed (status + insurance validity +
+  maintenance), not a raw field, so a toggle controls the one real,
+  settable piece of it: `status` ACTIVE ↔ INACTIVE, matching what
+  Dispatch's own available-bus picker already checks. Toggling a vehicle
+  in some other status (Assigned, Breakdown, etc.) overwrites it, by
+  design — confirmed with the user before building.
+- **Fleet ↔ Maintenance integration** (`bb3e4eef`, `5af0c598`) —
+  scheduling a service now sets the vehicle to `IN_MAINTENANCE`
+  automatically (an existing `Vehicle.Status` choice, never actually set
+  anywhere before this). Fleet's table shows an info icon next to the
+  toggle ("Scheduled for {type} maintenance") whenever a pending schedule
+  exists. Trying to toggle such a vehicle available opens a confirm popup
+  naming the maintenance type — Cancel changes nothing, confirming calls
+  `POST /fleet/vehicles/{id}/confirm-available/`, which marks the vehicle
+  ACTIVE and every pending schedule `CANCELLED` (not deleted — the
+  cancelled row, with an appended note recording who/when/why, is the
+  audit trail; `MaintenanceScheduleViewSet`'s default list now excludes
+  `CANCELLED` so it actually disappears from the Maintenance page). A new
+  "Completion" column on Maintenance gives the ordinary, non-conflicting
+  path: `POST /maintenance/schedules/{id}/complete/` marks a schedule
+  `COMPLETED` and reactivates the vehicle — but only if nothing else is
+  still pending for it (completing one of two open schedules for the same
+  vehicle correctly leaves it `IN_MAINTENANCE`, verified as a real test
+  case, not just assumed).
