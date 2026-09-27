@@ -417,9 +417,12 @@ class DispatchLogListView(views.APIView):
 
     def get(self, request):
         date_filter = request.query_params.get("date")
+        route_filter = request.query_params.get("route_id")
         qs = DispatchLog.objects.select_related("allocation").all()
         if date_filter:
             qs = qs.filter(timestamp__date=date_filter)
+        if route_filter:
+            qs = qs.filter(route_id=route_filter)
         serializer = DispatchLogSerializer(qs[:100], many=True)
         return api_response(data=serializer.data, message="Dispatch logs")
 

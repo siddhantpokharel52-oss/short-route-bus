@@ -170,9 +170,12 @@ export default function DispatchPage() {
     refetchInterval: 30000,
   })
 
+  const [logsDate, setLogsDate] = useState(today)
+  const [logsRouteId, setLogsRouteId] = useState('')
+
   const { data: logs = [], refetch: refetchLogs, isLoading: logsLoading } = useQuery({
-    queryKey: ['dispatch-logs'],
-    queryFn: () => dispatchService.getLogs(today),
+    queryKey: ['dispatch-logs', logsDate, logsRouteId],
+    queryFn: () => dispatchService.getLogs(logsDate, logsRouteId || undefined),
     enabled: activeTab === 'logs',
   })
 
@@ -948,10 +951,29 @@ export default function DispatchPage() {
       {/* ── DISPATCH LOGS ─────────────────────────────────────────────────── */}
       {activeTab === 'logs' && (
         <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-700">
-            <span className="text-sm font-semibold text-gray-900 dark:text-white">
-              {t('dispatch.modals.logsTitle')} · {todayDisplay}
-            </span>
+          <div className="flex flex-wrap items-end justify-between gap-4 p-4 border-b border-gray-100 dark:border-gray-700">
+            <div className="flex flex-wrap items-end gap-3">
+              <NepaliDateInput
+                label={t('dispatch.modals.logsTitle')}
+                value={logsDate}
+                onChange={setLogsDate}
+              />
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  {t('dispatch.columns.route')}
+                </label>
+                <select
+                  value={logsRouteId}
+                  onChange={(e) => setLogsRouteId(e.target.value)}
+                  className="rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="">{t('dispatch.logs.allRoutes', { defaultValue: 'All routes' })}</option>
+                  {routes.map((r) => (
+                    <option key={r.id} value={r.id}>{r.route_code}: {r.name_en}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
             <button
               onClick={() => refetchLogs()}
               className="text-xs text-primary-600 hover:underline flex items-center gap-1"
@@ -972,9 +994,12 @@ export default function DispatchPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-gray-700 dark:text-gray-300">{log.notes || '—'}</p>
-                    {log.vehicle_id && (
-                      <p className="text-[10px] text-gray-400 mt-0.5">Bus: {log.vehicle_id.slice(0, 12)}</p>
-                    )}
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-gray-400">
+                      {log.vehicle_registration && <span>🚌 {log.vehicle_registration}</span>}
+                      {log.route_name && <span>{t('dispatch.columns.route')}: {log.route_name}</span>}
+                      {log.driver_name && <span>{t('dispatch.columns.driver')}: {log.driver_name}</span>}
+                      {log.conductor_name && <span>{t('dispatch.columns.conductor', { defaultValue: 'Conductor' })}: {log.conductor_name}</span>}
+                    </div>
                   </div>
                   <span className="text-[10px] text-gray-400 whitespace-nowrap">
                     {fmtDate(log.timestamp)}

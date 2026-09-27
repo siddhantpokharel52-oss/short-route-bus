@@ -46,7 +46,11 @@ export interface DispatchLog {
   allocation: string | null
   action_type: string
   vehicle_id: string | null
+  vehicle_registration: string | null
   route_id: string | null
+  route_name: string | null
+  driver_name: string | null
+  conductor_name: string | null
   trip_id: string | null
   performed_by_id: string | null
   notes: string
@@ -256,10 +260,13 @@ const dispatchService = {
   },
 
   // ── Dispatch logs ────────────────────────────────────────────────────────────
-  getLogs: async (date?: string): Promise<DispatchLog[]> => {
-    const params = date ? `?date=${date}` : ''
+  getLogs: async (date?: string, routeId?: string): Promise<DispatchLog[]> => {
+    const params = new URLSearchParams()
+    if (date) params.set('date', date)
+    if (routeId) params.set('route_id', routeId)
+    const qs = params.toString()
     const { data } = await apiClient.get<ApiResponse<DispatchLog[]>>(
-      `/dispatch/logs/${params}`
+      `/dispatch/logs/${qs ? `?${qs}` : ''}`
     )
     return Array.isArray(data.data) ? data.data : []
   },
