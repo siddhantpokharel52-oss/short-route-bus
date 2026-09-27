@@ -163,16 +163,6 @@ class VehicleSerializer(serializers.ModelSerializer):
         today = timezone.now().date()
 
         if insurance_policy_no and insurance_expiry_date:
-            VehicleInsurance.objects.create(
-                vehicle=vehicle,
-                provider="",
-                policy_no=insurance_policy_no,
-                coverage_amount=0,
-                premium=0,
-                start_date=today,
-                end_date=insurance_expiry_date,
-                is_active=True,
-            )
             VehicleDocument.objects.create(
                 vehicle=vehicle,
                 doc_type=VehicleDocument.DocType.INSURANCE,
