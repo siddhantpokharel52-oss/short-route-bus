@@ -180,6 +180,76 @@ class DailyAllocationViewSet(ModelViewSet):
         instance.delete()
         return api_response(message="Allocation deleted successfully.")
 
+    @action(detail=False, methods=["post"])
+    def copy(self, request):
+        """
+        Copy one or more existing allocations (bus/route/driver/conductor/
+        shift times) onto a different date -- repeating a previous day's
+        dispatch instead of re-entering everything by hand. Reuses the same
+        vehicle/crew conflict checks as a normal create, per source row, so
+        a conflicting row is skipped with a clear reason while the rest
+        still go through -- never an all-or-nothing failure.
+        """
+        allocation_ids = request.data.get("allocation_ids") or []
+        target_date = request.data.get("target_date")
+        if not allocation_ids:
+            return api_response(success=False, message="allocation_ids is required.", status_code=400)
+        if not target_date:
+            return api_response(success=False, message="target_date is required.", status_code=400)
+
+        from backend.apps.fleet.models import Vehicle
+
+        sources_by_id = {str(s.id): s for s in DailyAllocation.objects.filter(id__in=allocation_ids)}
+        created, skipped = [], []
+
+        for source_id in allocation_ids:
+            source = sources_by_id.get(str(source_id))
+            if not source:
+                skipped.append({"id": source_id, "reason": "Original allocation not found."})
+                continue
+
+            if DailyAllocation.objects.filter(date=target_date, vehicle_id=source.vehicle_id).exists():
+                skipped.append({
+                    "id": source_id,
+                    "reason": f"Vehicle already allocated to another route on {target_date}.",
+                })
+                continue
+
+            conflict_message = self._crew_conflict_message(target_date, source.driver_id, source.conductor_id)
+            if conflict_message:
+                skipped.append({"id": source_id, "reason": conflict_message})
+                continue
+
+            new_alloc = DailyAllocation.objects.create(
+                date=target_date,
+                route_id=source.route_id,
+                vehicle_id=source.vehicle_id,
+                driver_id=source.driver_id,
+                conductor_id=source.conductor_id,
+                shift_start=source.shift_start,
+                shift_end=source.shift_end,
+                status=DailyAllocation.Status.PENDING,
+                notes=f"Copied from {source.date}",
+                created_by_id=request.user.id if request.user else None,
+            )
+            Vehicle.objects.filter(pk=new_alloc.vehicle_id).update(
+                status="ASSIGNED", assigned_route_id=new_alloc.route_id,
+            )
+            DispatchLog.objects.create(
+                allocation=new_alloc,
+                action_type=DispatchLog.ActionType.ASSIGN,
+                vehicle_id=new_alloc.vehicle_id,
+                route_id=new_alloc.route_id,
+                performed_by_id=request.user.id if request.user else None,
+                notes=f"Copied from {source.date} to {target_date}",
+            )
+            created.append(DailyAllocationSerializer(new_alloc).data)
+
+        return api_response(
+            data={"created": created, "skipped": skipped},
+            message=f"{len(created)} allocation(s) copied, {len(skipped)} skipped.",
+        )
+
     @action(detail=False, methods=["get"])
     def today(self, request):
         today = timezone.now().date()

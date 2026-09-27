@@ -36,6 +36,11 @@ export interface AllocationCreatePayload {
   notes?: string
 }
 
+export interface CopyAllocationsResult {
+  created: DailyAllocation[]
+  skipped: Array<{ id: string; reason: string }>
+}
+
 export interface DispatchLog {
   id: string
   allocation: string | null
@@ -141,6 +146,15 @@ const dispatchService = {
     const { data } = await apiClient.post<ApiResponse<DailyAllocation>>(
       '/dispatch/allocations/',
       payload
+    )
+    if (!data.success) throw new Error(data.message)
+    return data.data
+  },
+
+  copyAllocations: async (allocationIds: string[], targetDate: string): Promise<CopyAllocationsResult> => {
+    const { data } = await apiClient.post<ApiResponse<CopyAllocationsResult>>(
+      '/dispatch/allocations/copy/',
+      { allocation_ids: allocationIds, target_date: targetDate }
     )
     if (!data.success) throw new Error(data.message)
     return data.data

@@ -485,7 +485,17 @@
       "allocations": "Today's Allocations",
       "generate": "Generate Schedule",
       "assign": "Assign Bus",
+      "copy": "Copy Schedule",
       "logs": "Dispatch Logs"
+    },
+    "copy": {
+      "repeatTitle": "Repeat Yesterday",
+      "repeatSubtitle": "Copy every one of yesterday’s (non-cancelled) allocations onto today, same bus/route/driver/conductor/shift.",
+      "repeatButton": "Repeat Yesterday → Today",
+      "sourceDate": "Source date",
+      "targetDate": "Copy to date",
+      "copySelected": "Copy Selected",
+      "noneForDate": "No allocations found for this date."
     },
     "columns": {
       "bus": "Bus",

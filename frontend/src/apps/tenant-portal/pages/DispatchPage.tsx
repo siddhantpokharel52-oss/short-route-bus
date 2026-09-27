@@ -19,7 +19,7 @@ import toast from 'react-hot-toast'
 import {
   Plus, Zap, RefreshCw, ArrowLeftRight, XCircle,
   Bus, Wrench, ClipboardList, Calendar, ChevronDown, ChevronUp,
-  Eye, Pencil, Trash2,
+  Eye, Pencil, Trash2, Copy, CopyCheck,
 } from 'lucide-react'
 import dispatchService, { DailyAllocation } from '@services/dispatchService'
 import fleetService, { Vehicle } from '@services/fleetService'
@@ -138,8 +138,9 @@ export default function DispatchPage() {
   const todayDate = new Date()
   const today = todayDate.toISOString().slice(0, 10)
   const todayDisplay = formatDate(todayDate, calendarType, language as 'en' | 'ne')
+  const yesterday = new Date(todayDate.getTime() - 86400000).toISOString().slice(0, 10)
 
-  const [activeTab, setActiveTab] = useState<'allocations' | 'generate' | 'assign' | 'logs'>('allocations')
+  const [activeTab, setActiveTab] = useState<'allocations' | 'generate' | 'assign' | 'copy' | 'logs'>('allocations')
   const [breakdownTarget, setBreakdownTarget] = useState<DailyAllocation | null>(null)
   const [breakdownReason, setBreakdownReason] = useState('')
   const [reassignTarget, setReassignTarget] = useState<DailyAllocation | null>(null)
@@ -173,6 +174,62 @@ export default function DispatchPage() {
     queryFn: () => dispatchService.getLogs(today),
     enabled: activeTab === 'logs',
   })
+
+  // ── Copy schedule (repeat a previous day's dispatch) ────────────────────────
+  const [copySourceDate, setCopySourceDate] = useState(yesterday)
+  const [copyTargetDate, setCopyTargetDate] = useState(today)
+  const [copySelected, setCopySelected] = useState<Set<string>>(new Set())
+
+  const { data: copySourceList = [], isLoading: copySourceLoading } = useQuery({
+    queryKey: ['copy-source-allocations', copySourceDate],
+    queryFn: () => dispatchService.getAllocations(copySourceDate),
+    enabled: activeTab === 'copy',
+  })
+
+  useEffect(() => { setCopySelected(new Set()) }, [copySourceDate])
+
+  const copyMutation = useMutation({
+    mutationFn: ({ ids, target }: { ids: string[]; target: string }) =>
+      dispatchService.copyAllocations(ids, target),
+    onSuccess: (result) => {
+      if (result.created.length > 0) {
+        toast.success(`${result.created.length} shift(s) copied to ${copyTargetDate}.`)
+      }
+      result.skipped.forEach((s) => toast.error(s.reason))
+      if (result.created.length === 0 && result.skipped.length === 0) {
+        toast.error('Nothing was copied.')
+      }
+      setCopySelected(new Set())
+      qc.invalidateQueries({ queryKey: ['today-allocations'] })
+      qc.invalidateQueries({ queryKey: ['copy-source-allocations'] })
+    },
+    onError: (e: Error) => toast.error(e.message || 'Failed to copy shifts'),
+  })
+
+  const toggleCopySelect = (id: string) =>
+    setCopySelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const copySourceSelectable = copySourceList.filter((a) => a.status !== 'CANCELLED')
+  const allCopySelected = copySourceSelectable.length > 0 && copySelected.size === copySourceSelectable.length
+  const toggleCopySelectAll = () =>
+    setCopySelected(allCopySelected ? new Set() : new Set(copySourceSelectable.map((a) => a.id)))
+
+  const handleCopySelected = () => {
+    if (copySelected.size === 0) { toast.error('Select at least one shift to copy.'); return }
+    copyMutation.mutate({ ids: Array.from(copySelected), target: copyTargetDate })
+  }
+
+  const handleRepeatYesterday = async () => {
+    const list = await dispatchService.getAllocations(yesterday)
+    const ids = list.filter((a) => a.status !== 'CANCELLED').map((a) => a.id)
+    if (ids.length === 0) { toast.error("No allocations found for yesterday."); return }
+    copyMutation.mutate({ ids, target: today })
+  }
 
   const { data: vehiclesRaw } = useQuery({
     queryKey: ['fleet-vehicles-dispatch'],
@@ -412,6 +469,7 @@ export default function DispatchPage() {
           { key: 'allocations', label: t('dispatch.tabs.allocations'), icon: ClipboardList },
           { key: 'generate', label: t('dispatch.tabs.generate'), icon: Zap },
           { key: 'assign', label: t('dispatch.tabs.assign'), icon: Plus },
+          { key: 'copy', label: t('dispatch.tabs.copy', { defaultValue: 'Copy Schedule' }), icon: Copy },
           { key: 'logs', label: t('dispatch.tabs.logs'), icon: Calendar },
         ] as const).map(({ key, label, icon: Icon }) => (
           <button
@@ -906,6 +964,123 @@ export default function DispatchPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── COPY SCHEDULE ─────────────────────────────────────────────────── */}
+      {activeTab === 'copy' && (
+        <div className="space-y-4">
+          {/* One-click repeat */}
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                  {t('dispatch.copy.repeatTitle', { defaultValue: 'Repeat Yesterday' })}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {t('dispatch.copy.repeatSubtitle', {
+                    defaultValue: 'Copy every one of yesterday’s (non-cancelled) allocations onto today, same bus/route/driver/conductor/shift.',
+                  })}
+                </p>
+              </div>
+              <button
+                onClick={handleRepeatYesterday}
+                disabled={copyMutation.isPending}
+                className="flex shrink-0 items-center gap-2 rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
+              >
+                <CopyCheck className="h-4 w-4" />
+                {t('dispatch.copy.repeatButton', { defaultValue: 'Repeat Yesterday → Today' })}
+              </button>
+            </div>
+          </div>
+
+          {/* Select specific shifts */}
+          <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+            <div className="flex flex-wrap items-end gap-4 border-b border-gray-100 p-4 dark:border-gray-700">
+              <NepaliDateInput
+                label={t('dispatch.copy.sourceDate', { defaultValue: 'Source date' })}
+                value={copySourceDate}
+                onChange={setCopySourceDate}
+              />
+              <NepaliDateInput
+                label={t('dispatch.copy.targetDate', { defaultValue: 'Copy to date' })}
+                value={copyTargetDate}
+                onChange={setCopyTargetDate}
+              />
+              <button
+                onClick={handleCopySelected}
+                disabled={copyMutation.isPending || copySelected.size === 0}
+                className="flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
+              >
+                <Copy className="h-4 w-4" />
+                {t('dispatch.copy.copySelected', { defaultValue: 'Copy Selected' })}
+                {copySelected.size > 0 && ` (${copySelected.size})`}
+              </button>
+            </div>
+
+            {copySourceLoading ? (
+              <div className="py-12 text-center text-sm text-gray-400">{t('dispatch.loading.allocations')}</div>
+            ) : copySourceList.length === 0 ? (
+              <div className="py-12 text-center text-sm text-gray-400">
+                {t('dispatch.copy.noneForDate', { defaultValue: 'No allocations found for this date.' })}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-100 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-750">
+                    <tr>
+                      <th className="px-4 py-3 text-left">
+                        <input
+                          type="checkbox"
+                          checked={allCopySelected}
+                          onChange={toggleCopySelectAll}
+                          className="h-4 w-4 rounded border-gray-300"
+                        />
+                      </th>
+                      {[t('dispatch.columns.bus'), t('dispatch.columns.route'), t('dispatch.columns.driver'), t('dispatch.columns.conductor', { defaultValue: 'Conductor' }), t('dispatch.columns.shift'), t('dispatch.columns.status')].map((h) => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                    {copySourceList.map((alloc) => (
+                      <tr key={alloc.id} className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={copySelected.has(alloc.id)}
+                            disabled={alloc.status === 'CANCELLED'}
+                            onChange={() => toggleCopySelect(alloc.id)}
+                            className="h-4 w-4 rounded border-gray-300 disabled:opacity-40"
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-xs font-semibold text-gray-900 dark:text-white">
+                          {alloc.vehicle_registration}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-700 dark:text-gray-300 max-w-[200px] truncate">
+                          {alloc.route_name}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-400">
+                          {alloc.driver_name || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-400">
+                          {alloc.conductor_name || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-xs font-mono text-gray-600 dark:text-gray-400">
+                          {formatShiftTime(alloc.shift_start, language)} – {formatShiftTime(alloc.shift_end, language)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <AllocationBadge status={alloc.status} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
