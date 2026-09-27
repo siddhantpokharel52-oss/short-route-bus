@@ -899,8 +899,13 @@
     "contactNumber": "सम्पर्क नम्बर",
     "totalCostLabel": "कुल लागत",
     "recordId": "रेकर्ड आईडी",
+    "columns": {
+      "completion": "पूर्णता"
+    },
+    "markComplete": "पूरा भएको चिन्ह लगाउनुहोस्",
     "toasts": {
-      "scheduled": "मर्मत तालिका बनाइयो!"
+      "scheduled": "मर्मत तालिका बनाइयो!",
+      "completed": "पूरा भएको चिन्ह लगाइयो।"
     }
   },
   "accounting": {

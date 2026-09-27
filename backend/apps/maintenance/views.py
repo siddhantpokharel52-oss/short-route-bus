@@ -44,6 +44,41 @@ class MaintenanceScheduleViewSet(ModelViewSet):
         serializer = self.get_serializer(qs, many=True)
         return api_response(data=serializer.data)
 
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        """
+        The ordinary, non-conflicting counterpart to Fleet's
+        confirm-available (VehicleViewSet.confirm_available, which force-
+        cancels a still-pending schedule) -- this is for when the service
+        actually finished. Only reactivates the vehicle if nothing else is
+        still pending for it, so completing one of two open schedules
+        doesn't put a vehicle back on the road while the other is unresolved.
+        """
+        schedule = self.get_object()
+        if schedule.status == MaintenanceSchedule.Status.COMPLETED:
+            return api_response(success=False, message="Already marked complete.", status_code=400)
+        if schedule.status == MaintenanceSchedule.Status.CANCELLED:
+            return api_response(success=False, message="A cancelled schedule can't be completed.", status_code=400)
+
+        schedule.status = MaintenanceSchedule.Status.COMPLETED
+        schedule.save(update_fields=["status", "updated_at"])
+
+        from backend.apps.fleet.models import Vehicle
+        still_pending = MaintenanceSchedule.objects.filter(
+            vehicle_id=schedule.vehicle_id,
+            status__in=[
+                MaintenanceSchedule.Status.UPCOMING,
+                MaintenanceSchedule.Status.DUE,
+                MaintenanceSchedule.Status.OVERDUE,
+            ],
+        ).exists()
+        message = "Maintenance marked complete."
+        if not still_pending:
+            Vehicle.objects.filter(id=schedule.vehicle_id, is_deleted=False).update(status=Vehicle.Status.ACTIVE)
+            message += " Vehicle is available again."
+
+        return api_response(data=self.get_serializer(schedule).data, message=message)
+
 
 class ServiceRecordViewSet(ModelViewSet):
     queryset = ServiceRecord.objects.all()

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Plus, Wrench, Eye, Pencil, Trash2, Car, CalendarDays, MapPin, Phone, Banknote, FileText, Hash, Clock } from 'lucide-react'
+import { Plus, Wrench, Eye, Pencil, Trash2, Car, CalendarDays, MapPin, Phone, Banknote, FileText, Hash, Clock, CheckCircle2 } from 'lucide-react'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
 import { Table, Column, Pagination } from '@components/shared/Table'
@@ -150,6 +150,24 @@ export default function MaintenancePage() {
     onError: (err: Error) => toast.error(err.message),
   })
 
+  // Marks the schedule done and, if nothing else is still pending for that
+  // vehicle, brings it back to ACTIVE -- the ordinary counterpart to Fleet's
+  // "mark available anyway" popup, which is for force-overriding a schedule
+  // that ISN'T actually finished yet. This path needs no confirmation since
+  // there's nothing to override.
+  const completeMutation = useMutation({
+    mutationFn: (id: string) => apiClient.post(`/maintenance/schedules/${id}/complete/`).then((r) => r.data),
+    onSuccess: (res) => {
+      toast.success(res?.message || t('maintenance.toasts.completed', { defaultValue: 'Marked complete.' }))
+      qc.invalidateQueries({ queryKey: ['maintenance'] })
+      qc.invalidateQueries({ queryKey: ['vehicles'] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || (err as Error).message)
+    },
+  })
+
   const columns: Column<MaintenanceRecord>[] = [
     {
       key: 'vehicle_registration',
@@ -181,6 +199,25 @@ export default function MaintenancePage() {
       render: (m) => m.cost != null
         ? <span className="font-medium text-emerald-700">NPR {Number(m.cost).toLocaleString()}</span>
         : <span className="text-gray-300">—</span>,
+    },
+    {
+      key: 'status',
+      header: t('maintenance.columns.completion', { defaultValue: 'Completion' }),
+      render: (m) => m.status === 'COMPLETED' ? (
+        <Badge variant="success">
+          <CheckCircle2 className="mr-1 h-3 w-3" />
+          {t('maintenance.status.COMPLETED', { defaultValue: 'Completed' })}
+        </Badge>
+      ) : (
+        <button
+          onClick={() => completeMutation.mutate(m.id)}
+          disabled={completeMutation.isPending}
+          className="flex items-center gap-1 rounded-lg bg-green-50 px-2 py-1 text-[11px] font-semibold text-green-700 hover:bg-green-100 transition-colors disabled:opacity-50"
+        >
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          {t('maintenance.markComplete', { defaultValue: 'Mark Complete' })}
+        </button>
+      ),
     },
     {
       key: 'id',

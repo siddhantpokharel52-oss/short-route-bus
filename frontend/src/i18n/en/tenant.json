@@ -904,8 +904,13 @@
     "contactNumber": "Contact Number",
     "totalCostLabel": "Total Cost",
     "recordId": "Record ID",
+    "columns": {
+      "completion": "Completion"
+    },
+    "markComplete": "Mark Complete",
     "toasts": {
-      "scheduled": "Maintenance scheduled!"
+      "scheduled": "Maintenance scheduled!",
+      "completed": "Marked complete."
     }
   },
   "accounting": {
