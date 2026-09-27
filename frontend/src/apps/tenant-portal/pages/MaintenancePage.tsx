@@ -212,7 +212,7 @@ export default function MaintenancePage() {
         <button
           onClick={() => completeMutation.mutate(m.id)}
           disabled={completeMutation.isPending}
-          className="flex items-center gap-1 rounded-lg bg-green-50 px-2 py-1 text-[11px] font-semibold text-green-700 hover:bg-green-100 transition-colors disabled:opacity-50"
+          className="flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50"
         >
           <CheckCircle2 className="h-3.5 w-3.5" />
           {t('maintenance.markComplete', { defaultValue: 'Mark Complete' })}
