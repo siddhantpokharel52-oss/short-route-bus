@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Bus, Hash, Gauge, Route, ShieldCheck, Eye, Pencil, Trash2, Check, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Bus, Hash, Gauge, Route, ShieldCheck, Eye, Pencil, Trash2, Check, ChevronLeft, ChevronRight, Info } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
@@ -365,6 +365,8 @@ export default function FleetPage() {
   // INACTIVE. Matches what Dispatch's own available-bus picker already
   // checks (status === 'ACTIVE'). Toggling a vehicle that's currently
   // Assigned/Breakdown/etc. overwrites that status, by design.
+  const [confirmAvailableTarget, setConfirmAvailableTarget] = useState<Vehicle | null>(null)
+
   const toggleAvailabilityMutation = useMutation({
     mutationFn: (vehicle: Vehicle) =>
       fleetService.vehicles.update(vehicle.id, {
@@ -379,6 +381,31 @@ export default function FleetPage() {
       toast.error(e?.response?.data?.message || (err as Error).message || 'Failed to update availability')
     },
   })
+
+  // Marking a vehicle available while it still has a pending maintenance
+  // schedule goes through a confirm popup instead of the plain toggle --
+  // this cancels the schedule server-side (VehicleViewSet.confirm_available)
+  // rather than leaving a stale schedule silently blocking future toggles.
+  const confirmAvailableMutation = useMutation({
+    mutationFn: (vehicleId: string) => fleetService.vehicles.confirmAvailable(vehicleId),
+    onSuccess: () => {
+      toast.success(t('fleet.maintenanceConfirm.success', { defaultValue: 'Vehicle marked available. Maintenance schedule cancelled.' }))
+      setConfirmAvailableTarget(null)
+      qc.invalidateQueries({ queryKey: ['vehicles'] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || (err as Error).message || 'Failed to update availability')
+    },
+  })
+
+  const handleToggleAvailability = (v: Vehicle) => {
+    if (v.status !== 'ACTIVE' && v.active_maintenance_type) {
+      setConfirmAvailableTarget(v)
+      return
+    }
+    toggleAvailabilityMutation.mutate(v)
+  }
 
   // Scoped to whichever section was chosen in the picker -- only that
   // section's fields go in the PATCH, matching DriversPage/ConductorsPage.
@@ -500,23 +527,36 @@ export default function FleetPage() {
       key: 'is_available_for_trip',
       header: t('fleet.columns.available'),
       render: (v) => (
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); toggleAvailabilityMutation.mutate(v) }}
-          disabled={toggleAvailabilityMutation.isPending}
-          title={v.status === 'ACTIVE' ? t('common.yes') : t('common.no')}
-          className={cn(
-            'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50',
-            v.status === 'ACTIVE' ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600',
-          )}
-        >
-          <span
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleToggleAvailability(v) }}
+            disabled={toggleAvailabilityMutation.isPending || confirmAvailableMutation.isPending}
+            title={v.status === 'ACTIVE' ? t('common.yes') : t('common.no')}
             className={cn(
-              'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-              v.status === 'ACTIVE' ? 'translate-x-6' : 'translate-x-1',
+              'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50',
+              v.status === 'ACTIVE' ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600',
             )}
-          />
-        </button>
+          >
+            <span
+              className={cn(
+                'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                v.status === 'ACTIVE' ? 'translate-x-6' : 'translate-x-1',
+              )}
+            />
+          </button>
+          {v.active_maintenance_type && (
+            <span
+              className="group relative flex cursor-default items-center"
+              title={t('fleet.maintenanceConfirm.scheduledFor', {
+                type: t(`maintenance.serviceTypeLabels.${v.active_maintenance_type}`, { defaultValue: v.active_maintenance_type }),
+                defaultValue: 'Scheduled for {{type}} maintenance',
+              })}
+            >
+              <Info className="h-3.5 w-3.5 text-amber-500" />
+            </span>
+          )}
+        </div>
       ),
     },
     {
@@ -943,6 +983,40 @@ export default function FleetPage() {
                 onClick={() => deleteVehicleMutation.mutate(deleteTarget.id)}
               >
                 {t('fleet.deleteVehicle')}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {confirmAvailableTarget && (
+        <Modal
+          open={!!confirmAvailableTarget}
+          onClose={() => setConfirmAvailableTarget(null)}
+          title={t('fleet.maintenanceConfirm.title', { defaultValue: 'Vehicle Under Maintenance' })}
+          size="sm"
+        >
+          <div className="p-5 space-y-4">
+            <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
+              <p className="text-sm text-amber-700">
+                {t('fleet.maintenanceConfirm.desc', {
+                  reg: confirmAvailableTarget.registration_no,
+                  type: t(`maintenance.serviceTypeLabels.${confirmAvailableTarget.active_maintenance_type}`, {
+                    defaultValue: confirmAvailableTarget.active_maintenance_type,
+                  }),
+                  defaultValue: '{{reg}} is currently scheduled for {{type}} maintenance. Mark it available anyway?',
+                })}
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setConfirmAvailableTarget(null)}>
+                {t('common.cancel')}
+              </Button>
+              <Button
+                loading={confirmAvailableMutation.isPending}
+                onClick={() => confirmAvailableMutation.mutate(confirmAvailableTarget.id)}
+              >
+                {t('fleet.maintenanceConfirm.confirmButton', { defaultValue: 'Mark Available' })}
               </Button>
             </div>
           </div>

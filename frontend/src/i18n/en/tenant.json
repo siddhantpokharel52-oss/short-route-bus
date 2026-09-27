@@ -71,6 +71,13 @@
     "deleteDesc": "Vehicle {{reg}} ({{make}} {{model}}) will be permanently removed from the fleet.",
     "activeWarning": "This bus is currently {{status}}. Deleting it will unassign it from its active route.",
     "notAssigned": "— Not assigned —",
+    "maintenanceConfirm": {
+      "title": "Vehicle Under Maintenance",
+      "scheduledFor": "Scheduled for {{type}} maintenance",
+      "desc": "{{reg}} is currently scheduled for {{type}} maintenance. Mark it available anyway?",
+      "confirmButton": "Mark Available",
+      "success": "Vehicle marked available. Maintenance schedule cancelled."
+    },
     "insuranceNote": "Insurance — controls \"Available for Trip\"",
     "insuranceDesc": "A vehicle shows Available = Yes only when its status is ACTIVE and a valid (non-expired) insurance document is on file.",
     "seated": "seated",

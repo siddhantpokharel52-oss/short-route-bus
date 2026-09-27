@@ -33,6 +33,7 @@ export interface Vehicle {
   assigned_route_id: string | null
   odometer_km: number
   is_available_for_trip: boolean
+  active_maintenance_type: 'PERIODIC' | 'INSPECTION' | 'REPAIR' | 'EMERGENCY' | null
   documents?: VehicleDoc[]
   created_at: string
   updated_at: string
@@ -107,6 +108,12 @@ const fleetService = {
     myVehicles: async (): Promise<Vehicle[]> => {
       const { data } = await apiClient.get<ApiResponse<Vehicle[]>>('/fleet/vehicles/my-vehicles/')
       return data.data ?? []
+    },
+
+    confirmAvailable: async (id: string): Promise<Vehicle> => {
+      const { data } = await apiClient.post<ApiResponse<Vehicle>>(`/fleet/vehicles/${id}/confirm-available/`)
+      if (!data.success) throw new Error(data.message)
+      return data.data
     },
 
     documents: async (vehicleId: string): Promise<VehicleDocument[]> => {

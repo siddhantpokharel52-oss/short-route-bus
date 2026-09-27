@@ -145,6 +145,47 @@ class VehicleViewSet(ModelViewSet):
             message=f"Documents expiring within {days} days.",
         )
 
+    @action(detail=True, methods=["post"], url_path="confirm-available")
+    def confirm_available(self, request, pk=None):
+        """
+        The Fleet 'Available' toggle calls this instead of a plain status
+        PATCH when the vehicle has a pending maintenance schedule -- the
+        frontend has already shown the admin a confirm popup naming the
+        service type. Marks the vehicle ACTIVE and closes out every
+        pending schedule as CANCELLED (not deleted -- that row is the
+        audit trail of what was cancelled and when).
+        """
+        from backend.apps.maintenance.models import MaintenanceSchedule
+
+        vehicle = self.get_object()
+        pending = MaintenanceSchedule.objects.filter(
+            vehicle_id=vehicle.id,
+            status__in=[
+                MaintenanceSchedule.Status.UPCOMING,
+                MaintenanceSchedule.Status.DUE,
+                MaintenanceSchedule.Status.OVERDUE,
+            ],
+        )
+        cancelled_count = 0
+        for schedule in pending:
+            note = (
+                f"Cancelled {timezone.now().date()}: vehicle marked available "
+                f"by {request.user.email if request.user else 'unknown'} "
+                f"while scheduled for {schedule.get_service_type_display()}."
+            )
+            schedule.status = MaintenanceSchedule.Status.CANCELLED
+            schedule.notes = f"{schedule.notes}\n{note}".strip()
+            schedule.save(update_fields=["status", "notes", "updated_at"])
+            cancelled_count += 1
+
+        vehicle.status = Vehicle.Status.ACTIVE
+        vehicle.save(update_fields=["status", "updated_at"])
+
+        return api_response(
+            data=VehicleSerializer(vehicle).data,
+            message=f"Vehicle marked available. {cancelled_count} maintenance schedule(s) cancelled.",
+        )
+
 
 class VehicleDocumentViewSet(ModelViewSet):
     serializer_class = VehicleDocumentSerializer

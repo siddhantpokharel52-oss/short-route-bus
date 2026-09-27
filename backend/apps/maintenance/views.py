@@ -16,11 +16,27 @@ def api_response(data=None, message="Success", success=True, errors=None, status
 
 
 class MaintenanceScheduleViewSet(ModelViewSet):
-    queryset = MaintenanceSchedule.objects.all()
     serializer_class = MaintenanceScheduleSerializer
     permission_classes = [IsMaintenanceRole]
     filterset_fields = ["vehicle_id", "status", "service_type"]
     ordering_fields = ["due_date", "status"]
+
+    def get_queryset(self):
+        # A schedule cancelled via Fleet's "mark available anyway" confirm
+        # (VehicleViewSet.confirm_available) stays in the database as the
+        # audit trail -- it just shouldn't clutter the active list anymore.
+        return MaintenanceSchedule.objects.exclude(status=MaintenanceSchedule.Status.CANCELLED)
+
+    def perform_create(self, serializer):
+        # Scheduling a service takes the vehicle off the road for that
+        # window -- surfaced on Fleet's "Available" toggle as IN_MAINTENANCE,
+        # matching the existing Vehicle.Status choice (already defined,
+        # never actually set anywhere before this).
+        schedule = serializer.save()
+        from backend.apps.fleet.models import Vehicle
+        Vehicle.objects.filter(id=schedule.vehicle_id, is_deleted=False).update(
+            status=Vehicle.Status.IN_MAINTENANCE
+        )
 
     @action(detail=False, methods=["get"])
     def due(self, request):

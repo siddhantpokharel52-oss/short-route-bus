@@ -39,6 +39,19 @@ class VehicleSerializer(serializers.ModelSerializer):
     category_code = serializers.CharField(source="category.code", read_only=True, default=None)
     category_name = serializers.CharField(source="category.name_en", read_only=True, default=None)
     owner_display_name = serializers.CharField(source="owner.name", read_only=True, default=None)
+    active_maintenance_type = serializers.SerializerMethodField()
+
+    def get_active_maintenance_type(self, obj):
+        from backend.apps.maintenance.models import MaintenanceSchedule
+        schedule = MaintenanceSchedule.objects.filter(
+            vehicle_id=obj.id,
+            status__in=[
+                MaintenanceSchedule.Status.UPCOMING,
+                MaintenanceSchedule.Status.DUE,
+                MaintenanceSchedule.Status.OVERDUE,
+            ],
+        ).order_by("due_date").first()
+        return schedule.service_type if schedule else None
 
     # ── Write-only: Insurance (creates VehicleInsurance on save) ──────────────
     insurance_policy_no = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -70,7 +83,7 @@ class VehicleSerializer(serializers.ModelSerializer):
             "insurance_policy_no", "insurance_expiry_date",
             "fitness_cert_no", "fitness_expiry_date",
             # related
-            "documents", "gps_device", "is_available_for_trip",
+            "documents", "gps_device", "is_available_for_trip", "active_maintenance_type",
             # timestamps
             "created_at", "updated_at",
         ]
