@@ -19,7 +19,7 @@ import toast from 'react-hot-toast'
 import {
   Plus, Zap, RefreshCw, ArrowLeftRight, XCircle,
   Bus, Wrench, ClipboardList, Calendar, ChevronDown, ChevronUp,
-  Eye, Pencil, Trash2, Copy, CopyCheck,
+  Eye, Pencil, Trash2, Copy, CopyCheck, CheckCircle2,
 } from 'lucide-react'
 import dispatchService, { DailyAllocation } from '@services/dispatchService'
 import fleetService, { Vehicle } from '@services/fleetService'
@@ -146,6 +146,7 @@ export default function DispatchPage() {
   const [reassignTarget, setReassignTarget] = useState<DailyAllocation | null>(null)
   const [replacementVehicleId, setReplacementVehicleId] = useState('')
   const [removeTarget, setRemoveTarget] = useState<DailyAllocation | null>(null)
+  const [endShiftTarget, setEndShiftTarget] = useState<DailyAllocation | null>(null)
   const [selectedVehicles, setSelectedVehicles] = useState<string[]>([])
 
   // ── View / Edit / Delete state ──────────────────────────────────────────────
@@ -375,6 +376,16 @@ export default function DispatchPage() {
     onError: (e: Error) => toast.error(e.message || 'Failed'),
   })
 
+  const endShiftMutation = useMutation({
+    mutationFn: (id: string) => dispatchService.endShift(id),
+    onSuccess: () => {
+      toast.success('Shift ended. The bus is now available.')
+      setEndShiftTarget(null)
+      qc.invalidateQueries({ queryKey: ['today-allocations'] })
+    },
+    onError: (e: Error) => toast.error(e.message || 'Failed to end shift'),
+  })
+
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: {
       id: string
@@ -597,6 +608,14 @@ export default function DispatchPage() {
                               >
                                 <XCircle className="h-3 w-3" /> {t('dispatch.buttons.remove')}
                               </button>
+                              {alloc.status !== 'COMPLETED' && (
+                                <button
+                                  onClick={() => setEndShiftTarget(alloc)}
+                                  className="flex items-center gap-1 rounded-lg bg-blue-100 px-2 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-200"
+                                >
+                                  <CheckCircle2 className="h-3 w-3" /> {t('dispatch.buttons.endShift', { defaultValue: 'End Shift' })}
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1188,6 +1207,38 @@ export default function DispatchPage() {
                 className="flex-1 rounded-xl bg-orange-600 py-2 text-sm font-semibold text-white hover:bg-orange-700 disabled:opacity-50"
               >
                 {removeMutation.isPending ? t('dispatch.removing') : t('dispatch.buttons.removeFromRoute')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── END SHIFT MODAL ───────────────────────────────────────────────── */}
+      {endShiftTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-96 rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">
+              {t('dispatch.modals.endShiftTitle', { defaultValue: 'End Shift' })}
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              {t('dispatch.endShiftDesc', {
+                bus: endShiftTarget.vehicle_registration,
+                route: endShiftTarget.route_name,
+                defaultValue: `Mark today's shift for ${endShiftTarget.vehicle_registration} on ${endShiftTarget.route_name} as complete? The bus becomes available again.`,
+              })}
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setEndShiftTarget(null)} className="flex-1 rounded-xl border border-gray-200 py-2 text-sm text-gray-600">
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={() => endShiftMutation.mutate(endShiftTarget.id)}
+                disabled={endShiftMutation.isPending}
+                className="flex-1 rounded-xl bg-blue-600 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {endShiftMutation.isPending
+                  ? t('dispatch.ending', { defaultValue: 'Ending…' })
+                  : t('dispatch.buttons.endShift', { defaultValue: 'End Shift' })}
               </button>
             </div>
           </div>

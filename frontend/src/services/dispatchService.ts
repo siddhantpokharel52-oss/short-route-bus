@@ -186,6 +186,14 @@ const dispatchService = {
     if (!data.success) throw new Error(data.message)
   },
 
+  endShift: async (allocationId: string): Promise<DailyAllocation> => {
+    const { data } = await apiClient.post<ApiResponse<DailyAllocation>>(
+      `/dispatch/allocations/${allocationId}/end-shift/`
+    )
+    if (!data.success) throw new Error(data.message)
+    return data.data
+  },
+
   // ── Schedule generation ──────────────────────────────────────────────────────
   generateSchedule: async (payload: GenerateSchedulePayload): Promise<GenerateScheduleResult> => {
     const { data } = await apiClient.post<ApiResponse<GenerateScheduleResult>>(

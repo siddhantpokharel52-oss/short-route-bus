@@ -378,6 +378,39 @@ class DailyAllocationViewSet(ModelViewSet):
         )
         return api_response(message="Bus removed from route.")
 
+    @action(detail=True, methods=["post"], url_path="end-shift")
+    def end_shift(self, request, pk=None):
+        """
+        Manually mark a shift complete -- frees the vehicle and closes out
+        the allocation. Nothing does this automatically: shift_end is just
+        a stored time, never enforced by a scheduled job, matching this
+        whole dispatch flow's dispatcher-driven, nothing-automatic design.
+        """
+        allocation = self.get_object()
+        if allocation.status == DailyAllocation.Status.COMPLETED:
+            return api_response(success=False, message="This shift has already been ended.", status_code=400)
+        if allocation.status == DailyAllocation.Status.CANCELLED:
+            return api_response(success=False, message="A cancelled allocation can't be ended.", status_code=400)
+
+        from backend.apps.fleet.models import Vehicle
+        Vehicle.objects.filter(pk=allocation.vehicle_id).update(status="ACTIVE", assigned_route_id=None)
+
+        allocation.status = DailyAllocation.Status.COMPLETED
+        allocation.save(update_fields=["status", "updated_at"])
+
+        DispatchLog.objects.create(
+            allocation=allocation,
+            action_type=DispatchLog.ActionType.STATUS_UPDATE,
+            vehicle_id=allocation.vehicle_id,
+            route_id=allocation.route_id,
+            performed_by_id=request.user.id if request.user else None,
+            notes=f"Shift ended for {allocation.date}",
+        )
+        return api_response(
+            data=DailyAllocationSerializer(allocation).data,
+            message="Shift ended. The bus is now available.",
+        )
+
 
 class DispatchLogListView(views.APIView):
     permission_classes = [IsOperationsRole]

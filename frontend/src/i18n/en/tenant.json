@@ -516,7 +516,8 @@
       "markBreakdown": "Mark Breakdown",
       "assignReplacement": "Assign Replacement",
       "removeFromRoute": "Remove Bus from Route",
-      "saveChanges": "Save Changes"
+      "saveChanges": "Save Changes",
+      "endShift": "End Shift"
     },
     "chips": {
       "allocated": "Allocated",
@@ -530,6 +531,7 @@
       "breakdownTitle": "Mark Bus Breakdown",
       "replacementTitle": "Assign Replacement Bus",
       "removeTitle": "Remove Bus from Route",
+      "endShiftTitle": "End Shift",
       "deleteTitle": "Delete Allocation",
       "logsTitle": "Dispatch Logs"
     },
@@ -574,6 +576,7 @@
     "noLogActions": "No dispatch actions today.",
     "getStarted": "Use 'Generate Schedule' or 'Assign Bus' to get started.",
     "removeDesc": "Remove {{bus}} from {{route}}? The bus will be marked as available.",
+    "endShiftDesc": "Mark today's shift for {{bus}} on {{route}} as complete? The bus becomes available again.",
     "deleteDesc": "{{bus}} will be unassigned from route {{route}} and marked as available.",
     "cannotUndo": "This action cannot be undone.",
     "generating": "Generating…",
@@ -582,6 +585,7 @@
     "deleting": "Deleting…",
     "removing": "Removing…",
     "marking": "Marking…",
+    "ending": "Ending…",
     "assignBusToRoute": "Assign Bus to Route",
     "preview": {
       "title": "Schedule Preview",
