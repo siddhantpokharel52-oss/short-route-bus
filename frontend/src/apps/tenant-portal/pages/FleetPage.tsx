@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, AlertCircle, Bus, Hash, Gauge, Route, ShieldCheck, Eye, Pencil, Trash2, Info, Check, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Bus, Hash, Gauge, Route, ShieldCheck, Eye, Pencil, Trash2, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
@@ -359,6 +359,27 @@ export default function FleetPage() {
     },
   })
 
+  // "Available" toggle in the table -- is_available_for_trip is a computed
+  // value (status + insurance validity + maintenance), not a raw field, so
+  // this toggles the one real, settable piece of it: status ACTIVE vs
+  // INACTIVE. Matches what Dispatch's own available-bus picker already
+  // checks (status === 'ACTIVE'). Toggling a vehicle that's currently
+  // Assigned/Breakdown/etc. overwrites that status, by design.
+  const toggleAvailabilityMutation = useMutation({
+    mutationFn: (vehicle: Vehicle) =>
+      fleetService.vehicles.update(vehicle.id, {
+        status: vehicle.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
+      }),
+    onSuccess: () => {
+      toast.success('Availability updated.')
+      qc.invalidateQueries({ queryKey: ['vehicles'] })
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e?.response?.data?.message || (err as Error).message || 'Failed to update availability')
+    },
+  })
+
   // Scoped to whichever section was chosen in the picker -- only that
   // section's fields go in the PATCH, matching DriversPage/ConductorsPage.
   const handleUpdate = (values: VehicleForm) => {
@@ -478,19 +499,24 @@ export default function FleetPage() {
     {
       key: 'is_available_for_trip',
       header: t('fleet.columns.available'),
-      render: (v) => v.is_available_for_trip ? (
-        <Badge variant="success">{t('common.yes')}</Badge>
-      ) : (
-        <span
-          className="flex items-center gap-1 group relative cursor-default w-fit"
-          title="Available = Status is ACTIVE + valid insurance document on file"
+      render: (v) => (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); toggleAvailabilityMutation.mutate(v) }}
+          disabled={toggleAvailabilityMutation.isPending}
+          title={v.status === 'ACTIVE' ? t('common.yes') : t('common.no')}
+          className={cn(
+            'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50',
+            v.status === 'ACTIVE' ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600',
+          )}
         >
-          <Badge variant="warning">
-            <AlertCircle className="mr-1 h-3 w-3" />
-            {t('common.no')}
-          </Badge>
-          <Info className="h-3 w-3 text-gray-400 group-hover:text-gray-600" />
-        </span>
+          <span
+            className={cn(
+              'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+              v.status === 'ACTIVE' ? 'translate-x-6' : 'translate-x-1',
+            )}
+          />
+        </button>
       ),
     },
     {
