@@ -356,6 +356,7 @@ async def _proxy_to_django(
 
 @router.post(
     "/auth/login/",
+    tags=["Public API — Auth"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": {
@@ -698,6 +699,7 @@ def _serialize_timetable_slot(s: dict) -> dict:
 
 @router.get(
     "/routes/",
+    tags=["Public API — Routes & Fares"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": [{
@@ -770,6 +772,7 @@ async def list_routes(
 
 @router.get(
     "/routes/{route_id}/",
+    tags=["Public API — Routes & Fares"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": {
@@ -854,6 +857,7 @@ async def get_route(route_id: str):
 
 @router.get(
     "/routes/{route_id}/stops/",
+    tags=["Public API — Routes & Fares"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": [{
@@ -900,6 +904,7 @@ def _serialize_stop(s: dict) -> dict:
 
 @router.get(
     "/stops/autocomplete/",
+    tags=["Public API — Routes & Fares"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": [{
@@ -939,6 +944,7 @@ async def autocomplete_stops(
 
 @router.get(
     "/fares/",
+    tags=["Public API — Routes & Fares"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": [{
@@ -993,6 +999,7 @@ def _resolve_day_type(explicit: Optional[str], on_date: Optional[str]) -> str:
 
 @router.get(
     "/routes/{route_id}/timetable/",
+    tags=["Public API — Routes & Fares"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": {
@@ -1118,6 +1125,7 @@ def _serialize_trip(t: dict) -> dict:
 
 @router.get(
     "/trips/mine/",
+    tags=["Public API — Trips"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": [{
@@ -1156,6 +1164,7 @@ async def my_trips(user: dict = Depends(get_current_user)):
 
 @router.get(
     "/trips/{trip_id}/qr/",
+    tags=["Public API — Trips"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": {
@@ -1197,6 +1206,7 @@ async def get_trip_qr(trip_id: str, user: dict = Depends(get_current_user)):
 
 @router.post(
     "/tickets/",
+    tags=["Public API — Tickets"],
     responses={201: {"content": {"application/json": {"example": {
         "success": True,
         "data": {
@@ -1530,6 +1540,7 @@ async def issue_ticket(
 
 @router.post(
     "/tickets/group/",
+    tags=["Public API — Tickets"],
     responses={201: {"content": {"application/json": {"example": {
         "success": True,
         "data": {
@@ -1785,6 +1796,7 @@ async def issue_group_tickets(
 
 @router.post(
     "/tickets/namastepay/checkout/",
+    tags=["Public API — NamastePay Payments"],
     responses={201: {"content": {"application/json": {"example": {
         "success": True,
         "data": {
@@ -1899,6 +1911,7 @@ async def start_namastepay_checkout(
 
 @router.get(
     "/tickets/namastepay/return/",
+    tags=["Public API — NamastePay Payments"],
     responses={
         302: {"description": "Normal case: redirects to the checkout's own `return_to` with `?status=confirmed|failed&booking_id=...` appended, once Django has independently re-verified payment with NamastePay."},
         200: {"content": {"application/json": {"example": {
@@ -1960,6 +1973,7 @@ async def namastepay_return(checkout_id: str, tenant_schema: str):
 
 @router.get(
     "/tickets/namastepay/checkout/{checkout_id}/confirm/",
+    tags=["Public API — NamastePay Payments"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": {
@@ -2018,6 +2032,7 @@ async def confirm_namastepay_checkout(
 
 @router.post(
     "/tickets/reserve/",
+    tags=["Public API — Reservations"],
     responses={201: {"content": {"application/json": {"example": {
         "success": True,
         "data": {
@@ -2111,6 +2126,7 @@ async def reserve_ticket(
 
 @router.get(
     "/tickets/reservations/{reference_id}/",
+    tags=["Public API — Reservations"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": {
@@ -2149,6 +2165,7 @@ async def get_reservation(reference_id: str, user: dict = Depends(get_current_us
 
 @router.post(
     "/tickets/reservations/{reference_id}/validate/",
+    tags=["Public API — Reservations"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": {
@@ -2210,6 +2227,7 @@ async def validate_reservation(
 
 @router.get(
     "/tickets/my/",
+    tags=["Public API — Tickets"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": [{
@@ -2367,6 +2385,7 @@ async def _eticket_response(ticket_id: str, user: dict, by_uid: bool = False):
 
 @router.get(
     "/tickets/uid/{ticket_uid}/eticket/",
+    tags=["Public API — Tickets"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": {
@@ -2426,6 +2445,7 @@ async def get_eticket_by_uid(ticket_uid: str, user: dict = Depends(get_current_u
 
 @router.get(
     "/tickets/{ticket_id}/",
+    tags=["Public API — Tickets"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": {
@@ -2483,6 +2503,7 @@ async def get_ticket(ticket_id: str, user: dict = Depends(get_current_user)):
 
 @router.post(
     "/tickets/{ticket_id}/cancel/",
+    tags=["Public API — Tickets"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": {
@@ -2591,6 +2612,7 @@ async def cancel_ticket(
 
 @router.get(
     "/tickets/{ticket_id}/eticket/",
+    tags=["Public API — Tickets"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": {
@@ -2651,6 +2673,7 @@ async def get_eticket(ticket_id: str, user: dict = Depends(get_current_user)):
 
 @router.post(
     "/tickets/{ticket_uid}/validate/",
+    tags=["Public API — Tickets"],
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": {

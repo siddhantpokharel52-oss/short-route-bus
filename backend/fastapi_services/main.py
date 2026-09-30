@@ -10,12 +10,24 @@ from .namastepay_api.router import router as namastepay_router
 
 # Explicit order for the Swagger/ReDoc tag sections (no description text — see
 # docs/API.md for the real reference instead). Without this, tags default to
-# whatever order routers happen to be include_router()'d in below — "Public API"
-# (the master consumer API the Yatroo mobile app actually integrates against)
-# is the one external clients care about, so it goes first; the rest are
-# internal/staff-facing and follow.
+# whatever order routers happen to be include_router()'d in below.
+#
+# public_router used to be registered as one flat "Public API" tag covering
+# all 23 endpoints — unnavigable for anyone actually reading the docs. Each
+# route there now carries its own "Public API — <domain>" tag instead (Auth,
+# Routes & Fares, Trips, Tickets, NamastePay Payments, Reservations), listed
+# explicitly here so they stay grouped together and in a sensible reading
+# order rather than wherever FastAPI happens to encounter them first. These
+# are the master consumer API the Yatroo mobile app actually integrates
+# against, so they go first; Partner Integration and NamastePay Merchant
+# Lookup are separate, narrower-audience routers and follow.
 openapi_tags = [
-    {"name": "Public API"},
+    {"name": "Public API — Auth"},
+    {"name": "Public API — Routes & Fares"},
+    {"name": "Public API — Trips"},
+    {"name": "Public API — Tickets"},
+    {"name": "Public API — NamastePay Payments"},
+    {"name": "Public API — Reservations"},
     {"name": "Partner Integration"},
     {"name": "NamastePay Merchant Lookup"},
 ]
@@ -40,10 +52,11 @@ app.add_middleware(
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
-# Registration order also matches openapi_tags above (Public API first) —
-# redundant with the explicit tag order once set, but keeps the two in sync
-# for anyone skimming just this file.
-app.include_router(public_router, prefix="/public-api/v1", tags=["Public API"])
+# No tags= here -- every route inside public_api/router.py now sets its own
+# "Public API — <domain>" tag (see that file). Adding a router-level tag on
+# top would union with each route's own tag, making every operation show up
+# twice in Swagger (once under this tag, once under its real one).
+app.include_router(public_router, prefix="/public-api/v1")
 # Same URL prefix as the Master API above -- deliberate, see partner_api/router.py's
 # module docstring for why (avoids an nginx change to expose a second path shape).
 # Separate tag keeps it visually distinct in /docs from the consumer-facing surface.
