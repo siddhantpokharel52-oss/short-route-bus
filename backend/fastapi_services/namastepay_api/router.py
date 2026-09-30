@@ -50,7 +50,26 @@ _STATUS_MESSAGES = {
 }
 
 
-@router.get("/tickets/{reference_id}/", dependencies=[Depends(verify_namastepay_secret)])
+@router.get(
+    "/tickets/{reference_id}/",
+    dependencies=[Depends(verify_namastepay_secret)],
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "reference_id": "CB-8F3A1B2C9D4E5F60",
+            "route_name": "Sallaghari — Koteshwar Chowk",
+            "route_code": "1212",
+            "bus_number": "Ba 2 Kha 1234",
+            "passenger_name": "Hari Prasad",
+            "amount": "30.00",
+            "status": "PENDING",
+            "payable": True,
+            "message": "Ready to pay.",
+        },
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
 async def lookup_ticket_for_namastepay(reference_id: str):
     """GET /namastepay/tickets/{reference_id}/ -- reference_id is the "ticket ID"
     quoted to the payer (NamastePayCheckout.reference_id, not Ticket.ticket_uid).

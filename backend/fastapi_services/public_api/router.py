@@ -1864,7 +1864,17 @@ async def start_namastepay_checkout(
     return _passthrough(resp)
 
 
-@router.get("/tickets/namastepay/return/")
+@router.get(
+    "/tickets/namastepay/return/",
+    responses={
+        302: {"description": "Normal case: redirects to the checkout's own `return_to` with `?status=confirmed|failed&booking_id=...` appended, once Django has independently re-verified payment with NamastePay."},
+        200: {"content": {"application/json": {"example": {
+            "success": True,
+            "data": {"id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210", "checkout_id": "npc_8f3a1b2c9d4e5f60", "status": "CONFIRMED"},
+            "message": "Success", "errors": None,
+        }}}, "description": "Only if the checkout had no `return_to` to redirect to — surfaces the confirmation result directly instead."},
+    },
+)
 async def namastepay_return(checkout_id: str, tenant_schema: str):
     """The fixed redirect target NamastePay sends the passenger's browser back to
     (registered once per tenant in their merchant portal, expected to include
@@ -1973,7 +1983,21 @@ async def confirm_namastepay_checkout(
     return _passthrough(resp)
 
 
-@router.post("/tickets/reserve/")
+@router.post(
+    "/tickets/reserve/",
+    responses={201: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "reference_id": "CB-D26E1AC50012472E",
+            "internal_id": "09b3ebaf-d9db-424d-8173-e798223d0c35",
+            "amount": "30.00",
+            "qr_code": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAAAAAB...",
+        },
+        "message": "Reservation created -- show this to the conductor to validate and pay.",
+        "errors": None,
+        "meta": {"timestamp": "2026-09-30T08:00:00.000000+00:00"},
+    }}}}},
+)
 async def reserve_ticket(
     payload: ReserveTicketRequest,
     user: dict = Depends(get_current_user),
@@ -2052,7 +2076,25 @@ async def reserve_ticket(
     return _passthrough(resp)
 
 
-@router.get("/tickets/reservations/{reference_id}/")
+@router.get(
+    "/tickets/reservations/{reference_id}/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "reference_id": "CB-D26E1AC50012472E",
+            "checkout_id": None,
+            "route_id": "134e0299-e705-4008-910e-edae38c3c312",
+            "from_stop_id": "d1c11c52-4923-49d7-8c5b-f8d1dd59d8e2",
+            "amount": "30.00",
+            "status": "PENDING",
+            "passengers": [
+                {"fare_paid": "30.00", "to_stop_id": "503626a1-bd20-42a1-be55-4b1518e4eaaa", "passenger_name": "", "ticket_type_id": None},
+            ],
+        },
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
 async def get_reservation(reference_id: str, user: dict = Depends(get_current_user)):
     """Conductor scans/types the passenger's reservation code and sees what it's
     for — route, fare, passenger count, and its current status (PENDING/REJECTED/
@@ -2072,7 +2114,22 @@ async def get_reservation(reference_id: str, user: dict = Depends(get_current_us
     return _ok(data=_serialize_reservation(reservation))
 
 
-@router.post("/tickets/reservations/{reference_id}/validate/")
+@router.post(
+    "/tickets/reservations/{reference_id}/validate/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "checkout_id": "npc_8f3a1b2c9d4e5f60",
+            "payment_url": "https://pay.namastepay.com/checkout/npc_8f3a1b2c9d4e5f60",
+            "expires_at": "2026-09-30T08:15:00Z",
+            "reference_id": "CB-D26E1AC50012472E",
+            "internal_id": "09b3ebaf-d9db-424d-8173-e798223d0c35",
+        },
+        "message": "Reservation accepted -- show this payment QR to the passenger.",
+        "errors": None,
+        "meta": {"timestamp": "2026-09-30T08:00:00.000000+00:00"},
+    }}}}},
+)
 async def validate_reservation(
     reference_id: str,
     payload: ValidateReservationRequest = ValidateReservationRequest(),
