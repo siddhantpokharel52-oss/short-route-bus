@@ -16,14 +16,15 @@ deployment status.
 
 | Workstream | Status |
 |---|---|
-| **Yatroo integration** (§2) | Feature-complete. A partner-reported complaint (no ticket API, slow fares) was investigated and found factually incorrect on the ticket-API claim; the fare-speed claim has no visible code cause. A newer Namaste Pay "Partner/Subscriber App" integration model was also analyzed against the codebase — mostly not built yet (§2.5). |
+| **Yatroo integration** (§2, §13.1–13.2) | Feature-complete. A partner-reported complaint (no ticket API, slow fares) was investigated and found factually incorrect on the ticket-API claim; the fare-speed claim has no visible code cause. A newer Namaste Pay "Partner/Subscriber App" integration model was also analyzed against the codebase — mostly not built yet (§2.5). New this session (§13.1): the "validate-then-pay" reservation flow for a Yatroo passenger's self-service ticket — reserve → conductor scans/accepts → merchant QR → paid ticket, mirroring the walk-in flow's own payment-before-ticket rule. |
 | **NamastePay payment system** (§3) | 6 of 10 spec items (CB1–CB4, CB6, CB9) done and committed. **CB7 (conductor cash-shift ledger) was built, then fully removed by explicit request** (§3.1.1) — no shift tracking exists anywhere in the app today. 3 items (CB5, CB8's remainder, CB10) are blocked on NamastePay/product decisions, not code work; CB8's own remaining half no longer has anything to fall back on now that CB7 is gone. |
 | **Team Implementation Guide gaps** (§4) | All 3 original code-fixable gaps closed (per-passenger destinations, Bus Owner Dashboard, ticket history API), plus a follow-up pass that found and closed a real access-control gap — the Owner Dashboard's own endpoints and nav had no real role scoping. Also added: ISSUED/PAID timestamp scaffolding for §3.6, a `child_fare` bulk-tooling fix for §3.3, (§4.5) a full real-device testing pass across owner/conductor/admin that found and fixed six more UX/access gaps — one of which, a hard requirement that a conductor open a shift before issuing tickets, was **itself removed again days later** along with the rest of shift tracking (§3.1.1) — and (§4.6) a real regression that same lockdown introduced — self-service/group ticket purchase would have 403'd in production — caught live and fixed before shipping. 2 items (§3.6's actual state machine, §3.3's real concession rates) still need a team decision or external numbers, not code. |
 | **Route & Group Rotation QA report** (§5) | All 94 issues triaged; every issue that was a real, scopeable bug is fixed and verified live (Critical 5/5, High 21/24, Medium/Low 29/65). The rest (39 issues) are explicitly "Clarify"-status or large standalone features needing a product decision first — not oversights. |
 | **Pokhara tenant QA report** (§6) | All 11 issues fixed and verified live against a real second tenant. Headline finding: Route/Stop weren't filtered by tenant assignment at all — a cross-tenant data leak that had already **corrupted** a tenant's own roster data (real `Duty` rows written against another tenant's routes), not just a display bug. Also closed: two stuck-submit-button/silent-400 form bugs, a genuinely missing "create a login for this conductor/driver" flow (nothing in the product ever built it), a dead-looking-but-actually-guarded button, mislabeled nav links, unseeded tenant branding, and a stray-waypoint map bug. |
 | **Owner accounts / login security & form UX** (§7) | Owner `create-login` + forced temp-password change flow built, verified live end-to-end, and committed. Also fixed in the same pass: a broken `changePassword` endpoint call (wrong URL/field name), admin-password fields rendering in plaintext (`type="text"`), and a password-strength mismatch between frontend (8 chars) and backend (10 chars) validation. |
-| **Production deployment** (§8) | Everything through commit `ef413128` is confirmed live on the original server (172.19.0.246) as of 2026-09-21. Everything since — §4.5/§4.6's fixes, §3.1.1's shift-tracking removal, §6's Pokhara fixes, §7's owner-accounts work, §12's dispatch/fleet/maintenance work, and a long stretch of undocumented feature work culminating in commit `0ba28ac1` — is pushed to `main` but **not deployed to 172.19.0.246**. A **second server (36.253.137.147)** was stood up from scratch on 2026-09-26 with everything through `236b6b2c` (not yet the `0ba28ac1` work) and is fully built and verified working internally, but is **not yet reachable from the public internet** — blocked on an ISP-side port filter, see §8.1. The original server's database was also found to have **zero tenants ever provisioned** despite being labeled production — see §8.1. |
-| **Dispatch / Fleet / Maintenance** (§12) | New this session (2026-09-27): driver/conductor double-booking prevention, a conductor picker + fixed name resolution on Dispatch, a Copy Schedule tool (repeat a day's dispatch), a manual End Shift action, resolved bus/route/driver/conductor on Dispatch Logs with a route filter, a fabricated-data bug fix on Add Vehicle's insurance side effect, a real Available toggle on Fleet tied to vehicle status, and a two-way integration between Fleet's toggle and Maintenance scheduling (scheduling service marks a vehicle unavailable; completing or force-overriding it marks it available again). All built and verified live; not yet deployed anywhere. |
+| **Production deployment** (§8, §13.5) | **Updated 2026-10-01 — the new server is live.** The Ncell ISP port-filter blocker in §8.1 is resolved (80/443 confirmed open from outside) and DNS for the bare `citybus.com.np` domain now correctly points to `36.253.137.147`. Everything through commit `ef8ae9a8` (§13's whole session) is deployed and verified there — see §13.5 for the deploy log and a newly-found gotcha (the "public" tenant/domain was never bootstrapped on this fresh DB, §13.6). **`mobile-api.citybus.com.np`** — the actual hostname Yatroo's integration is documented against — **still points to a third, unrelated, old-code server** and needs a DNS fix that isn't doable from either server; see §13.7. The original server (172.19.0.246) is unchanged from before and still has zero tenants provisioned. |
+| **Dispatch / Fleet / Maintenance** (§12) | New this session (2026-09-27): driver/conductor double-booking prevention, a conductor picker + fixed name resolution on Dispatch, a Copy Schedule tool (repeat a day's dispatch), a manual End Shift action, resolved bus/route/driver/conductor on Dispatch Logs with a route filter, a fabricated-data bug fix on Add Vehicle's insurance side effect, a real Available toggle on Fleet tied to vehicle status, and a two-way integration between Fleet's toggle and Maintenance scheduling (scheduling service marks a vehicle unavailable; completing or force-overriding it marks it available again). Deployed live as part of §13.5. |
+| **Yatroo reconciliation + API docs cleanup** (§13) | New this session (2026-09-30/10-01): a conductor/bus revenue reconciliation report (daily/weekly/yearly, cash vs. online), a full pass fixing the Public API's Swagger documentation (7 endpoints had no request schema at all, 3 had a subtler bug hiding the example value, the whole API was one unnavigable flat list), and the first real production deployment since §8.1 — including two real bugs found only by testing against the live server (see §13.6) and a still-open DNS blocker (§13.7). Also traced the Live Tracking map showing blank in every environment to a third-party (Baato) account quota limit, not a code or config bug (§13.8). |
 
 ---
 
@@ -710,6 +711,11 @@ below).
 
 ### 8.1 New server (36.253.137.147) — built and verified, blocked on ISP port filtering (2026-09-26)
 
+**Status update, 2026-10-01: this is resolved — see §13.5.** Both blockers
+described below (the ISP port filter and the DNS pointing at the wrong IP)
+were fixed by the time this session started; kept as-written below since
+it's an accurate record of the investigation, not because it's still true.
+
 **Why a second server:** the user was handed a new, empty box
 (`ubuntu@36.253.137.147`) and asked to deploy there. Before copying
 anything over, the original server's database was checked directly
@@ -1131,3 +1137,218 @@ still blocked on the Ncell port issue in §8.1).
   still pending for it (completing one of two open schedules for the same
   vehicle correctly leaves it `IN_MAINTENANCE`, verified as a real test
   case, not just assumed).
+
+---
+
+## 13. Yatroo reservation flow, reconciliation, API docs cleanup, and first real production deployment — 2026-09-30/10-01 session
+
+Everything below was built and verified live against the running dev stack
+(real HTTP calls end-to-end, not mocks — only the NamastePay gateway calls
+themselves were mocked, since there's no real merchant key in dev), then
+committed and pushed through `ef8ae9a8`. §13.5 onward covers actually
+deploying this to the new server and what was found doing it for real.
+
+### 13.1 Yatroo "validate-then-pay" reservation flow (`123f7097`)
+
+The passenger-app flow the whole rest of this project's Yatroo work never
+covered: a passenger reserves a fare on the Yatroo app (no payment yet, no
+real `Ticket` exists), a conductor scans the resulting code and either
+rejects it outright or accepts it — accepting is the point a real NamastePay
+checkout gets created, and only a confirmed payment turns it into a real,
+settled ticket. Deliberately reuses the exact machinery CB9/CB4's walk-in
+flow already established rather than inventing a second payment model:
+
+- `NamastePayCheckout.checkout_id` made nullable (a reservation has no
+  checkout yet) and a new `REJECTED` status added — one new migration,
+  `ticketing/migrations/0011_alter_namastepaycheckout_checkout_id_and_more.py`.
+- Three new endpoints: `POST /tickets/reserve/` (passenger creates the
+  reservation), `GET /tickets/reservations/{reference_id}/` (conductor looks
+  it up), `POST /tickets/reservations/{reference_id}/validate/` (conductor
+  accepts → real NamastePay checkout starts, or rejects → dead end, no
+  payment ever attempted).
+- Confirming payment reuses the *existing* `NamastePayCheckoutConfirmView` —
+  the same conductor-tagging logic that already applied to walk-in fares
+  applies here for free, no new code needed for that part.
+
+### 13.2 Conductor cash/QR walk-in flow (Scenario 2) — confirmed already built
+
+Investigated whether a conductor needs a new "choose cash or QR" API before
+showing a payment method to a walk-in passenger — it doesn't. `POST
+/tickets/` (cash, conductor confirms the amount directly, `payment_method`
+defaults to `CASH`) and `POST /tickets/namastepay/checkout/` (QR) already
+exist as two separate calls; whichever the conductor's own app calls is the
+"choice." No backend gap here — see §13.3 for what actually was missing.
+
+### 13.3 Conductor reconciliation report (`d32c9170`)
+
+New `GET /analytics/reconciliation/` — today/this-week/this-year revenue in
+one response, split cash vs. NamastePay/online, grouped by
+`(conductor_id, vehicle_id)` pairs (not conductor alone, since a conductor
+can move buses across a week/year and the money should stay tied to
+whichever bus it was actually collected on — `Ticket.vehicle_id` already
+records that directly at issuance per CB1, no need to reconstruct it from
+`DailyAllocation` history). Wired into the tenant portal as a new
+"Conductor Reconciliation" card under Accounting → Reports, reusing the
+existing report-selector UI.
+
+### 13.4 Public API Swagger documentation — fixed and reorganized (`80d9ee9b`, `19637885`, `66c4e08b`, `eca1d69a`, `f60c0976`, `bc4c3cba`, `ef8ae9a8`)
+
+Found while checking why the Collector-login endpoint's Swagger page showed
+an empty `{}` request body — turned into a full pass across the whole
+Public API:
+
+- **7 endpoints took a bare `payload: dict`** (login, issue ticket, group
+  booking, NamastePay checkout, and the 3 new reservation endpoints from
+  §13.1) — FastAPI can't introspect field names from a plain `dict`, so
+  Swagger showed nothing. Added a Pydantic model per endpoint; every field
+  stays `Optional` even where logically required (the handlers keep their
+  own more-descriptive `_error(...)` messages instead of a generic Pydantic
+  422), and every model has `extra="allow"` since `issue_ticket()` forwards
+  a filtered-but-otherwise-arbitrary payload straight to Django.
+- **3 of those (login, validate-reservation, validate-ticket) still showed
+  an empty Example Value after that fix.** Real cause, not caching: giving
+  the endpoint parameter a bare `= Model()` default made FastAPI embed a
+  sibling `"default": {}` next to the schema's `$ref` in the OpenAPI spec —
+  Swagger renders that sibling instead of resolving into the referenced
+  schema's own example. Fixed by switching to `Body(default_factory=Model)`,
+  which produces a clean `$ref` with no sibling key — verified against a
+  live-container routing test, not just the spec JSON, that a truly-empty
+  request body still gets the same friendly error as before (no behavior
+  change, docs-only).
+- **3 new endpoints (the reservation ones) were also missing the response
+  examples** every other endpoint in the file has — added, matching the
+  existing `responses={...}` convention. Also added one for the NamastePay
+  merchant-lookup API's own ticket-by-ID endpoint, and a proper 302-vs-JSON
+  explanation for the NamastePay browser-redirect callback.
+- **The whole Public API was one flat 23-endpoint Swagger list** under a
+  single `"Public API"` tag. Split into 6 sections (Auth, Routes & Fares,
+  Trips, Tickets, NamastePay Payments, Reservations) via per-route
+  `tags=[...]`, and removed the router-level tag from `main.py`'s
+  `include_router()` call — FastAPI unions router-level and route-level
+  tags, so leaving both would have made every operation appear twice.
+- **The bare `citybus.com.np` domain no longer exposes the Public API at
+  all** (`ef8ae9a8`) — it used to also proxy `/public-api/` to FastAPI as a
+  duplicate path alongside `mobile-api.citybus.com.np`. Removed by explicit
+  request: the Public API now has exactly one home, so there's a single
+  place for an integrator to look. `/api/v1/live/` (GPS/live-tracking, a
+  *different* FastAPI router used by the tenant portal's own dashboard) was
+  deliberately left untouched — verified via a live routing test with
+  throwaway containers standing in for fastapi/django/frontend, checking
+  each one's own access log to confirm exactly which requests landed where.
+
+### 13.5 First real production deployment since §8.1 (2026-09-30/10-01)
+
+With both §8.1 blockers resolved (Ncell's port filter opened, DNS for the
+bare domain corrected), deployed everything through `ef8ae9a8` to
+`36.253.137.147` for real, start to finish:
+
+```bash
+ssh ubuntu@36.253.137.147
+cd ~/short-route-bus && git pull origin main
+cd docker
+docker compose -f docker-compose.prod.yml build django fastapi frontend
+docker compose -f docker-compose.prod.yml up -d db redis
+docker compose -f docker-compose.prod.yml up -d django fastapi celery celery-beat frontend
+docker compose -f docker-compose.prod.yml logs django --tail 50   # confirm migration 0011 applies clean
+docker compose -f docker-compose.prod.yml up -d nginx
+```
+
+**One thing easy to miss:** `celery`/`celery-beat` build from the *same*
+Dockerfile as `django` (`Dockerfile.django.prod`) but as their own,
+separately-tagged images — the `build django fastapi frontend` step above
+does **not** rebuild them. Needed their own explicit
+`build celery celery-beat` + `up -d celery celery-beat`, or they silently
+keep running the pre-deploy code indefinitely.
+
+**Gotcha #3 from §8.1 bit again, exactly as documented:** after rebuilding
+django/fastapi/frontend, `citybus.com.np` 502'd — nginx was never actually
+restarted (`up -d nginx` is a no-op if compose sees no config change),
+so it kept trying to reach the old, now-dead container IPs. Fixed with
+`docker compose -f docker-compose.prod.yml restart nginx`. Verified for
+real afterward: `citybus.com.np` → `200` with real HTML, and the live
+OpenAPI spec (`/public-api/v1/routes/`'s own `tags` field, and the presence
+of `/tickets/reserve/`) confirmed it was genuinely today's code, not a
+stale cache.
+
+### 13.6 New gotcha found this deploy: the "public" tenant/domain was never bootstrapped
+
+While chasing why `citybus.com.np/api/docs/` (Django's own drf-spectacular
+docs, distinct from FastAPI's — see §13.4) 404'd with Django's own generic
+404 page, traced it to django-tenants' `TenantMainMiddleware.get_tenant()`
+doing a hard `Domain.objects.get(domain=hostname)` — **no fallback**. A
+direct check on production found **both `Tenant` and `Domain` tables
+completely empty** — not even the baseline `public` schema had a
+bookkeeping row, meaning *every* Django-routed request for `citybus.com.np`
+(not just `/api/docs/`) was 404ing. This is the same "zero tenants
+provisioned" finding from §8.1, just traced one level deeper than before —
+even the platform's own baseline tenant was missing, not just real customer
+tenants.
+
+**Fixed with a purely additive `get_or_create`** (safe to confirm before
+running: `TenantMixin.save()` calls `create_schema(check_if_exists=True)`,
+which explicitly `return`s early if the schema already exists — since
+`public` obviously already exists as Postgres's own default schema, this
+can never attempt a `CREATE SCHEMA` or re-run migrations):
+
+```python
+from backend.apps.tenants.models import Tenant, Domain
+tenant, _ = Tenant.objects.get_or_create(
+    schema_name='public',
+    defaults={'name': 'KVBMS Platform', 'status': 'ACTIVE', 'plan_type': 'BASIC'},
+)
+for host in ['citybus.com.np', 'www.citybus.com.np']:
+    Domain.objects.get_or_create(domain=host, defaults={'tenant': tenant, 'is_primary': host == 'citybus.com.np'})
+```
+
+Worth checking on 172.19.0.246 too, if that server is ever brought back into
+use — it likely has the identical gap.
+
+### 13.7 Still open: `mobile-api.citybus.com.np` DNS points at a third, wrong server
+
+`citybus.com.np` (bare domain) now correctly resolves to `36.253.137.147`,
+but **`mobile-api.citybus.com.np` — the exact hostname Yatroo's integration
+is documented against — resolves to `103.170.75.51`**, a server neither the
+old (172.19.0.246) nor the new (36.253.137.147) box, confirmed still running
+pre-session code (its own `/docs` page shows the old flat `"Public API"` tag
+from before §13.4's reorganization). Confirmed the new server is otherwise
+100% ready for this hostname regardless of DNS — forcing a direct connection
+(`curl --resolve mobile-api.citybus.com.np:443:36.253.137.147 ...`) returns
+`200` with the correct wildcard TLS cert match (`*.citybus.com.np`).
+
+**Whoever manages DNS for `citybus.com.np`** (nameservers are
+`ns1.shangrilagroup.com.np` / `ns2.shangrilagroup.com.np` — not a
+third-party registrar, so this is an internal team member's own DNS panel,
+not a support ticket) needs to update one A record:
+`mobile-api.citybus.com.np` from `103.170.75.51` to `36.253.137.147`. Check
+current status any time with `dig +short mobile-api.citybus.com.np`.
+
+Since §13.4 deliberately removed the bare-domain `/public-api/` fallback,
+there is currently **no working public URL for the Public API until this
+DNS record is fixed** — this is now the single blocker on Yatroo's
+integration, not anything code- or server-side.
+
+### 13.8 Live Tracking map shows blank everywhere — third-party quota, not a bug
+
+The map background (Baato, a Nepal-focused MapLibre-compatible tile
+service) shows blank in local dev *and* production identically. Traced
+precisely, not assumed: the style JSON loads fine (`200`), but the actual
+tile endpoint (`GET https://api.baato.io/api/v1/maps/{z}/{x}/{y}.pbf`)
+returns `403: "Your monthly usage limit has been exceeded"` — a real,
+verified response from Baato's own API, not a local config problem. Marker
+pins still render because those are separate React components, not part of
+the tile layer; a faint boundary-outline shape can still appear since that
+one layer loads from a static GeoJSON file, not the metered tile endpoint.
+
+Same key (`VITE_BAATO_API_KEY`) is baked into both `frontend/.env` (local)
+and `frontend/.env.production`, which is exactly why both environments fail
+identically — the quota is per Baato account, not per environment.
+`git log --all -- frontend/.env.production` shows the key was added in
+commit `504e5060` by **Siddhant Pokharel** (matches the GitHub account this
+repo is hosted under) — not confirmed whether that's a personal account or
+a Shangrila-owned one.
+
+**Fix needed, entirely outside this codebase:** log into the Baato account
+that owns this key, upgrade the plan or wait for the monthly reset (or
+generate a fresh key on a different account for a quick unblock), then
+update `VITE_BAATO_API_KEY` in both `.env` files — production also needs a
+frontend rebuild afterward to bake in the new key.
