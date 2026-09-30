@@ -62,7 +62,7 @@ from typing import Optional
 
 import httpx
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.responses import JSONResponse, RedirectResponse
 from jose import JWTError, jwt as jose_jwt
@@ -372,7 +372,7 @@ async def _proxy_to_django(
         "meta": {"timestamp": "2026-09-21T08:00:00.000000+00:00"},
     }}}}},
 )
-async def collector_login(payload: CollectorLoginRequest = CollectorLoginRequest()):
+async def collector_login(payload: CollectorLoginRequest = Body(default_factory=CollectorLoginRequest)):
     """Direct phone+password login for a Collector app -- the credentials a
     bus company sets for their own conductor via
     `POST /operator/conductors/{id}/create-login/` (tenant-portal only, not
@@ -2165,7 +2165,7 @@ async def get_reservation(reference_id: str, user: dict = Depends(get_current_us
 )
 async def validate_reservation(
     reference_id: str,
-    payload: ValidateReservationRequest = ValidateReservationRequest(),
+    payload: ValidateReservationRequest = Body(default_factory=ValidateReservationRequest),
     user: dict = Depends(get_current_user),
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ):
@@ -2683,7 +2683,7 @@ async def get_eticket(ticket_id: str, user: dict = Depends(get_current_user)):
 )
 async def validate_ticket(
     ticket_uid: str,
-    payload: ValidateTicketRequest = ValidateTicketRequest(),
+    payload: ValidateTicketRequest = Body(default_factory=ValidateTicketRequest),
     user: dict = Depends(get_current_user),
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ):
