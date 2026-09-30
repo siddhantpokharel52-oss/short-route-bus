@@ -502,3 +502,94 @@ class CityTicketRevenueLiveView(views.APIView):
             "cash_collected": total_cash_collected,
             "by_tenant": by_tenant,
         })
+
+
+class ReconciliationReportView(views.APIView):
+    """
+    GET /analytics/reconciliation/?date=YYYY-MM-DD
+    "Who collected how much, on which bus" -- covers every payment method
+    (cash and NamastePay/online alike) so finance can reconcile a conductor's
+    cash-in-hand against what the system expected, and see NamastePay's
+    online collections credited to the same conductor for settlement against
+    the tenant's own merchant account. Grouped by (conductor_id, vehicle_id)
+    pair rather than conductor alone, since a conductor can move buses across
+    a week/year and the money should stay tied to whichever bus it was
+    actually collected on -- Ticket.vehicle_id already records that directly
+    at issuance (CB1), no need to reconstruct it from DailyAllocation history.
+
+    Three windows in one response (today / this ISO week / this calendar
+    year), `date` anchors all three (defaults to today) -- same multi-window
+    shape OwnerDashboardSummaryView already uses, just tenant-wide instead of
+    one owner's buses, and per-conductor instead of per-bus only.
+    """
+    permission_classes = [IsOperationsRole | IsFinanceRole]
+
+    def get(self, request):
+        from datetime import timedelta
+        from django.db.models import Sum, Count, Q
+        from backend.apps.ticketing.models import Ticket
+        from backend.apps.ticketing.serializers import _resolve_conductor_name
+        from backend.apps.fleet.models import Vehicle
+
+        target_date, error = _parse_target_date(request)
+        if error is not None:
+            return error
+
+        week_start = target_date - timedelta(days=target_date.weekday())
+        week_end = week_start + timedelta(days=6)
+        year_start = target_date.replace(month=1, day=1)
+        year_end = target_date.replace(month=12, day=31)
+
+        base_qs = Ticket.objects.filter(is_deleted=False)
+
+        def window(qs):
+            rows = list(
+                qs.values("conductor_id", "vehicle_id").annotate(
+                    cash_revenue=Sum("fare_paid", filter=Q(payment_method=Ticket.PaymentMethod.CASH)),
+                    online_revenue=Sum("fare_paid", filter=~Q(payment_method=Ticket.PaymentMethod.CASH)),
+                    ride_count=Count("id"),
+                )
+            )
+            vehicle_ids = {r["vehicle_id"] for r in rows if r["vehicle_id"]}
+            bus_numbers = {
+                v.id: (v.bus_number or v.registration_no)
+                for v in Vehicle.objects.filter(id__in=vehicle_ids)
+            }
+            by_conductor = []
+            for r in rows:
+                cash = float(r["cash_revenue"] or 0)
+                online = float(r["online_revenue"] or 0)
+                by_conductor.append({
+                    "conductor_id": str(r["conductor_id"]) if r["conductor_id"] else None,
+                    "conductor_name": _resolve_conductor_name(r["conductor_id"]) if r["conductor_id"] else "Self-service / no conductor",
+                    "vehicle_id": str(r["vehicle_id"]) if r["vehicle_id"] else None,
+                    "bus_number": bus_numbers.get(r["vehicle_id"]),
+                    "cash_revenue": cash,
+                    "online_revenue": online,
+                    "total_revenue": cash + online,
+                    "ride_count": r["ride_count"],
+                })
+            by_conductor.sort(key=lambda x: -x["total_revenue"])
+            return {
+                "cash_revenue": sum(x["cash_revenue"] for x in by_conductor),
+                "online_revenue": sum(x["online_revenue"] for x in by_conductor),
+                "total_revenue": sum(x["total_revenue"] for x in by_conductor),
+                "ride_count": sum(x["ride_count"] for x in by_conductor),
+                "by_conductor": by_conductor,
+            }
+
+        return api_response(data={
+            "date": target_date.isoformat(),
+            "daily": {
+                "period_start": target_date.isoformat(), "period_end": target_date.isoformat(),
+                **window(base_qs.filter(issued_at__date=target_date)),
+            },
+            "weekly": {
+                "period_start": week_start.isoformat(), "period_end": week_end.isoformat(),
+                **window(base_qs.filter(issued_at__date__gte=week_start, issued_at__date__lte=week_end)),
+            },
+            "yearly": {
+                "period_start": year_start.isoformat(), "period_end": year_end.isoformat(),
+                **window(base_qs.filter(issued_at__date__gte=year_start, issued_at__date__lte=year_end)),
+            },
+        })

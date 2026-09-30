@@ -10,4 +10,5 @@ urlpatterns = [
     path("owner/trend/", views.OwnerDashboardTrendView.as_view(), name="owner-dashboard-trend"),
     path("tickets/live/", views.TicketRevenueLiveView.as_view(), name="tickets-live"),
     path("city/tickets/live/", views.CityTicketRevenueLiveView.as_view(), name="city-tickets-live"),
+    path("reconciliation/", views.ReconciliationReportView.as_view(), name="reconciliation-report"),
 ]

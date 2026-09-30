@@ -70,7 +70,7 @@ const fmt = (n: string | number) =>
 const tabs = ['Overview', 'Chart of Accounts', 'Journal Entries', 'Salary Payments', 'Reports'] as const
 type Tab = typeof tabs[number]
 
-type ReportType = 'profit-loss' | 'balance-sheet' | 'trial-balance' | 'cash-flow' | 'expense-analysis' | 'general-ledger'
+type ReportType = 'profit-loss' | 'balance-sheet' | 'trial-balance' | 'cash-flow' | 'expense-analysis' | 'general-ledger' | 'reconciliation'
 
 const REPORT_TYPES: { id: ReportType; icon: React.ElementType }[] = [
   { id: 'profit-loss',      icon: TrendingUp  },
@@ -79,7 +79,21 @@ const REPORT_TYPES: { id: ReportType; icon: React.ElementType }[] = [
   { id: 'cash-flow',        icon: Activity    },
   { id: 'expense-analysis', icon: BarChart3   },
   { id: 'general-ledger',   icon: FileText    },
+  { id: 'reconciliation',   icon: Users       },
 ]
+
+interface ReconciliationWindow {
+  period_start: string; period_end: string
+  cash_revenue: number; online_revenue: number; total_revenue: number; ride_count: number
+  by_conductor: {
+    conductor_id: string | null; conductor_name: string | null
+    vehicle_id: string | null; bus_number: string | null
+    cash_revenue: number; online_revenue: number; total_revenue: number; ride_count: number
+  }[]
+}
+interface ReconciliationData {
+  date: string; daily: ReconciliationWindow; weekly: ReconciliationWindow; yearly: ReconciliationWindow
+}
 
 // ─── KPI Card ────────────────────────────────────────────────────────────────
 
@@ -862,6 +876,71 @@ function ExpenseReport({ data }: { data: any }) {
   )
 }
 
+function ReconciliationWindowTable({ label, window }: { label: string; window: ReconciliationWindow }) {
+  const { t } = useTranslation('tenant')
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <h4 className="font-bold text-gray-900 dark:text-white">{label}</h4>
+        <span className="text-xs text-gray-400">{window.period_start} {t('accounting.reports.dateRangeSep')} {window.period_end}</span>
+      </div>
+      <div className="grid grid-cols-3 gap-3 mb-3">
+        <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-3">
+          <p className="text-xs text-gray-400 uppercase tracking-wide">{t('accounting.reports.reconciliationCash')}</p>
+          <p className="font-mono font-bold text-gray-900 dark:text-white">{fmt(window.cash_revenue)}</p>
+        </div>
+        <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-3">
+          <p className="text-xs text-gray-400 uppercase tracking-wide">{t('accounting.reports.reconciliationOnline')}</p>
+          <p className="font-mono font-bold text-gray-900 dark:text-white">{fmt(window.online_revenue)}</p>
+        </div>
+        <div className="rounded-xl bg-primary-50 dark:bg-primary-900/20 p-3">
+          <p className="text-xs text-primary-600 dark:text-primary-300 uppercase tracking-wide">{t('accounting.reports.reconciliationTotal')}</p>
+          <p className="font-mono font-bold text-primary-700 dark:text-primary-300">{fmt(window.total_revenue)}</p>
+        </div>
+      </div>
+      {window.by_conductor.length === 0 ? (
+        <p className="text-sm text-gray-400 py-4 text-center">{t('accounting.reports.reconciliationNoData')}</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 dark:bg-gray-800 text-xs text-gray-500 uppercase tracking-wide">
+              <th className="py-2 px-3 text-left rounded-l-lg">{t('accounting.reports.reconciliationConductor')}</th>
+              <th className="py-2 px-3 text-left">{t('accounting.reports.reconciliationBus')}</th>
+              <th className="py-2 px-3 text-right">{t('accounting.reports.reconciliationRides')}</th>
+              <th className="py-2 px-3 text-right">{t('accounting.reports.reconciliationCash')}</th>
+              <th className="py-2 px-3 text-right">{t('accounting.reports.reconciliationOnline')}</th>
+              <th className="py-2 px-3 text-right rounded-r-lg">{t('accounting.reports.reconciliationTotal')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {window.by_conductor.map((row, i) => (
+              <tr key={`${row.conductor_id}-${row.vehicle_id}-${i}`} className="border-b border-gray-100 dark:border-gray-700/60 hover:bg-gray-50 dark:hover:bg-gray-800/30">
+                <td className="py-2 px-3 text-gray-700 dark:text-gray-300">{row.conductor_name ?? '—'}</td>
+                <td className="py-2 px-3 text-gray-500 dark:text-gray-400">{row.bus_number ?? '—'}</td>
+                <td className="py-2 px-3 text-right font-mono text-xs text-gray-500">{row.ride_count}</td>
+                <td className="py-2 px-3 text-right font-mono">{fmt(row.cash_revenue)}</td>
+                <td className="py-2 px-3 text-right font-mono">{fmt(row.online_revenue)}</td>
+                <td className="py-2 px-3 text-right font-mono font-semibold text-gray-900 dark:text-white">{fmt(row.total_revenue)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
+function ReconciliationReport({ data }: { data: ReconciliationData }) {
+  const { t } = useTranslation('tenant')
+  return (
+    <div className="space-y-8">
+      <ReconciliationWindowTable label={t('accounting.reports.reconciliationToday')} window={data.daily} />
+      <ReconciliationWindowTable label={t('accounting.reports.reconciliationThisWeek')} window={data.weekly} />
+      <ReconciliationWindowTable label={t('accounting.reports.reconciliationThisYear')} window={data.yearly} />
+    </div>
+  )
+}
+
 function GLReport({ data }: { data: any }) {
   const { t } = useTranslation('tenant')
   return (
@@ -929,6 +1008,7 @@ function ReportsPanel({ accounts }: { accounts: COA[] }) {
     'cash-flow':        t('accounting.reports.cashFlow'),
     'expense-analysis': t('accounting.reports.expenseAnalysis'),
     'general-ledger':   t('accounting.reports.generalLedger'),
+    'reconciliation':   t('accounting.reports.reconciliation'),
   }
   const reportDescMap: Record<ReportType, string> = {
     'profit-loss':      t('accounting.reports.profitLossDesc'),
@@ -937,9 +1017,18 @@ function ReportsPanel({ accounts }: { accounts: COA[] }) {
     'cash-flow':        t('accounting.reports.cashFlowDesc'),
     'expense-analysis': t('accounting.reports.expenseAnalysisDesc'),
     'general-ledger':   t('accounting.reports.generalLedgerDesc'),
+    'reconciliation':   t('accounting.reports.reconciliationDesc'),
   }
 
   const queryUrl = (() => {
+    // reconciliation returns today/this-week/this-year in one response, anchored
+    // off a single date -- it lives under /analytics/, not /accounting/reports/,
+    // since it reads apps.ticketing.Ticket directly rather than the ledger.
+    if (reportType === 'reconciliation') {
+      const p = new URLSearchParams()
+      p.set('date', dateTo)
+      return `/analytics/reconciliation/?${p}`
+    }
     const p = new URLSearchParams()
     if (needsRange) { p.set('date_from', dateFrom); p.set('date_to', dateTo) }
     else p.set('date', dateTo)
@@ -949,7 +1038,11 @@ function ReportsPanel({ accounts }: { accounts: COA[] }) {
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['report', reportType, dateFrom, dateTo, glAccount],
-    queryFn: () => apiClient.get(queryUrl).then(r => r.data),
+    // /analytics/reconciliation/ wraps its payload in the {success, data, ...}
+    // envelope every other analytics endpoint uses (see TenantAnalyticsPage.tsx) --
+    // unlike the /accounting/reports/* views above, which return their payload
+    // unwrapped. One extra .data unwrap only for this report type.
+    queryFn: () => apiClient.get(queryUrl).then(r => reportType === 'reconciliation' ? r.data.data : r.data),
     enabled: fetched,
   })
 
@@ -1058,6 +1151,7 @@ function ReportsPanel({ accounts }: { accounts: COA[] }) {
             {reportType === 'cash-flow'        && <CFReport data={data} />}
             {reportType === 'expense-analysis' && <ExpenseReport data={data} />}
             {reportType === 'general-ledger'   && <GLReport data={data} />}
+            {reportType === 'reconciliation'   && <ReconciliationReport data={data} />}
           </div>
         </div>
       )}
