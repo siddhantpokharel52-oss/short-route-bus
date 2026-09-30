@@ -904,6 +904,20 @@ async def get_route_timetable(
 # Tickets
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _serialize_reservation(r: dict) -> dict:
+    """Mirrors apps.ticketing.NamastePayCheckoutSerializer's field set, for a
+    conductor's pre-payment reservation scan — see get_reservation() below."""
+    return {
+        "reference_id": r["reference_id"],
+        "checkout_id": r.get("checkout_id"),
+        "route_id": str(r["route_id"]) if r.get("route_id") else None,
+        "from_stop_id": str(r["from_stop_id"]) if r.get("from_stop_id") else None,
+        "amount": str(r["amount"]),
+        "status": r["status"],
+        "passengers": r.get("passengers") or [],
+    }
+
+
 def _serialize_ticket(t: dict) -> dict:
     return {
         "id": t["id"],
@@ -1848,6 +1862,149 @@ async def confirm_namastepay_checkout(
         schema,
         domain,
         credentials.credentials,
+    )
+    return _passthrough(resp)
+
+
+@router.post("/tickets/reserve/")
+async def reserve_ticket(
+    payload: dict,
+    user: dict = Depends(get_current_user),
+):
+    """Step 1 of the Yatroo validate-then-pay flow (passenger self-service only):
+    picks a route/fare and gets back a `reference_id` + QR the passenger shows the
+    conductor — *before* any money moves. Nothing is charged and no Ticket exists
+    yet; a conductor must scan this and accept it (POST
+    /tickets/reservations/{reference_id}/validate/ below) before payment is even
+    attempted. Same passengers/ticket_type resolution as start_namastepay_checkout,
+    minus return_to — there's no browser redirect in this flow, payment happens via
+    the conductor's own device."""
+    if user.get("role") != PASSENGER_ROLE:
+        raise HTTPException(status_code=403, detail="Only a passenger token can create a reservation.")
+
+    passenger_id = user.get("user_id")
+    if not passenger_id:
+        return _error("Invalid token.", 401)
+
+    route_id = payload.get("route_id")
+    if not isinstance(route_id, str) or not route_id.strip():
+        return _error("route_id is required.", 400)
+
+    passengers = payload.get("passengers")
+    if not isinstance(passengers, list) or not passengers:
+        return _error("passengers must be a non-empty list.", 400)
+
+    operator_schemas = await tenant_db.get_route_operator_schemas(route_id)
+    if not operator_schemas:
+        return _error("Route not found or not currently served by any operator.", 404)
+    if len(operator_schemas) == 1:
+        schema = operator_schemas[0]
+    else:
+        requested_schema = payload.get("tenant_schema")
+        if not isinstance(requested_schema, str) or requested_schema not in operator_schemas:
+            return _error(
+                "This route is served by more than one operator — specify which one via "
+                "`tenant_schema`.",
+                400,
+                errors={"operators": operator_schemas},
+            )
+        schema = requested_schema
+
+    resolved_passengers = []
+    for passenger in passengers:
+        entry = {
+            "fare_paid": passenger.get("fare_paid"),
+            "passenger_name": passenger.get("passenger_name", ""),
+            "to_stop_id": passenger.get("to_stop_id"),
+        }
+        ticket_type_code = passenger.get("ticket_type")
+        if isinstance(ticket_type_code, str) and ticket_type_code.strip():
+            ticket_type_id = await tenant_db.resolve_ticket_type_id(ticket_type_code.strip().upper())
+            if ticket_type_id is None:
+                return _error(f"Unknown ticket_type: {ticket_type_code!r}.", 400)
+            entry["ticket_type_id"] = ticket_type_id
+        resolved_passengers.append(entry)
+
+    domain = await tenant_db.get_domain_for_schema(schema)
+    if not domain:
+        return _error(f"No domain configured for tenant '{schema}'.", 500)
+
+    account_id = await tenant_db.get_or_create_self_service_account(schema)
+    bearer_token = _mint_self_service_token(account_id, schema)
+
+    django_payload = {
+        "route_id": route_id,
+        "from_stop_id": payload.get("from_stop_id"),
+        "passenger_id": passenger_id,
+        "passengers": resolved_passengers,
+    }
+    resp = await _proxy_to_django(
+        "POST", "/api/v1/ticketing/reservations/", schema, domain, bearer_token, json_body=django_payload,
+    )
+    return _passthrough(resp)
+
+
+@router.get("/tickets/reservations/{reference_id}/")
+async def get_reservation(reference_id: str, user: dict = Depends(get_current_user)):
+    """Conductor scans/types the passenger's reservation code and sees what it's
+    for — route, fare, passenger count, and its current status (PENDING/REJECTED/
+    CONFIRMED/FAILED) — before deciding whether to validate it. Read directly from
+    tenant_db (same cross-schema lookup CB4's pay-by-ID screen already uses) rather
+    than round-tripping to Django, since nothing needs to be mutated here."""
+    if user.get("role") != CONDUCTOR_ROLE:
+        raise HTTPException(status_code=403, detail="Only a conductor token can look up a reservation.")
+
+    found = await tenant_db.find_namastepay_checkout_by_reference(reference_id)
+    if not found:
+        return _error("Reservation not found.", 404)
+    schema, reservation = found
+    if schema != user.get("tenant_schema"):
+        return _error("This reservation was not created for your tenant.", 403)
+
+    return _ok(data=_serialize_reservation(reservation))
+
+
+@router.post("/tickets/reservations/{reference_id}/validate/")
+async def validate_reservation(
+    reference_id: str,
+    payload: dict = Body(default_factory=dict),
+    user: dict = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+):
+    """Step 2: conductor accepts or rejects the scanned reservation.
+    `{"decision": "valid"}` — starts the real NamastePay checkout for this fare;
+    the response's `payment_url` is what the conductor's app renders as the
+    merchant QR for the passenger to pay. `{"decision": "invalid"}` — rejects it
+    outright, no payment ever attempted, can't be re-validated. Proxies to Django
+    with the conductor's own real token so the same role-based conductor_id
+    tagging in NamastePayCheckoutConfirmView applies once payment is confirmed —
+    the conductor's own app is expected to poll
+    GET /tickets/namastepay/checkout/{checkout_id}/confirm/ (above) with the
+    `checkout_id` this call returns."""
+    if user.get("role") != CONDUCTOR_ROLE:
+        raise HTTPException(status_code=403, detail="Only a conductor token can validate a reservation.")
+    schema = user.get("tenant_schema")
+    if not schema:
+        raise HTTPException(status_code=400, detail="This conductor account has no tenant assigned.")
+
+    found = await tenant_db.find_namastepay_checkout_by_reference(reference_id)
+    if not found:
+        return _error("Reservation not found.", 404)
+    reservation_schema, _ = found
+    if reservation_schema != schema:
+        return _error("This reservation was not created for your tenant.", 403)
+
+    domain = await tenant_db.get_domain_for_schema(schema)
+    if not domain:
+        return _error(f"No domain configured for tenant '{schema}'.", 500)
+
+    resp = await _proxy_to_django(
+        "POST",
+        f"/api/v1/ticketing/reservations/{reference_id}/validate/",
+        schema,
+        domain,
+        credentials.credentials,
+        json_body={"decision": payload.get("decision")},
     )
     return _passthrough(resp)
 

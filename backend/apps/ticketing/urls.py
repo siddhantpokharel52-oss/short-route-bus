@@ -24,4 +24,10 @@ urlpatterns = [
         views.NamastePayCheckoutConfirmView.as_view(),
         name="namastepay-checkout-confirm",
     ),
+    path("reservations/", views.TicketReservationCreateView.as_view(), name="reservation-create"),
+    path(
+        "reservations/<str:reference_id>/validate/",
+        views.TicketReservationValidateView.as_view(),
+        name="reservation-validate",
+    ),
 ]

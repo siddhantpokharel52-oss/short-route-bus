@@ -593,6 +593,138 @@ class NamastePayCheckoutConfirmView(views.APIView):
         return api_response(data=NamastePayCheckoutSerializer(checkout).data)
 
 
+class TicketReservationCreateView(views.APIView):
+    """
+    POST /ticketing/reservations/
+    Step 1 of the Yatroo "validate-then-pay" flow: a passenger picks a route/fare
+    and gets back a scannable code + QR -- *before* any money moves. Deliberately
+    reuses NamastePayCheckout (not Ticket) for this, same reasoning as CB9/CB4:
+    a Ticket must never exist until a payment is actually confirmed. The only
+    difference from a normal walk-in checkout is that initiate_checkout() is NOT
+    called here -- checkout_id stays null until a conductor accepts the
+    reservation via TicketReservationValidateView below.
+    """
+    permission_classes = [IsTicketIssuer]
+
+    def post(self, request):
+        serializer = NamastePayCheckoutCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        passengers = data["passengers"]
+        amount = sum(p["fare_paid"] for p in passengers)
+
+        import uuid as uuid_lib
+        reference_id = f"CB-{uuid_lib.uuid4().hex[:16].upper()}"
+
+        checkout = NamastePayCheckout.objects.create(
+            checkout_id=None,
+            reference_id=reference_id,
+            # Same as NamastePayCheckoutCreateView -- the caller (FastAPI's public
+            # API) passes the real passenger's id explicitly, since the Django-side
+            # call itself is authenticated as the self-service system account.
+            passenger_id=request.data.get("passenger_id"),
+            route_id=data.get("route_id"),
+            from_stop_id=data.get("from_stop_id"),
+            passengers=[
+                {
+                    "ticket_type_id": str(p["ticket_type_id"]) if p.get("ticket_type_id") else None,
+                    "passenger_name": p.get("passenger_name", ""),
+                    "fare_paid": str(p["fare_paid"]),
+                    "to_stop_id": str(p["to_stop_id"]) if p.get("to_stop_id") else None,
+                }
+                for p in passengers
+            ],
+            amount=amount,
+            return_to=None,
+            status=NamastePayCheckout.Status.PENDING,
+        )
+        from .serializers import _qr_b64_for
+        return api_response(
+            data={
+                "reference_id": reference_id,
+                "internal_id": str(checkout.id),
+                "amount": str(checkout.amount),
+                "qr_code": _qr_b64_for(reference_id),
+            },
+            message="Reservation created -- show this to the conductor to validate and pay.",
+            status_code=status.HTTP_201_CREATED,
+        )
+
+
+class TicketReservationValidateView(views.APIView):
+    """
+    POST /ticketing/reservations/{reference_id}/validate/
+    Step 2: a conductor scans/types the passenger's reservation code. Body:
+    {"decision": "valid" | "invalid"}.
+
+    "invalid" rejects the reservation outright -- no payment is ever attempted,
+    and it can't be validated again (mirrors a real ticket's already-used/
+    already-cancelled idempotency). "valid" is where initiate_checkout() first
+    gets called for this reservation's fare -- the returned payment_url/QR is
+    what the conductor's app shows as the merchant QR. From there, the exact
+    same NamastePayCheckoutConfirmView (polled by the conductor via
+    confirm_namastepay_checkout in public_api) creates the real Ticket once
+    NamastePay confirms it, tagging conductor_id from whoever polls confirm --
+    which is this same conductor's own app, so no extra field is needed here to
+    track who collected it.
+    """
+    permission_classes = [IsConductor]
+
+    def post(self, request, reference_id):
+        try:
+            checkout = NamastePayCheckout.objects.get(reference_id=reference_id)
+        except NamastePayCheckout.DoesNotExist:
+            return api_response(success=False, message="Reservation not found.", status_code=404)
+
+        if checkout.status != NamastePayCheckout.Status.PENDING:
+            return api_response(
+                success=False,
+                message=f"This reservation has already been {checkout.status.lower()}.",
+                status_code=400,
+            )
+
+        decision = (request.data.get("decision") or "").strip().lower()
+        if decision not in ("valid", "invalid"):
+            return api_response(success=False, message="decision must be 'valid' or 'invalid'.", status_code=400)
+
+        if decision == "invalid":
+            checkout.status = NamastePayCheckout.Status.REJECTED
+            checkout.save(update_fields=["status"])
+            return api_response(data=NamastePayCheckoutSerializer(checkout).data, message="Reservation rejected.")
+
+        config = NamastePayConfig.objects.first()
+        if not config or not config.api_key or not config.is_active:
+            return api_response(success=False, message="NamastePay is not configured.", status_code=400)
+
+        from . import namastepay
+        try:
+            result = namastepay.initiate_checkout(
+                config, amount=checkout.amount, reference_id=checkout.reference_id,
+                remarks="CityBus ticket purchase",
+            )
+        except namastepay.NamastePayError as e:
+            return api_response(
+                success=False,
+                message=f"NamastePay rejected the checkout request ({e.status_code}).",
+                status_code=400,
+            )
+        except Exception as e:
+            return api_response(success=False, message=f"Could not reach NamastePay: {e}", status_code=502)
+
+        checkout.checkout_id = result["checkout_id"]
+        checkout.save(update_fields=["checkout_id"])
+        return api_response(
+            data={
+                "checkout_id": result.get("checkout_id"),
+                "payment_url": result.get("payment_url"),
+                "expires_at": result.get("expires_at"),
+                "reference_id": checkout.reference_id,
+                "internal_id": str(checkout.id),
+            },
+            message="Reservation accepted -- show this payment QR to the passenger.",
+        )
+
+
 class IssueDailyPassView(generics.CreateAPIView):
     serializer_class = DailyPassSerializer
     permission_classes = [IsConductor | IsOperationsRole]

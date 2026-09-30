@@ -161,14 +161,24 @@ class NamastePayCheckout(models.Model):
     what that confirmation step checks against and, once genuinely confirmed,
     creates a Booking (same shape CB2 already built) from -- a Ticket must never be
     created on an unconfirmed payment (accounting.signals fires revenue recognition
-    unconditionally the instant one exists)."""
+    unconditionally the instant one exists).
+
+    Also doubles as a pre-payment "reservation" for the Yatroo validate-then-pay
+    flow: a passenger reserves a fare (reference_id + QR, no checkout_id yet, no
+    NamastePay call made), a conductor scans it and either rejects it (REJECTED,
+    no payment ever attempted) or accepts it -- only *then* does initiate_checkout()
+    get called and checkout_id get filled in, reusing this same row and the exact
+    confirm flow below."""
     class Status(models.TextChoices):
         PENDING = "PENDING", "Pending"
         CONFIRMED = "CONFIRMED", "Confirmed"
         FAILED = "FAILED", "Failed"
+        REJECTED = "REJECTED", "Rejected"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    checkout_id = models.CharField(max_length=100, unique=True)
+    # Null until a conductor accepts the reservation and initiate_checkout() actually
+    # runs -- a passenger's pre-payment reservation has no NamastePay checkout yet.
+    checkout_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
     reference_id = models.CharField(max_length=100, unique=True)
     passenger_id = models.UUIDField(null=True, blank=True)
     route_id = models.UUIDField(null=True, blank=True)

@@ -6,21 +6,26 @@ from django.utils import timezone
 from .models import Ticket, Booking, DailyPass, MonthlyPass, StudentPass, NamastePayConfig, NamastePayCheckout
 
 
-def _generate_ticket_uid_and_qr():
-    """A fresh ticket_uid plus its base64 PNG QR code, encoding just the uid --
-    shared by single-ticket and group-booking creation so both stay in sync."""
-    ticket_uid = f"TKT-{secrets.token_hex(6).upper()}"
+def _qr_b64_for(value):
+    """Base64 PNG QR code encoding an arbitrary string -- shared by ticket_uid
+    generation and reservation reference_id generation below."""
     try:
         import qrcode
         import io
         import base64
-        qr = qrcode.make(ticket_uid)
+        qr = qrcode.make(value)
         buf = io.BytesIO()
         qr.save(buf, format="PNG")
-        qr_b64 = base64.b64encode(buf.getvalue()).decode()
+        return base64.b64encode(buf.getvalue()).decode()
     except Exception:
-        qr_b64 = ""
-    return ticket_uid, qr_b64
+        return ""
+
+
+def _generate_ticket_uid_and_qr():
+    """A fresh ticket_uid plus its base64 PNG QR code, encoding just the uid --
+    shared by single-ticket and group-booking creation so both stay in sync."""
+    ticket_uid = f"TKT-{secrets.token_hex(6).upper()}"
+    return ticket_uid, _qr_b64_for(ticket_uid)
 
 
 def _default_valid_until():

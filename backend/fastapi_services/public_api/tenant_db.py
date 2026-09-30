@@ -1494,7 +1494,7 @@ async def find_namastepay_checkout_by_reference(reference_id: str) -> Optional[t
             query = text(
                 f"""
                 SELECT id, checkout_id, reference_id, passenger_id, route_id,
-                       vehicle_id, amount, status, passengers
+                       from_stop_id, vehicle_id, amount, status, passengers
                 FROM "{safe}".ticketing_namastepaycheckout
                 WHERE reference_id = :reference_id
                 """
