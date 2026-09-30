@@ -36,6 +36,7 @@ interface TicketRecord {
   fare_paid: number
   payment_method: string
   issued_by: 'POS' | 'MOBILE' | 'CONDUCTOR'
+  conductor_name: string | null
   status: string
   issued_at: string
   qr_code: string | null
@@ -574,6 +575,11 @@ export default function TicketingPage() {
       key: 'issued_by',
       header: t('ticketing.source'),
       render: (t) => <SourceBadge source={t.issued_by} />,
+    },
+    {
+      key: 'conductor_name',
+      header: t('ticketing.collectedBy', { defaultValue: 'Collected By' }),
+      render: (t) => t.conductor_name || <span className="text-gray-300">—</span>,
     },
     {
       key: 'status',

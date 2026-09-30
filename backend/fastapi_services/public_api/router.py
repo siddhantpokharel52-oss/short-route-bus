@@ -204,17 +204,75 @@ async def _proxy_to_django(
     path: str,
     schema: str,
     domain: str,
-    bearer_token: str,
+    bearer_token: Optional[str],
     json_body: Optional[dict] = None,
 ):
+    """bearer_token is Optional only for the login proxy below -- there is no
+    token yet at that point, that's the whole call's purpose. Every other
+    caller still passes a real one."""
     url = f"{settings.DJANGO_INTERNAL_BASE_URL}{path}"
-    headers = {
-        "Host": domain,
-        "X-Tenant-Slug": schema,
-        "Authorization": f"Bearer {bearer_token}",
-    }
+    headers = {"Host": domain, "X-Tenant-Slug": schema}
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
     async with httpx.AsyncClient(timeout=10.0) as client:
         return await client.request(method, url, headers=headers, json=json_body)
+
+
+@router.post(
+    "/auth/login/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "access": "eyJhbGciOiJIUzI1NiIs...",
+            "refresh": "eyJhbGciOiJIUzI1NiIs...",
+            "role": "CONDUCTOR",
+            "tenant_schema": "mayurbus",
+            "full_name": "Hari Prasad",
+            "user_id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+            "must_change_password": False,
+        },
+        "message": "Login successful.",
+        "errors": None,
+        "meta": {"timestamp": "2026-09-21T08:00:00.000000+00:00"},
+    }}}}},
+)
+async def collector_login(payload: dict = Body(default_factory=dict)):
+    """Direct phone+password login for a Collector app -- the credentials a
+    bus company sets for their own conductor via
+    `POST /operator/conductors/{id}/create-login/` (tenant-portal only, not
+    reachable from this consumer API). This is deliberately NOT the
+    federated-login/HMAC exchange the rest of this API uses for Yatroo's
+    passenger identity: a collector's login is issued directly by the
+    tenant, not by Yatroo vouching for one of its own users.
+
+    This is a thin, unauthenticated-by-design proxy to Django's own login
+    endpoint (`/api/v1/auth/login/`), which is not otherwise reachable from
+    the outside — only `/public-api/v1/` is exposed publicly (see the
+    production nginx config), so every externally-reachable capability,
+    including this one, has to live under this router.
+
+    `tenant_schema` is required in the body: unlike every other call in this
+    API, there is no JWT yet to carry it, and phone numbers are only
+    guaranteed unique within one tenant, not globally — so the caller must
+    say which bus company's collector is logging in. `email` also works
+    here instead of `phone`, for any non-collector account that might use
+    this same endpoint."""
+    tenant_schema = (payload.get("tenant_schema") or "").strip()
+    if not tenant_schema:
+        return _error("tenant_schema is required.", 400)
+    if not payload.get("phone") and not payload.get("email"):
+        return _error("phone or email is required.", 400)
+    if not payload.get("password"):
+        return _error("password is required.", 400)
+
+    domain = await tenant_db.get_domain_for_schema(tenant_schema)
+    if not domain:
+        return _error(f"No domain configured for tenant '{tenant_schema}'.", 500)
+
+    resp = await _proxy_to_django(
+        "POST", "/api/v1/auth/login/", tenant_schema, domain, None, json_body=payload,
+    )
+    return _passthrough(resp)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1737,6 +1795,64 @@ async def namastepay_return(checkout_id: str, tenant_schema: str):
 
 
 @router.get(
+    "/tickets/namastepay/checkout/{checkout_id}/confirm/",
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+            "checkout_id": "npc_8f3a1b2c9d4e5f60",
+            "reference_id": "CB-8F3A1B2C9D4E5F60",
+            "status": "CONFIRMED",
+            "booking": {"id": "1a2b3c4d-5e6f-7890-abcd-ef1234567890", "tickets": []},
+            "confirmed_at": "2026-09-21T08:05:00Z",
+        },
+        "message": "Success",
+        "errors": None,
+        "meta": {"timestamp": "2026-09-21T08:05:00.000000+00:00"},
+    }}}}},
+)
+async def confirm_namastepay_checkout(
+    checkout_id: str,
+    user: dict = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+):
+    """Lets a conductor's own device poll the status of a walk-in NamastePay
+    checkout they started (CB4/C2 — no `return_to`, since the rider pays by
+    scanning the QR with their own wallet app, there's no browser redirect
+    to trigger confirmation the way `namastepay_return()` does for the
+    self-service/passenger path). Without this, nothing ever calls Django's
+    confirm view for a walk-in checkout, so the ticket for a paid walk-in
+    fare would never actually be created — this closes that gap, not just a
+    missing status popup.
+
+    Same Django view as the passenger path (`NamastePayCheckoutConfirmView`)
+    — idempotent, always re-verifies with NamastePay server-side, only
+    creates the ticket the first time `status` comes back CONFIRMED — just
+    called with the conductor's own real token instead of a throwaway
+    self-service one. `status` in the response is one of `PENDING` (keep
+    polling), `CONFIRMED` (render green, ticket now exists in `booking`), or
+    `FAILED` (render red)."""
+    if user.get("role") != CONDUCTOR_ROLE:
+        raise HTTPException(status_code=403, detail="Only a conductor token can confirm a checkout.")
+    schema = user.get("tenant_schema")
+    if not schema:
+        raise HTTPException(status_code=400, detail="This conductor account has no tenant assigned.")
+
+    domain = await tenant_db.get_domain_for_schema(schema)
+    if not domain:
+        return _error(f"No domain configured for tenant '{schema}'.", 500)
+
+    resp = await _proxy_to_django(
+        "GET",
+        f"/api/v1/ticketing/payment-gateway/checkout/{checkout_id}/confirm/",
+        schema,
+        domain,
+        credentials.credentials,
+    )
+    return _passthrough(resp)
+
+
+@router.get(
     "/tickets/my/",
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
@@ -2178,7 +2294,7 @@ async def get_eticket(ticket_id: str, user: dict = Depends(get_current_user)):
 
 
 @router.post(
-    "/tickets/{ticket_id}/validate/",
+    "/tickets/{ticket_uid}/validate/",
     responses={200: {"content": {"application/json": {"example": {
         "success": True,
         "data": {
@@ -2210,12 +2326,16 @@ async def get_eticket(ticket_id: str, user: dict = Depends(get_current_user)):
     }}}}},
 )
 async def validate_ticket(
-    ticket_id: str,
+    ticket_uid: str,
     payload: dict = Body(default_factory=dict),
     user: dict = Depends(get_current_user),
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ):
-    """Conductor QR scan — marks a ticket as boarded. Conductor-only.
+    """Conductor QR scan or manual entry — marks a ticket as boarded. Conductor-only.
+
+    `ticket_uid` is the human-readable code printed on/encoded in the ticket's
+    QR (e.g. "TKT-A1B2C3D4E5F6") — the same value a collector would either
+    scan or type in by hand. Not the ticket's internal database id.
 
     Optional `boarding_stop_id` in the body: if given, must match the ticket's own
     boarding stop — `403` on a mismatch, and the ticket is left untouched (not marked
@@ -2223,12 +2343,12 @@ async def validate_ticket(
     if user.get("role") != CONDUCTOR_ROLE:
         raise HTTPException(status_code=403, detail="Only a conductor token can validate tickets.")
 
-    found = await tenant_db.find_ticket_by_id(ticket_id)
+    found = await tenant_db.find_ticket_by_uid(ticket_uid)
     if not found:
         return _error("Ticket not found.", 404)
     schema, ticket = found
 
-    # find_ticket_by_id() searches every tenant schema, so `schema` here is
+    # find_ticket_by_uid() searches every tenant schema, so `schema` here is
     # whichever tenant actually issued the ticket — not necessarily this
     # conductor's own tenant. Django's TenantSchemaMiddleware independently
     # rejects an X-Tenant-Slug that doesn't match the caller's own

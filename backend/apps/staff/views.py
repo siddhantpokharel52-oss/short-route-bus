@@ -1,3 +1,4 @@
+import re
 from rest_framework import generics, status, views
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -186,11 +187,19 @@ class ConductorViewSet(ModelViewSet):
     def create_login(self, request, pk=None):
         """
         POST /staff/conductors/{id}/create-login/
-        Pokhara QA report: same gap and same fix as DriverViewSet's
-        create_login() -- a Conductor created via Add Collector has no
-        linked user_id, so it can never appear in a vehicle group's
-        conductor picker (GroupConductorAssignment.conductor_user_id is
-        required, not optional).
+        Pokhara QA report: same gap DriverViewSet's create_login() fixed for
+        drivers -- a Conductor created via Add Collector has no linked
+        user_id, so it can never appear in a vehicle group's conductor
+        picker (GroupConductorAssignment.conductor_user_id is required, not
+        optional).
+
+        A collector logs in with **phone + password**, not email -- the
+        tenant sets both here. `User.email` is still a mandatory, globally
+        unique DB column (it's USERNAME_FIELD), so a synthetic, internal-
+        only address is generated for it; the collector never sees or types
+        it. Phone uniqueness is enforced at creation time (app-level, not a
+        DB constraint) so CustomTokenObtainPairSerializer's phone-based
+        lookup always resolves to exactly one account.
         """
         conductor = self.get_object()
         if conductor.user_id:
@@ -198,18 +207,20 @@ class ConductorViewSet(ModelViewSet):
                 success=False, message="This conductor already has a login.",
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
-        email = (request.data.get("email") or "").strip().lower()
+        phone = (request.data.get("phone") or "").strip()
         password = request.data.get("password") or ""
-        if not email or not password:
+        if not phone or not password:
             return api_response(
-                success=False, message="email and password are required.",
+                success=False, message="phone and password are required.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        if not re.fullmatch(r"\d{10}", phone):
+            return api_response(
+                success=False, message="Phone must be exactly 10 digits.",
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        from backend.apps.users.validators import validate_email_or_message, validate_password_or_messages
-        email_error = validate_email_or_message(email)
-        if email_error:
-            return api_response(success=False, message=email_error, status_code=status.HTTP_400_BAD_REQUEST)
+        from backend.apps.users.validators import validate_password_or_messages
         password_errors = validate_password_or_messages(password)
         if password_errors:
             return api_response(
@@ -218,15 +229,17 @@ class ConductorViewSet(ModelViewSet):
             )
 
         from backend.apps.users.models import User
-        if User.objects.filter(email=email).exists():
+        if User.objects.filter(phone=phone).exists():
             return api_response(
-                success=False, message=f"'{email}' is already in use by another account.",
+                success=False, message=f"'{phone}' is already in use by another account.",
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
+        tenant_schema = request.user.tenant_schema
+        synthetic_email = f"conductor.{phone}@{tenant_schema}.kvbms.internal"
         user = User(
-            email=email, full_name_en=conductor.full_name_en, phone=conductor.phone,
-            role=User.Role.CONDUCTOR, tenant_schema=request.user.tenant_schema, is_active=True,
+            email=synthetic_email, phone=phone, full_name_en=conductor.full_name_en,
+            role=User.Role.CONDUCTOR, tenant_schema=tenant_schema, is_active=True,
         )
         user.set_password(password)
         user.save()
@@ -235,7 +248,7 @@ class ConductorViewSet(ModelViewSet):
         conductor.save(update_fields=["user_id"])
 
         return api_response(
-            data={"user_id": str(user.id), "email": user.email},
+            data={"user_id": str(user.id), "phone": user.phone},
             message="Login created.", status_code=status.HTTP_201_CREATED,
         )
 

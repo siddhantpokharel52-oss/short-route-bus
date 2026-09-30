@@ -6,6 +6,17 @@ from .models import User
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # A collector logs in with phone, not email (see
+        # ConductorViewSet.create_login) -- email stays USERNAME_FIELD
+        # (still the real, globally-unique DB column every user has,
+        # synthetic or not) but is no longer required as a *login input*;
+        # phone is accepted instead, resolved to the matching user's real
+        # email below before simplejwt's own password check runs.
+        self.fields[self.username_field].required = False
+        self.fields["phone"] = serializers.CharField(required=False)
+
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
@@ -16,11 +27,23 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return token
 
     def validate(self, attrs):
-        email = attrs.get("email", "").lower()
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            raise serializers.ValidationError({"detail": "Invalid credentials."})
+        phone = (attrs.pop("phone", None) or "").strip()
+        if phone:
+            try:
+                user = User.objects.get(phone=phone)
+            except User.DoesNotExist:
+                raise serializers.ValidationError({"detail": "Invalid credentials."})
+            except User.MultipleObjectsReturned:
+                raise serializers.ValidationError({
+                    "detail": "Multiple accounts share this phone number. Log in with email instead."
+                })
+            attrs[self.username_field] = user.email
+        else:
+            email = attrs.get("email", "").lower()
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                raise serializers.ValidationError({"detail": "Invalid credentials."})
 
         if user.is_locked:
             raise serializers.ValidationError({

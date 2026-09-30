@@ -16,7 +16,6 @@ import apiClient from '@services/api'
 import toast from 'react-hot-toast'
 import { useForm, Controller } from 'react-hook-form'
 import { sanitizePhoneDigits, isValidPhone, PHONE_VALIDATION_MESSAGE } from '@utils/phone'
-import { isValidEmail, EMAIL_VALIDATION_MESSAGE } from '@utils/email'
 import { isValidPassword, PASSWORD_VALIDATION_MESSAGE } from '@utils/password'
 import { cn } from '@utils/cn'
 
@@ -64,6 +63,7 @@ interface CollectorForm {
   assigned_vehicle_id: string
   assigned_route_id: string
   basic_salary: string
+  login_password: string
 }
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -160,7 +160,7 @@ export default function ConductorsPage() {
   const [editSection, setEditSection] = useState(0)
   const [deleteTarget, setDeleteTarget] = useState<Collector | null>(null)
   const [loginTarget, setLoginTarget] = useState<Collector | null>(null)
-  const [loginEmail, setLoginEmail] = useState('')
+  const [loginPhone, setLoginPhone] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
   const [linkTarget, setLinkTarget] = useState<Collector | null>(null)
   const [yatrooExternalId, setYatrooExternalId] = useState('')
@@ -229,8 +229,8 @@ export default function ConductorsPage() {
     staleTime: 5 * 60 * 1000,
   })
 
-  const { register, handleSubmit, reset, control, trigger, formState: { errors } } = useForm<CollectorForm>({
-    defaultValues: { gender: 'MALE', employment_type: 'PERMANENT', shift: '', assigned_route_id: '', assigned_vehicle_id: '' },
+  const { register, handleSubmit, reset, control, trigger, watch, formState: { errors } } = useForm<CollectorForm>({
+    defaultValues: { gender: 'MALE', employment_type: 'PERMANENT', shift: '', assigned_route_id: '', assigned_vehicle_id: '', login_password: '' },
   })
 
   // Separate form instance for editing -- seeded per-conductor, per-section
@@ -249,6 +249,7 @@ export default function ConductorsPage() {
     { label: t('staff.conductors.busAssignment'), icon: Bus, fields: [] },
     { label: t('staff.conductors.medicalInfo'), icon: Heart, fields: [] },
     { label: t('staff.conductors.salaryWages'), icon: Wallet, fields: [] },
+    { label: t('staff.conductors.loginCredentials', { defaultValue: 'Login' }), icon: KeyRound, fields: [] },
   ]
   const isLastStep = currentStep === STEPS.length - 1
 
@@ -270,29 +271,54 @@ export default function ConductorsPage() {
 
   // ── Create ────────────────────────────────────────────────────────────────────
   const createMutation = useMutation({
-    mutationFn: (payload: CollectorForm) => {
+    mutationFn: async (payload: CollectorForm) => {
+      const { login_password, ...conductorPayload } = payload
       const cleanAllowances = allowances
         .filter((a) => a.title.trim())
         .map((a) => ({ title: a.title.trim(), amount: parseFloat(a.amount) || 0 }))
 
-      if (!photoFile && !citizenshipPhotoFile) {
-        return apiClient.post('/operator/conductors/', {
-          ...payload,
-          assigned_vehicle_id: payload.assigned_vehicle_id || null,
-          assigned_route_id: payload.assigned_route_id || null,
-          basic_salary: payload.basic_salary || null,
-          allowances: cleanAllowances,
-        })
+      const resp = (!photoFile && !citizenshipPhotoFile)
+        ? await apiClient.post('/operator/conductors/', {
+            ...conductorPayload,
+            assigned_vehicle_id: conductorPayload.assigned_vehicle_id || null,
+            assigned_route_id: conductorPayload.assigned_route_id || null,
+            basic_salary: conductorPayload.basic_salary || null,
+            allowances: cleanAllowances,
+          })
+        : await (() => {
+            const fd = new FormData()
+            Object.entries(conductorPayload).forEach(([key, value]) => fd.append(key, value ?? ''))
+            fd.set('assigned_vehicle_id', conductorPayload.assigned_vehicle_id || '')
+            fd.set('assigned_route_id', conductorPayload.assigned_route_id || '')
+            fd.set('basic_salary', conductorPayload.basic_salary || '')
+            fd.set('allowances', JSON.stringify(cleanAllowances))
+            if (photoFile) fd.append('photo', photoFile)
+            if (citizenshipPhotoFile) fd.append('citizenship_photo', citizenshipPhotoFile)
+            return apiClient.post('/operator/conductors/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+          })()
+
+      // Login is optional at enrollment time -- if a password was set on the
+      // last step, create it right away using the phone already collected on
+      // step 1, instead of making the tenant do a separate "Create Login"
+      // click afterward. A failure here (e.g. phone already in use by
+      // another account) shouldn't roll back or hide the fact that the
+      // collector itself was created successfully -- surfaced as its own
+      // toast, not thrown, so onSuccess below still runs normally.
+      const newId = resp.data?.id
+      if (login_password && newId) {
+        try {
+          await apiClient.post(`/operator/conductors/${newId}/create-login/`, {
+            phone: conductorPayload.phone, password: login_password,
+          })
+        } catch (loginErr: unknown) {
+          const e = loginErr as { response?: { data?: { message?: string } } }
+          toast.error(
+            `Collector added, but login setup failed: ${e?.response?.data?.message || 'unknown error'}. `
+            + `Use "Create Login" from the list to retry.`
+          )
+        }
       }
-      const fd = new FormData()
-      Object.entries(payload).forEach(([key, value]) => fd.append(key, value ?? ''))
-      fd.set('assigned_vehicle_id', payload.assigned_vehicle_id || '')
-      fd.set('assigned_route_id', payload.assigned_route_id || '')
-      fd.set('basic_salary', payload.basic_salary || '')
-      fd.set('allowances', JSON.stringify(cleanAllowances))
-      if (photoFile) fd.append('photo', photoFile)
-      if (citizenshipPhotoFile) fd.append('citizenship_photo', citizenshipPhotoFile)
-      return apiClient.post('/operator/conductors/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      return resp
     },
     onSuccess: () => {
       toast.success(t('staff.conductors.toast.addSuccess'))
@@ -363,12 +389,12 @@ export default function ConductorsPage() {
   // login, so it can never appear in a vehicle group's conductor picker --
   // this lets an admin create one after the fact.
   const createLoginMutation = useMutation({
-    mutationFn: ({ id, email, password }: { id: string; email: string; password: string }) =>
-      apiClient.post(`/operator/conductors/${id}/create-login/`, { email, password }),
+    mutationFn: ({ id, phone, password }: { id: string; phone: string; password: string }) =>
+      apiClient.post(`/operator/conductors/${id}/create-login/`, { phone, password }),
     onSuccess: () => {
       toast.success('Login created.')
       setLoginTarget(null)
-      setLoginEmail('')
+      setLoginPhone('')
       setLoginPassword('')
       qc.invalidateQueries({ queryKey: ['conductors'] })
     },
@@ -515,7 +541,7 @@ export default function ConductorsPage() {
           </button>
           {!c.user_id && (
             <button
-              onClick={() => setLoginTarget(c)}
+              onClick={() => { setLoginTarget(c); setLoginPhone(c.phone || '') }}
               className="rounded-lg p-1.5 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
               title="Create Login"
             >
@@ -930,7 +956,7 @@ export default function ConductorsPage() {
       {/* ── Create Login Modal ────────────────────────────────────────────── */}
       <Modal
         open={!!loginTarget}
-        onClose={() => { setLoginTarget(null); setLoginEmail(''); setLoginPassword('') }}
+        onClose={() => { setLoginTarget(null); setLoginPhone(''); setLoginPassword('') }}
         title={`Create Login — ${loginTarget?.full_name_en ?? ''}`}
         size="sm"
       >
@@ -940,11 +966,13 @@ export default function ConductorsPage() {
               Lets {loginTarget.full_name_en} sign in, and makes them selectable when staffing a vehicle group.
             </p>
             <Input
-              label="Email" type="email" required
-              placeholder="e.g. ramesh.gurung@example.com"
-              value={loginEmail}
-              error={loginEmail && !isValidEmail(loginEmail) ? EMAIL_VALIDATION_MESSAGE : undefined}
-              onChange={(e) => setLoginEmail(e.target.value)}
+              label="Phone" required
+              maxLength={10}
+              inputMode="numeric"
+              placeholder="98XXXXXXXX"
+              value={loginPhone}
+              error={loginPhone && !isValidPhone(loginPhone) ? PHONE_VALIDATION_MESSAGE : undefined}
+              onChange={(e) => setLoginPhone(sanitizePhoneDigits(e.target.value))}
             />
             <Input
               label="Password" type="password" required
@@ -954,14 +982,14 @@ export default function ConductorsPage() {
               onChange={(e) => setLoginPassword(e.target.value)}
             />
             <div className="flex justify-end gap-3 border-t pt-4">
-              <Button variant="secondary" onClick={() => { setLoginTarget(null); setLoginEmail(''); setLoginPassword('') }}>
+              <Button variant="secondary" onClick={() => { setLoginTarget(null); setLoginPhone(''); setLoginPassword('') }}>
                 {t('common:common.cancel')}
               </Button>
               <Button
                 loading={createLoginMutation.isPending}
-                disabled={!isValidEmail(loginEmail) || !isValidPassword(loginPassword)}
+                disabled={!isValidPhone(loginPhone) || !isValidPassword(loginPassword)}
                 leftIcon={<KeyRound className="h-4 w-4" />}
-                onClick={() => createLoginMutation.mutate({ id: loginTarget.id, email: loginEmail, password: loginPassword })}
+                onClick={() => createLoginMutation.mutate({ id: loginTarget.id, phone: loginPhone, password: loginPassword })}
               >
                 Create Login
               </Button>
@@ -1291,6 +1319,32 @@ export default function ConductorsPage() {
                 </button>
               </div>
             ))}
+          </div>
+          </>}
+
+          {currentStep === 5 && <>
+          <Section icon={KeyRound} title={t('staff.conductors.loginCredentials', { defaultValue: 'Login' })} />
+          <div className="rounded-lg bg-gray-50 px-4 py-2 text-xs text-gray-500">
+            {t('staff.conductors.loginCredentialsHint', {
+              defaultValue: 'Optional -- leave the password blank to set this up later from the collector list. The collector logs in with their phone number, not email.',
+            })}
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label={t('staff.drivers.fields.phone', { defaultValue: 'Phone' })}
+              value={watch('phone') || ''}
+              disabled
+              hint={t('staff.conductors.loginPhoneHint', { defaultValue: 'Set on the Personal Information step' })}
+            />
+            <Input
+              label={t('staff.conductors.password', { defaultValue: 'Password' })}
+              type="password"
+              placeholder={t('staff.conductors.tempPassword', { defaultValue: 'Leave blank to skip' })}
+              error={watch('login_password') && !isValidPassword(watch('login_password')) ? PASSWORD_VALIDATION_MESSAGE : undefined}
+              {...register('login_password', {
+                validate: (v) => !v || isValidPassword(v) || PASSWORD_VALIDATION_MESSAGE,
+              })}
+            />
           </div>
           </>}
 

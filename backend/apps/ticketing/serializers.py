@@ -51,17 +51,36 @@ def _resolve_vehicle_bus_number(vehicle_id):
         return None
 
 
+def _resolve_conductor_name(conductor_id):
+    """Resolve a conductor's user_id to a display name -- Ticket.conductor_id
+    is the shared users.User id (set to request.user.id at issuance, same as
+    every other role-tagging in this app), not staff.Conductor's own pk, so
+    this reads the shared User table directly rather than joining through
+    Conductor, which would miss a conductor whose staff record was later
+    deleted/reassigned but whose ticket history should still show who
+    actually collected the fare."""
+    if not conductor_id:
+        return None
+    try:
+        from backend.apps.users.models import User
+        user = User.objects.filter(id=conductor_id).values_list("full_name_en", flat=True).first()
+        return user or None
+    except Exception:
+        return None
+
+
 class TicketSerializer(serializers.ModelSerializer):
     from_stop_name = serializers.SerializerMethodField()
     to_stop_name = serializers.SerializerMethodField()
     vehicle_bus_number = serializers.SerializerMethodField()
+    conductor_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Ticket
         fields = [
             "id", "ticket_uid",
             "ticket_type_id", "trip_id", "vehicle_id", "passenger_id", "passenger_name",
-            "conductor_id", "issued_at", "paid_at", "issued_by", "valid_until",
+            "conductor_id", "conductor_name", "issued_at", "paid_at", "issued_by", "valid_until",
             "fare_paid", "payment_method",
             "qr_code", "status",
             "from_stop_id", "to_stop_id",
@@ -70,8 +89,11 @@ class TicketSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id", "ticket_uid", "issued_at", "paid_at", "valid_until", "qr_code",
-            "from_stop_name", "to_stop_name", "vehicle_bus_number",
+            "from_stop_name", "to_stop_name", "vehicle_bus_number", "conductor_name",
         ]
+
+    def get_conductor_name(self, obj):
+        return _resolve_conductor_name(obj.conductor_id)
 
     def get_from_stop_name(self, obj):
         return _resolve_stop_name(obj.from_stop_id)

@@ -12,17 +12,33 @@ from .serializers import (
 from .permissions import IsSuperAdmin, IsPlatformRole, IsInternalService
 
 
+def _resolve_login_user(request):
+    """A collector logs in with phone, not email (ConductorViewSet.create_login)
+    -- resolve whichever identifier the request actually sent. Returns None on
+    no-match/ambiguous-match rather than raising, so callers don't need their
+    own try/except for this lookup."""
+    phone = (request.data.get("phone") or "").strip()
+    if phone:
+        try:
+            return User.objects.get(phone=phone)
+        except (User.DoesNotExist, User.MultipleObjectsReturned):
+            return None
+    email = (request.data.get("email") or "").lower()
+    try:
+        return User.objects.get(email=email)
+    except User.DoesNotExist:
+        return None
+
+
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
 
     def post(self, request, *args, **kwargs):
         tenant_slug = request.headers.get("X-Tenant-Slug", "").strip().lower()
-        email = request.data.get("email", "").lower()
         now_iso = timezone.now().isoformat()
 
-        try:
-            user = User.objects.get(email=email)
-
+        user = _resolve_login_user(request)
+        if user is not None:
             if user.is_locked:
                 return Response({
                     "success": False,
@@ -66,17 +82,12 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                         "errors": {"detail": f"Use {tenant}.citybus.com.np/login to sign in."},
                         "meta": {"timestamp": now_iso},
                     }, status=status.HTTP_403_FORBIDDEN)
-
-        except User.DoesNotExist:
-            pass  # fall through to serializer which returns 401
+        # user is None (no match) falls through to the serializer, which returns 401.
 
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
-            try:
-                user = User.objects.get(email=email)
+            if user is not None:
                 user.increment_failed_login()
-            except User.DoesNotExist:
-                pass
             return Response({
                 "success": False,
                 "data": None,

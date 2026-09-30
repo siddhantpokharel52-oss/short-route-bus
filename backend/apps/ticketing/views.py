@@ -246,6 +246,18 @@ class TicketExportView(views.APIView):
             from backend.apps.platform.models import Stop
             stop_names = {s.id: s.name_en for s in Stop.objects.filter(id__in=stop_ids)}
 
+        # conductor_id is the shared users.User id (set to request.user.id at
+        # issuance) -- batch-resolved the same way stop names are, so finance
+        # can see who actually collected each fare when settling operator
+        # payouts (this export's whole reason to exist, per its own docstring).
+        conductor_ids = {t.conductor_id for t in tickets if t.conductor_id}
+        conductor_names = {}
+        if conductor_ids:
+            from backend.apps.users.models import User
+            conductor_names = dict(
+                User.objects.filter(id__in=conductor_ids).values_list("id", "full_name_en")
+            )
+
         # payment_reference lives in a side-store table the public consumer API
         # (backend/fastapi_services/public_api) owns and writes via raw SQL, not
         # a Django-migrated column on Ticket -- same reasoning as that service's
@@ -272,7 +284,7 @@ class TicketExportView(views.APIView):
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         writer = csv.writer(response)
         writer.writerow([
-            "ticket_uid", "issued_at", "issued_by", "payment_method", "payment_reference",
+            "ticket_uid", "issued_at", "issued_by", "collected_by_conductor", "payment_method", "payment_reference",
             "fare_paid", "status", "passenger_name", "from_stop", "to_stop",
         ])
         for t in tickets:
@@ -280,6 +292,7 @@ class TicketExportView(views.APIView):
                 t.ticket_uid,
                 t.issued_at.isoformat(),
                 t.issued_by,
+                conductor_names.get(t.conductor_id, ""),
                 t.payment_method,
                 payment_refs.get(t.ticket_uid, ""),
                 t.fare_paid,
@@ -539,6 +552,23 @@ class NamastePayCheckoutConfirmView(views.APIView):
                     status_code=409,
                 )
 
+            # Same conductor-tagging TicketViewSet.create()/BookingViewSet.create()
+            # already apply for a cash sale -- this is the one other place a
+            # Ticket gets created, and until now it never recorded who actually
+            # collected a walk-in NamastePay fare. Only true for the conductor's
+            # own confirm call (confirm_namastepay_checkout in public_api); a
+            # passenger confirming their own self-service purchase via
+            # namastepay_return() still hits this as role=PASSENGER, so
+            # conductor_id is correctly left unset there.
+            ticket_defaults = {
+                "passenger_id": checkout.passenger_id,
+                "vehicle_id": checkout.vehicle_id,
+                "issued_by": "MOBILE",
+            }
+            if hasattr(request.user, "role") and request.user.role == "CONDUCTOR":
+                ticket_defaults["conductor_id"] = str(request.user.id)
+                ticket_defaults["issued_by"] = "CONDUCTOR"
+
             booking_serializer = BookingCreateSerializer(
                 data={
                     "route_id": str(checkout.route_id) if checkout.route_id else None,
@@ -546,11 +576,7 @@ class NamastePayCheckoutConfirmView(views.APIView):
                     "payment_method": Ticket.PaymentMethod.NAMASTEPAY,
                     "passengers": checkout.passengers,
                 },
-                context={"ticket_defaults": {
-                    "passenger_id": checkout.passenger_id,
-                    "vehicle_id": checkout.vehicle_id,
-                    "issued_by": "MOBILE",
-                }},
+                context={"ticket_defaults": ticket_defaults},
             )
             booking_serializer.is_valid(raise_exception=True)
             booking = booking_serializer.save()
