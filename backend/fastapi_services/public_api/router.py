@@ -105,7 +105,15 @@ PASSENGER_ROLE = "PASSENGER"
 # ─────────────────────────────────────────────────────────────────────────────
 
 class CollectorLoginRequest(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    # Pydantic v2 renders Optional[str] as `anyOf: [string, null]` in the JSON
+    # schema -- Swagger UI's auto-example generator doesn't fill placeholders
+    # for that shape and falls back to a bare `{}`, even though the real field
+    # names are still visible on the Schema tab. json_schema_extra's "example"
+    # is what actually populates the Example Value tab; every model below
+    # needs one for the same reason.
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {
+        "tenant_schema": "mayurbus", "phone": "9800000000", "password": "CorrectHorseBattery1!",
+    }})
     tenant_schema: Optional[str] = Field(None, description="Required — which bus company's collector is logging in. Unlike every other call in this API, there is no JWT yet to carry it.")
     phone: Optional[str] = Field(None, description="The collector's own phone, as set by their tenant. Required unless email is given instead.")
     email: Optional[str] = Field(None, description="Alternative to phone, for any non-collector account that might use this same endpoint.")
@@ -113,7 +121,9 @@ class CollectorLoginRequest(BaseModel):
 
 
 class PassengerEntry(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {
+        "to_stop_id": "503626a1-bd20-42a1-be55-4b1518e4eaaa", "fare_paid": "30.00", "passenger_name": "Hari Prasad", "ticket_type": "ADULT",
+    }})
     to_stop_id: Optional[str] = Field(None, description="This passenger's destination — origin is shared by the whole purchase.")
     fare_paid: Optional[str] = None
     passenger_name: Optional[str] = ""
@@ -121,7 +131,13 @@ class PassengerEntry(BaseModel):
 
 
 class IssueTicketRequest(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {
+        "route_id": "134e0299-e705-4008-910e-edae38c3c312",
+        "from_stop_id": "d1c11c52-4923-49d7-8c5b-f8d1dd59d8e2",
+        "to_stop_id": "503626a1-bd20-42a1-be55-4b1518e4eaaa",
+        "payment_reference": "yatroo-txn-8f3a1b2c",
+        "fare_paid": "30.00",
+    }})
     route_id: Optional[str] = Field(None, description="Passenger self-service: picks a route with no conductor/QR involved.")
     from_stop_id: Optional[str] = None
     to_stop_id: Optional[str] = None
@@ -143,7 +159,15 @@ class IssueTicketRequest(BaseModel):
 
 
 class IssueGroupTicketsRequest(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {
+        "route_id": "134e0299-e705-4008-910e-edae38c3c312",
+        "from_stop_id": "d1c11c52-4923-49d7-8c5b-f8d1dd59d8e2",
+        "payment_reference": "yatroo-txn-8f3a1b2c",
+        "passengers": [
+            {"to_stop_id": "503626a1-bd20-42a1-be55-4b1518e4eaaa", "fare_paid": "30.00", "passenger_name": "Hari Prasad", "ticket_type": "ADULT"},
+            {"to_stop_id": "503626a1-bd20-42a1-be55-4b1518e4eaaa", "fare_paid": "15.00", "passenger_name": "Sita Kumari", "ticket_type": "STUDENT"},
+        ],
+    }})
     route_id: Optional[str] = Field(None, description="Required.")
     payment_reference: Optional[str] = Field(None, description="Required — there is no conductor present to collect cash for this flow.")
     passengers: Optional[list[PassengerEntry]] = Field(None, description="Required, 1-20 passengers sharing one purchase.")
@@ -154,7 +178,12 @@ class IssueGroupTicketsRequest(BaseModel):
 
 
 class StartNamastePayCheckoutRequest(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {
+        "route_id": "134e0299-e705-4008-910e-edae38c3c312",
+        "from_stop_id": "d1c11c52-4923-49d7-8c5b-f8d1dd59d8e2",
+        "return_to": "https://yatroo.app/payment/return",
+        "passengers": [{"to_stop_id": "503626a1-bd20-42a1-be55-4b1518e4eaaa", "fare_paid": "30.00", "passenger_name": "Hari Prasad", "ticket_type": "ADULT"}],
+    }})
     route_id: Optional[str] = Field(None, description="Required for a passenger's own self-service checkout; not used for a conductor's walk-in checkout.")
     from_stop_id: Optional[str] = None
     vehicle_id: Optional[str] = Field(None, description="Conductor walk-in checkout only — auto-filled from their active allocation if omitted.")
@@ -164,7 +193,11 @@ class StartNamastePayCheckoutRequest(BaseModel):
 
 
 class ReserveTicketRequest(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {
+        "route_id": "134e0299-e705-4008-910e-edae38c3c312",
+        "from_stop_id": "d1c11c52-4923-49d7-8c5b-f8d1dd59d8e2",
+        "passengers": [{"to_stop_id": "503626a1-bd20-42a1-be55-4b1518e4eaaa", "fare_paid": "30.00", "passenger_name": "Hari Prasad", "ticket_type": "ADULT"}],
+    }})
     route_id: Optional[str] = Field(None, description="Required.")
     from_stop_id: Optional[str] = None
     tenant_schema: Optional[str] = Field(None, description="Required only if route_id is served by more than one operator.")
@@ -172,12 +205,12 @@ class ReserveTicketRequest(BaseModel):
 
 
 class ValidateReservationRequest(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"decision": "valid"}})
     decision: Optional[str] = Field(None, description="'valid' or 'invalid'. Required.")
 
 
 class ValidateTicketRequest(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"boarding_stop_id": "d1c11c52-4923-49d7-8c5b-f8d1dd59d8e2"}})
     boarding_stop_id: Optional[str] = Field(None, description="If given, must match the ticket's own boarding stop — 403 on a mismatch, ticket left untouched. Omit to skip this check.")
 
 
