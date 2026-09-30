@@ -62,10 +62,11 @@ from typing import Optional
 
 import httpx
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.responses import JSONResponse, RedirectResponse
 from jose import JWTError, jwt as jose_jwt
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..config import settings
 from ..dependencies import bearer_scheme, get_current_user, get_redis
@@ -76,6 +77,108 @@ logger = logging.getLogger(__name__)
 
 CONDUCTOR_ROLE = "CONDUCTOR"
 PASSENGER_ROLE = "PASSENGER"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Request body models — documentation only, not new enforcement.
+#
+# Every field below is Optional, even ones a given endpoint actually requires,
+# on purpose: which fields are required depends on the caller's role or which
+# of several modes is being used (see each endpoint's own docstring), and the
+# handlers already have their own descriptive `_error(...)` checks for that —
+# checks that give a much more specific message than Pydantic's generic 422
+# would. Making a field required here would just replace a helpful "route_id
+# is required" with a generic validation error, for no benefit. These models
+# exist solely so Swagger shows the real field names instead of an empty `{}`
+# (previously every one of these endpoints took a bare `payload: dict`, which
+# carries no schema FastAPI can introspect).
+#
+# `extra="allow"` on every model is a safety net, not a feature: issue_ticket()
+# below forwards a filtered-but-otherwise-arbitrary payload straight through to
+# Django's TicketSerializer (conductor cash-sale fields like fare_paid aren't
+# even read by name in this file), so a strict model would silently drop any
+# field not listed here. Every handler converts its model straight back to a
+# plain dict via `.model_dump(exclude_none=True)` as its very first line —
+# exclude_none so an omitted field is simply absent from the dict, exactly like
+# it would be from a raw JSON body, not present with value None (which would
+# break the boardingStopId/etc. camelCase-alias `in payload` checks below).
+# ─────────────────────────────────────────────────────────────────────────────
+
+class CollectorLoginRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    tenant_schema: Optional[str] = Field(None, description="Required — which bus company's collector is logging in. Unlike every other call in this API, there is no JWT yet to carry it.")
+    phone: Optional[str] = Field(None, description="The collector's own phone, as set by their tenant. Required unless email is given instead.")
+    email: Optional[str] = Field(None, description="Alternative to phone, for any non-collector account that might use this same endpoint.")
+    password: Optional[str] = Field(None, description="Required.")
+
+
+class PassengerEntry(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    to_stop_id: Optional[str] = Field(None, description="This passenger's destination — origin is shared by the whole purchase.")
+    fare_paid: Optional[str] = None
+    passenger_name: Optional[str] = ""
+    ticket_type: Optional[str] = Field(None, description="e.g. ADULT/STUDENT/SENIOR — matches a GET /fares/ result's ticket_type_code.")
+
+
+class IssueTicketRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    route_id: Optional[str] = Field(None, description="Passenger self-service: picks a route with no conductor/QR involved.")
+    from_stop_id: Optional[str] = None
+    to_stop_id: Optional[str] = None
+    boardingStopId: Optional[str] = Field(None, description="Alias for from_stop_id.")
+    droppingStopId: Optional[str] = Field(None, description="Alias for to_stop_id.")
+    trip_qr_token: Optional[str] = Field(None, description="Passenger scan-to-book: token from GET /trips/{trip_id}/qr/.")
+    payment_reference: Optional[str] = Field(None, description="Required for a passenger self-service purchase — there is no conductor present to collect cash for this flow.")
+    tenant_schema: Optional[str] = Field(None, description="Required only if route_id is served by more than one operator.")
+    ticket_type: Optional[str] = Field(None, description="e.g. ADULT/STUDENT — matches a GET /fares/ result's ticket_type_code.")
+    passenger_phone: Optional[str] = None
+    passengerPhone: Optional[str] = Field(None, description="Alias for passenger_phone.")
+    document_id: Optional[str] = None
+    documentId: Optional[str] = Field(None, description="Alias for document_id.")
+    idempotency_key: Optional[str] = Field(None, description="Retried requests with the same key return the original result instead of duplicating.")
+    fare_paid: Optional[str] = Field(None, description="Conductor cash sale: the fare actually collected.")
+    payment_method: Optional[str] = Field(None, description="Conductor cash sale: defaults to CASH.")
+    vehicle_id: Optional[str] = Field(None, description="Conductor cash sale: defaults to the conductor's own active bus if omitted.")
+    passenger_name: Optional[str] = None
+
+
+class IssueGroupTicketsRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    route_id: Optional[str] = Field(None, description="Required.")
+    payment_reference: Optional[str] = Field(None, description="Required — there is no conductor present to collect cash for this flow.")
+    passengers: Optional[list[PassengerEntry]] = Field(None, description="Required, 1-20 passengers sharing one purchase.")
+    tenant_schema: Optional[str] = Field(None, description="Required only if route_id is served by more than one operator.")
+    from_stop_id: Optional[str] = None
+    payment_method: Optional[str] = Field(None, description="Defaults to CASH.")
+    idempotency_key: Optional[str] = None
+
+
+class StartNamastePayCheckoutRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    route_id: Optional[str] = Field(None, description="Required for a passenger's own self-service checkout; not used for a conductor's walk-in checkout.")
+    from_stop_id: Optional[str] = None
+    vehicle_id: Optional[str] = Field(None, description="Conductor walk-in checkout only — auto-filled from their active allocation if omitted.")
+    return_to: Optional[str] = Field(None, description="Required for a passenger self-service checkout (where the app lands once payment is confirmed); meaningless for a conductor's own device.")
+    tenant_schema: Optional[str] = Field(None, description="Required only if route_id is served by more than one operator.")
+    passengers: Optional[list[PassengerEntry]] = Field(None, description="Required, 1-20 passengers sharing one payment.")
+
+
+class ReserveTicketRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    route_id: Optional[str] = Field(None, description="Required.")
+    from_stop_id: Optional[str] = None
+    tenant_schema: Optional[str] = Field(None, description="Required only if route_id is served by more than one operator.")
+    passengers: Optional[list[PassengerEntry]] = Field(None, description="Required, 1-20 passengers sharing one reservation.")
+
+
+class ValidateReservationRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    decision: Optional[str] = Field(None, description="'valid' or 'invalid'. Required.")
+
+
+class ValidateTicketRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    boarding_stop_id: Optional[str] = Field(None, description="If given, must match the ticket's own boarding stop — 403 on a mismatch, ticket left untouched. Omit to skip this check.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -236,7 +339,7 @@ async def _proxy_to_django(
         "meta": {"timestamp": "2026-09-21T08:00:00.000000+00:00"},
     }}}}},
 )
-async def collector_login(payload: dict = Body(default_factory=dict)):
+async def collector_login(payload: CollectorLoginRequest = CollectorLoginRequest()):
     """Direct phone+password login for a Collector app -- the credentials a
     bus company sets for their own conductor via
     `POST /operator/conductors/{id}/create-login/` (tenant-portal only, not
@@ -257,6 +360,7 @@ async def collector_login(payload: dict = Body(default_factory=dict)):
     say which bus company's collector is logging in. `email` also works
     here instead of `phone`, for any non-collector account that might use
     this same endpoint."""
+    payload = payload.model_dump(exclude_none=True)
     tenant_schema = (payload.get("tenant_schema") or "").strip()
     if not tenant_schema:
         return _error("tenant_schema is required.", 400)
@@ -1092,7 +1196,7 @@ async def get_trip_qr(trip_id: str, user: dict = Depends(get_current_user)):
     }}}}},
 )
 async def issue_ticket(
-    payload: dict,
+    payload: IssueTicketRequest,
     user: dict = Depends(get_current_user),
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     redis: aioredis.Redis = Depends(get_redis),
@@ -1113,6 +1217,7 @@ async def issue_ticket(
     the original result instead of duplicating) and `from_stop_id`/`to_stop_id` (also
     accepted as `boardingStopId`/`droppingStopId`), plus `passenger_phone`/`document_id`
     (also accepted as `passengerPhone`/`documentId`). See docs/API.md §1.4 for details."""
+    payload = payload.model_dump(exclude_none=True)
     # Accept the brief's camelCase field names as aliases for our own snake_case ones —
     # never the reverse, and the snake_case key always wins if a caller somehow sends
     # both. This is a normalization shim, not a second schema: from here on, only
@@ -1460,7 +1565,7 @@ async def issue_ticket(
     }}}}},
 )
 async def issue_group_tickets(
-    payload: dict,
+    payload: IssueGroupTicketsRequest,
     user: dict = Depends(get_current_user),
     redis: aioredis.Redis = Depends(get_redis),
 ):
@@ -1477,6 +1582,7 @@ async def issue_group_tickets(
     branches and an idempotency reservation lifecycle, and refactoring it to share ~25
     lines with this one new caller would be a riskier change than the duplication it
     would save."""
+    payload = payload.model_dump(exclude_none=True)
     if user.get("role") != PASSENGER_ROLE:
         raise HTTPException(status_code=403, detail="Only a passenger token can book a group of tickets.")
 
@@ -1659,7 +1765,7 @@ async def issue_group_tickets(
     }}}}},
 )
 async def start_namastepay_checkout(
-    payload: dict,
+    payload: StartNamastePayCheckoutRequest,
     user: dict = Depends(get_current_user),
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ):
@@ -1675,6 +1781,7 @@ async def start_namastepay_checkout(
     `return_to` is where the passenger's app wants to land once payment is confirmed
     (or fails) — required for the passenger path; meaningless for a conductor's own
     device, which is never redirected anywhere, so it's optional there."""
+    payload = payload.model_dump(exclude_none=True)
     role = user.get("role")
     passenger_id = None
     route_id = payload.get("route_id")
@@ -1868,7 +1975,7 @@ async def confirm_namastepay_checkout(
 
 @router.post("/tickets/reserve/")
 async def reserve_ticket(
-    payload: dict,
+    payload: ReserveTicketRequest,
     user: dict = Depends(get_current_user),
 ):
     """Step 1 of the Yatroo validate-then-pay flow (passenger self-service only):
@@ -1879,6 +1986,7 @@ async def reserve_ticket(
     attempted. Same passengers/ticket_type resolution as start_namastepay_checkout,
     minus return_to — there's no browser redirect in this flow, payment happens via
     the conductor's own device."""
+    payload = payload.model_dump(exclude_none=True)
     if user.get("role") != PASSENGER_ROLE:
         raise HTTPException(status_code=403, detail="Only a passenger token can create a reservation.")
 
@@ -1967,7 +2075,7 @@ async def get_reservation(reference_id: str, user: dict = Depends(get_current_us
 @router.post("/tickets/reservations/{reference_id}/validate/")
 async def validate_reservation(
     reference_id: str,
-    payload: dict = Body(default_factory=dict),
+    payload: ValidateReservationRequest = ValidateReservationRequest(),
     user: dict = Depends(get_current_user),
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ):
@@ -1981,6 +2089,7 @@ async def validate_reservation(
     the conductor's own app is expected to poll
     GET /tickets/namastepay/checkout/{checkout_id}/confirm/ (above) with the
     `checkout_id` this call returns."""
+    payload = payload.model_dump(exclude_none=True)
     if user.get("role") != CONDUCTOR_ROLE:
         raise HTTPException(status_code=403, detail="Only a conductor token can validate a reservation.")
     schema = user.get("tenant_schema")
@@ -2484,7 +2593,7 @@ async def get_eticket(ticket_id: str, user: dict = Depends(get_current_user)):
 )
 async def validate_ticket(
     ticket_uid: str,
-    payload: dict = Body(default_factory=dict),
+    payload: ValidateTicketRequest = ValidateTicketRequest(),
     user: dict = Depends(get_current_user),
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ):
@@ -2497,6 +2606,7 @@ async def validate_ticket(
     Optional `boarding_stop_id` in the body: if given, must match the ticket's own
     boarding stop — `403` on a mismatch, and the ticket is left untouched (not marked
     used). Omit it to keep the previous exists/unused/unexpired-only check."""
+    payload = payload.model_dump(exclude_none=True)
     if user.get("role") != CONDUCTOR_ROLE:
         raise HTTPException(status_code=403, detail="Only a conductor token can validate tickets.")
 
