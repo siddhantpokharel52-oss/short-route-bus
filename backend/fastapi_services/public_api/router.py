@@ -2357,9 +2357,25 @@ async def edit_reservation(
     found = await tenant_db.find_namastepay_checkout_by_reference(reference_id)
     if not found:
         return _error("Reservation not found.", 404)
-    reservation_schema, _ = found
+    reservation_schema, reservation = found
     if reservation_schema != schema:
         return _error("This reservation was not created for your tenant.", 403)
+
+    # Same bus-choice validation reserve_ticket() applies at creation --
+    # edit exists specifically to let a conductor fix a wrong bus, so it
+    # has to hold here too, against whichever route is in effect after
+    # this edit (the new one if route_id is also being changed, else the
+    # reservation's existing one).
+    effective_vehicle_id = payload.get("vehicle_id", reservation.get("vehicle_id"))
+    effective_route_id = payload.get("route_id", reservation.get("route_id"))
+    if effective_vehicle_id:
+        buses = await tenant_db.list_operating_buses_for_route(str(effective_route_id), schema)
+        if not any(str(b.get("id")) == str(effective_vehicle_id) for b in buses):
+            return _error(
+                "vehicle_id isn't one of the buses currently serving this route.",
+                400,
+                errors={"buses": [{k: str(v) if v is not None else v for k, v in b.items()} for b in buses]},
+            )
 
     resolved_passengers = None
     if payload.get("passengers"):
