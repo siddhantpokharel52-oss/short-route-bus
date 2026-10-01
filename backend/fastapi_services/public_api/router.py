@@ -196,17 +196,30 @@ class ReserveTicketRequest(BaseModel):
     model_config = ConfigDict(extra="allow", json_schema_extra={"example": {
         "route_id": "134e0299-e705-4008-910e-edae38c3c312",
         "from_stop_id": "d1c11c52-4923-49d7-8c5b-f8d1dd59d8e2",
+        "vehicle_id": "8924bdb4-6953-4e8a-bdce-b7c7e8c7e8dc",
         "passengers": [{"to_stop_id": "503626a1-bd20-42a1-be55-4b1518e4eaaa", "fare_paid": "30.00", "passenger_name": "Hari Prasad", "ticket_type": "ADULT"}],
     }})
     route_id: Optional[str] = Field(None, description="Required.")
     from_stop_id: Optional[str] = None
+    vehicle_id: Optional[str] = Field(None, description="Which specific bus, from GET /routes/{route_id}/buses/. Optional for a passenger (resolved at boarding); auto-filled from a conductor's own active allocation when they create their own reservation and omit it.")
     tenant_schema: Optional[str] = Field(None, description="Required only if route_id is served by more than one operator.")
     passengers: Optional[list[PassengerEntry]] = Field(None, description="Required, 1-20 passengers sharing one reservation.")
 
 
+class EditReservationRequest(BaseModel):
+    model_config = ConfigDict(extra="allow", json_schema_extra={"example": {
+        "vehicle_id": "8924bdb4-6953-4e8a-bdce-b7c7e8c7e8dc",
+        "passengers": [{"to_stop_id": "503626a1-bd20-42a1-be55-4b1518e4eaaa", "fare_paid": "30.00", "passenger_name": "Hari Prasad", "ticket_type": "ADULT"}],
+    }})
+    route_id: Optional[str] = None
+    from_stop_id: Optional[str] = None
+    vehicle_id: Optional[str] = None
+    passengers: Optional[list[PassengerEntry]] = Field(None, description="If given, replaces the whole passenger list (1-20) and the reservation's amount is recomputed from it.")
+
+
 class ValidateReservationRequest(BaseModel):
     model_config = ConfigDict(extra="allow", json_schema_extra={"example": {"decision": "valid"}})
-    decision: Optional[str] = Field(None, description="'valid' or 'invalid'. Required.")
+    decision: Optional[str] = Field(None, description="'valid' (pay via NamastePay), 'cash' (settle immediately, conductor has the fare in hand), or 'invalid' (reject/delete, no payment attempted). Required.")
 
 
 class ValidateTicketRequest(BaseModel):
@@ -853,6 +866,49 @@ async def get_route(route_id: str):
     data["frequency_minutes_max"] = frequencies[-1] if frequencies else None
     data["total_buses"] = total_buses
     return _ok(data=data)
+
+
+@router.get(
+    "/routes/{route_id}/buses/",
+    tags=["Public API — Routes & Fares"],
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": [{
+            "id": "8924bdb4-6953-4e8a-bdce-b7c7e8c7e8dc",
+            "bus_number": "Bus 26",
+            "registration_no": "BA 1 KHA 2155",
+            "capacity_seated": 32,
+            "capacity_standing": 10,
+        }],
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
+async def list_route_buses(
+    route_id: str,
+    tenant_schema: Optional[str] = Query(None, description="Required only if route_id is served by more than one operator."),
+):
+    """The actual buses a passenger or conductor can pick from when generating a
+    ticket for this route (`POST /tickets/reserve/`'s `vehicle_id`) — not just a
+    count like `total_buses` on the route-detail endpoint above. Same
+    "serves this route" definition as that count (`fleet.Vehicle.assigned_route_id`,
+    excluding retired/inactive/breakdown buses)."""
+    operator_schemas = await tenant_db.get_route_operator_schemas(route_id)
+    if not operator_schemas:
+        return _error("Route not found or not currently served by any operator.", 404)
+    if len(operator_schemas) == 1:
+        schema = operator_schemas[0]
+    elif tenant_schema and tenant_schema in operator_schemas:
+        schema = tenant_schema
+    else:
+        return _error(
+            "This route is served by more than one operator — specify which one via "
+            "`tenant_schema`.",
+            400,
+            errors={"operators": operator_schemas},
+        )
+    buses = await tenant_db.list_operating_buses_for_route(route_id, schema)
+    return _ok(data=buses)
 
 
 @router.get(
@@ -2049,22 +2105,21 @@ async def confirm_namastepay_checkout(
 async def reserve_ticket(
     payload: ReserveTicketRequest,
     user: dict = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ):
-    """Step 1 of the Yatroo validate-then-pay flow (passenger self-service only):
-    picks a route/fare and gets back a `reference_id` + QR the passenger shows the
-    conductor — *before* any money moves. Nothing is charged and no Ticket exists
-    yet; a conductor must scan this and accept it (POST
+    """Step 1 of the validate-then-pay flow: picks a route/fare/bus and gets back a
+    `reference_id` + QR to show the conductor — *before* any money moves. Nothing is
+    charged and no Ticket exists yet; a conductor must close it (POST
     /tickets/reservations/{reference_id}/validate/ below) before payment is even
-    attempted. Same passengers/ticket_type resolution as start_namastepay_checkout,
-    minus return_to — there's no browser redirect in this flow, payment happens via
-    the conductor's own device."""
+    attempted. Works for a passenger reserving for themselves *or* a conductor
+    generating their own walk-in ticket the same way (then closing it themselves,
+    same as one they scanned from a passenger) — a conductor's own reservation has
+    no passenger_id, and vehicle_id auto-resolves from their active allocation when
+    not given explicitly."""
     payload = payload.model_dump(exclude_none=True)
-    if user.get("role") != PASSENGER_ROLE:
-        raise HTTPException(status_code=403, detail="Only a passenger token can create a reservation.")
-
-    passenger_id = user.get("user_id")
-    if not passenger_id:
-        return _error("Invalid token.", 401)
+    role = user.get("role")
+    if role not in (PASSENGER_ROLE, CONDUCTOR_ROLE):
+        raise HTTPException(status_code=403, detail="Only a passenger or conductor token can create a reservation.")
 
     route_id = payload.get("route_id")
     if not isinstance(route_id, str) or not route_id.strip():
@@ -2074,21 +2129,50 @@ async def reserve_ticket(
     if not isinstance(passengers, list) or not passengers:
         return _error("passengers must be a non-empty list.", 400)
 
-    operator_schemas = await tenant_db.get_route_operator_schemas(route_id)
-    if not operator_schemas:
-        return _error("Route not found or not currently served by any operator.", 404)
-    if len(operator_schemas) == 1:
-        schema = operator_schemas[0]
+    if role == CONDUCTOR_ROLE:
+        passenger_id = None
+        schema = user.get("tenant_schema")
+        if not schema:
+            return _error("This conductor account has no tenant assigned.", 400)
+        operator_schemas = await tenant_db.get_route_operator_schemas(route_id)
+        if schema not in operator_schemas:
+            return _error("This route isn't served by your tenant.", 404)
+        vehicle_id = payload.get("vehicle_id")
+        if not vehicle_id:
+            vehicle_id = await tenant_db.fetch_conductor_active_vehicle_id(schema, user.get("user_id"))
     else:
-        requested_schema = payload.get("tenant_schema")
-        if not isinstance(requested_schema, str) or requested_schema not in operator_schemas:
+        passenger_id = user.get("user_id")
+        if not passenger_id:
+            return _error("Invalid token.", 401)
+        operator_schemas = await tenant_db.get_route_operator_schemas(route_id)
+        if not operator_schemas:
+            return _error("Route not found or not currently served by any operator.", 404)
+        if len(operator_schemas) == 1:
+            schema = operator_schemas[0]
+        else:
+            requested_schema = payload.get("tenant_schema")
+            if not isinstance(requested_schema, str) or requested_schema not in operator_schemas:
+                return _error(
+                    "This route is served by more than one operator — specify which one via "
+                    "`tenant_schema`.",
+                    400,
+                    errors={"operators": operator_schemas},
+                )
+            schema = requested_schema
+        vehicle_id = payload.get("vehicle_id")
+
+    if vehicle_id:
+        buses = await tenant_db.list_operating_buses_for_route(route_id, schema)
+        if not any(str(b.get("id")) == str(vehicle_id) for b in buses):
             return _error(
-                "This route is served by more than one operator — specify which one via "
-                "`tenant_schema`.",
+                "vehicle_id isn't one of the buses currently serving this route.",
                 400,
-                errors={"operators": operator_schemas},
+                # _error builds a raw JSONResponse (no FastAPI/Pydantic encoder in
+                # front of it, unlike a plain dict return), so UUID/Decimal values
+                # from an asyncpg row have to be stringified by hand here or
+                # json.dumps blows up with a 500 instead of the intended 400.
+                errors={"buses": [{k: str(v) if v is not None else v for k, v in b.items()} for b in buses]},
             )
-        schema = requested_schema
 
     resolved_passengers = []
     for passenger in passengers:
@@ -2109,12 +2193,16 @@ async def reserve_ticket(
     if not domain:
         return _error(f"No domain configured for tenant '{schema}'.", 500)
 
-    account_id = await tenant_db.get_or_create_self_service_account(schema)
-    bearer_token = _mint_self_service_token(account_id, schema)
+    if role == CONDUCTOR_ROLE:
+        bearer_token = credentials.credentials
+    else:
+        account_id = await tenant_db.get_or_create_self_service_account(schema)
+        bearer_token = _mint_self_service_token(account_id, schema)
 
     django_payload = {
         "route_id": route_id,
         "from_stop_id": payload.get("from_stop_id"),
+        "vehicle_id": vehicle_id,
         "passenger_id": passenger_id,
         "passengers": resolved_passengers,
     }
@@ -2186,16 +2274,18 @@ async def validate_reservation(
     user: dict = Depends(get_current_user),
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ):
-    """Step 2: conductor accepts or rejects the scanned reservation.
-    `{"decision": "valid"}` — starts the real NamastePay checkout for this fare;
-    the response's `payment_url` is what the conductor's app renders as the
-    merchant QR for the passenger to pay. `{"decision": "invalid"}` — rejects it
-    outright, no payment ever attempted, can't be re-validated. Proxies to Django
-    with the conductor's own real token so the same role-based conductor_id
-    tagging in NamastePayCheckoutConfirmView applies once payment is confirmed —
+    """Step 2 ("close the ticket"): conductor settles, rejects, or starts payment on
+    a reservation — their own, just generated, or scanned from a passenger, same
+    action either way. `{"decision": "valid"}` — starts the real NamastePay checkout
+    for this fare; the response's `payment_url` is what the conductor's app renders
+    as the merchant QR for the passenger to pay. `{"decision": "cash"}` — settles it
+    immediately, no gateway call, for when the conductor already has the fare in
+    hand. `{"decision": "invalid"}` — rejects/deletes it outright, no payment ever
+    attempted, can't be re-validated. Proxies to Django with the conductor's own
+    real token so the same role-based conductor_id tagging applies. For "valid",
     the conductor's own app is expected to poll
     GET /tickets/namastepay/checkout/{checkout_id}/confirm/ (above) with the
-    `checkout_id` this call returns."""
+    `checkout_id` this call returns; "cash" settles synchronously, right here."""
     payload = payload.model_dump(exclude_none=True)
     if user.get("role") != CONDUCTOR_ROLE:
         raise HTTPException(status_code=403, detail="Only a conductor token can validate a reservation.")
@@ -2221,6 +2311,88 @@ async def validate_reservation(
         domain,
         credentials.credentials,
         json_body={"decision": payload.get("decision")},
+    )
+    return _passthrough(resp)
+
+
+@router.patch(
+    "/tickets/reservations/{reference_id}/",
+    tags=["Public API — Reservations"],
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": {
+            "reference_id": "CB-D26E1AC50012472E",
+            "checkout_id": None,
+            "route_id": "134e0299-e705-4008-910e-edae38c3c312",
+            "from_stop_id": "d1c11c52-4923-49d7-8c5b-f8d1dd59d8e2",
+            "amount": "30.00",
+            "status": "PENDING",
+            "passengers": [
+                {"fare_paid": "30.00", "to_stop_id": "503626a1-bd20-42a1-be55-4b1518e4eaaa", "passenger_name": "", "ticket_type_id": None},
+            ],
+        },
+        "message": "Reservation updated.",
+        "errors": None,
+    }}}}},
+)
+async def edit_reservation(
+    reference_id: str,
+    payload: EditReservationRequest,
+    user: dict = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+):
+    """The "edit" half of the conductor's close action — fix a mistake (wrong stop,
+    wrong fare, wrong bus) in a still-unsettled reservation before choosing how to
+    close it. Only works while the reservation is PENDING — editing one that's
+    already been paid, rejected, or failed would rewrite history a receipt already
+    exists for, so Django 400s that case. Any field omitted here is left unchanged;
+    passing `passengers` replaces the whole list and recomputes `amount` from it."""
+    payload = payload.model_dump(exclude_none=True)
+    if user.get("role") != CONDUCTOR_ROLE:
+        raise HTTPException(status_code=403, detail="Only a conductor token can edit a reservation.")
+    schema = user.get("tenant_schema")
+    if not schema:
+        raise HTTPException(status_code=400, detail="This conductor account has no tenant assigned.")
+
+    found = await tenant_db.find_namastepay_checkout_by_reference(reference_id)
+    if not found:
+        return _error("Reservation not found.", 404)
+    reservation_schema, _ = found
+    if reservation_schema != schema:
+        return _error("This reservation was not created for your tenant.", 403)
+
+    resolved_passengers = None
+    if payload.get("passengers"):
+        resolved_passengers = []
+        for passenger in payload["passengers"]:
+            entry = {
+                "fare_paid": passenger.get("fare_paid"),
+                "passenger_name": passenger.get("passenger_name", ""),
+                "to_stop_id": passenger.get("to_stop_id"),
+            }
+            ticket_type_code = passenger.get("ticket_type")
+            if isinstance(ticket_type_code, str) and ticket_type_code.strip():
+                ticket_type_id = await tenant_db.resolve_ticket_type_id(ticket_type_code.strip().upper())
+                if ticket_type_id is None:
+                    return _error(f"Unknown ticket_type: {ticket_type_code!r}.", 400)
+                entry["ticket_type_id"] = ticket_type_id
+            resolved_passengers.append(entry)
+
+    domain = await tenant_db.get_domain_for_schema(schema)
+    if not domain:
+        return _error(f"No domain configured for tenant '{schema}'.", 500)
+
+    django_payload = {k: v for k, v in payload.items() if k != "passengers"}
+    if resolved_passengers is not None:
+        django_payload["passengers"] = resolved_passengers
+
+    resp = await _proxy_to_django(
+        "PATCH",
+        f"/api/v1/ticketing/reservations/{reference_id}/",
+        schema,
+        domain,
+        credentials.credentials,
+        json_body=django_payload,
     )
     return _passthrough(resp)
 

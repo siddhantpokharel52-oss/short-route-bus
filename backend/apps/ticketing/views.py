@@ -31,6 +31,45 @@ def api_response(data=None, message="Success", success=True, errors=None, status
     }, status=status_code)
 
 
+def _settle_reservation(checkout, payment_method, actor_user):
+    """
+    Turns a PENDING reservation into a real Booking/Ticket set -- the one
+    place that actually happens, shared by NamastePayCheckoutConfirmView's
+    success branch (payment_method=NAMASTEPAY, called once NamastePay
+    independently confirms) and TicketReservationValidateView's "cash"
+    decision (payment_method=CASH, settled immediately, no gateway call).
+    Same conductor-tagging every other ticket-creation path in this file
+    already applies -- paid_at is set because by definition this function
+    is never called until payment has actually happened one way or another.
+    """
+    ticket_defaults = {
+        "passenger_id": checkout.passenger_id,
+        "vehicle_id": checkout.vehicle_id,
+        "issued_by": "MOBILE",
+    }
+    if hasattr(actor_user, "role") and actor_user.role == "CONDUCTOR":
+        ticket_defaults["conductor_id"] = str(actor_user.id)
+        ticket_defaults["issued_by"] = "CONDUCTOR"
+
+    booking_serializer = BookingCreateSerializer(
+        data={
+            "route_id": str(checkout.route_id) if checkout.route_id else None,
+            "from_stop_id": str(checkout.from_stop_id) if checkout.from_stop_id else None,
+            "payment_method": payment_method,
+            "passengers": checkout.passengers,
+        },
+        context={"ticket_defaults": ticket_defaults},
+    )
+    booking_serializer.is_valid(raise_exception=True)
+    booking = booking_serializer.save()
+
+    checkout.status = NamastePayCheckout.Status.CONFIRMED
+    checkout.booking = booking
+    checkout.confirmed_at = timezone.now()
+    checkout.save(update_fields=["status", "booking", "confirmed_at"])
+    return booking
+
+
 def resolve_conductor_vehicle_id(conductor_user_id):
     """Which bus a conductor is on right now, from today's dispatch
     allocation -- dynamic and dispatcher-adjustable, unlike a static
@@ -560,31 +599,7 @@ class NamastePayCheckoutConfirmView(views.APIView):
             # passenger confirming their own self-service purchase via
             # namastepay_return() still hits this as role=PASSENGER, so
             # conductor_id is correctly left unset there.
-            ticket_defaults = {
-                "passenger_id": checkout.passenger_id,
-                "vehicle_id": checkout.vehicle_id,
-                "issued_by": "MOBILE",
-            }
-            if hasattr(request.user, "role") and request.user.role == "CONDUCTOR":
-                ticket_defaults["conductor_id"] = str(request.user.id)
-                ticket_defaults["issued_by"] = "CONDUCTOR"
-
-            booking_serializer = BookingCreateSerializer(
-                data={
-                    "route_id": str(checkout.route_id) if checkout.route_id else None,
-                    "from_stop_id": str(checkout.from_stop_id) if checkout.from_stop_id else None,
-                    "payment_method": Ticket.PaymentMethod.NAMASTEPAY,
-                    "passengers": checkout.passengers,
-                },
-                context={"ticket_defaults": ticket_defaults},
-            )
-            booking_serializer.is_valid(raise_exception=True)
-            booking = booking_serializer.save()
-
-            checkout.status = NamastePayCheckout.Status.CONFIRMED
-            checkout.booking = booking
-            checkout.confirmed_at = timezone.now()
-            checkout.save(update_fields=["status", "booking", "confirmed_at"])
+            _settle_reservation(checkout, Ticket.PaymentMethod.NAMASTEPAY, request.user)
         elif remote_status in ("failed", "canceled", "expired"):
             checkout.status = NamastePayCheckout.Status.FAILED
             checkout.save(update_fields=["status"])
@@ -622,9 +637,17 @@ class TicketReservationCreateView(views.APIView):
             # Same as NamastePayCheckoutCreateView -- the caller (FastAPI's public
             # API) passes the real passenger's id explicitly, since the Django-side
             # call itself is authenticated as the self-service system account.
+            # Null for a conductor-created reservation (their own walk-in sale,
+            # not on behalf of a specific passenger account).
             passenger_id=request.data.get("passenger_id"),
             route_id=data.get("route_id"),
             from_stop_id=data.get("from_stop_id"),
+            # Was silently dropped before -- the serializer already validated
+            # it, it just never made it into the row. Null is fine (self-
+            # service, bus not known until boarding); a conductor's own
+            # reservation gets it auto-resolved from their active allocation
+            # by the caller (FastAPI's reserve_ticket) when not explicit.
+            vehicle_id=data.get("vehicle_id"),
             passengers=[
                 {
                     "ticket_type_id": str(p["ticket_type_id"]) if p.get("ticket_type_id") else None,
@@ -654,19 +677,24 @@ class TicketReservationCreateView(views.APIView):
 class TicketReservationValidateView(views.APIView):
     """
     POST /ticketing/reservations/{reference_id}/validate/
-    Step 2: a conductor scans/types the passenger's reservation code. Body:
-    {"decision": "valid" | "invalid"}.
+    Step 2: a conductor closes a reservation -- their own, just generated, or
+    scanned from a passenger, same action either way. Body:
+    {"decision": "valid" | "cash" | "invalid"}.
 
-    "invalid" rejects the reservation outright -- no payment is ever attempted,
-    and it can't be validated again (mirrors a real ticket's already-used/
-    already-cancelled idempotency). "valid" is where initiate_checkout() first
-    gets called for this reservation's fare -- the returned payment_url/QR is
-    what the conductor's app shows as the merchant QR. From there, the exact
-    same NamastePayCheckoutConfirmView (polled by the conductor via
-    confirm_namastepay_checkout in public_api) creates the real Ticket once
-    NamastePay confirms it, tagging conductor_id from whoever polls confirm --
-    which is this same conductor's own app, so no extra field is needed here to
-    track who collected it.
+    "invalid" rejects the reservation outright ("delete") -- no payment is
+    ever attempted, and it can't be validated again (mirrors a real ticket's
+    already-used/already-cancelled idempotency). "cash" settles it
+    immediately -- the conductor has the fare in hand, no gateway involved --
+    via the same _settle_reservation() helper NamastePay confirmation uses,
+    just with payment_method=CASH and no payment_url to show. "valid" is
+    where initiate_checkout() first gets called for this reservation's fare
+    -- the returned payment_url/QR is what the conductor's app shows as the
+    merchant QR. From there, the exact same NamastePayCheckoutConfirmView
+    (polled by the conductor via confirm_namastepay_checkout in public_api)
+    settles it via _settle_reservation() once NamastePay confirms, tagging
+    conductor_id from whoever polls confirm -- which is this same
+    conductor's own app, so no extra field is needed here to track who
+    collected it.
     """
     permission_classes = [IsConductor]
 
@@ -684,13 +712,20 @@ class TicketReservationValidateView(views.APIView):
             )
 
         decision = (request.data.get("decision") or "").strip().lower()
-        if decision not in ("valid", "invalid"):
-            return api_response(success=False, message="decision must be 'valid' or 'invalid'.", status_code=400)
+        if decision not in ("valid", "cash", "invalid"):
+            return api_response(success=False, message="decision must be 'valid', 'cash', or 'invalid'.", status_code=400)
 
         if decision == "invalid":
             checkout.status = NamastePayCheckout.Status.REJECTED
             checkout.save(update_fields=["status"])
             return api_response(data=NamastePayCheckoutSerializer(checkout).data, message="Reservation rejected.")
+
+        if decision == "cash":
+            _settle_reservation(checkout, Ticket.PaymentMethod.CASH, request.user)
+            return api_response(
+                data=NamastePayCheckoutSerializer(checkout).data,
+                message="Reservation settled with cash.",
+            )
 
         config = NamastePayConfig.objects.first()
         if not config or not config.api_key or not config.is_active:
@@ -723,6 +758,59 @@ class TicketReservationValidateView(views.APIView):
             },
             message="Reservation accepted -- show this payment QR to the passenger.",
         )
+
+
+class TicketReservationUpdateView(views.APIView):
+    """
+    PATCH /ticketing/reservations/{reference_id}/
+    The "edit" half of the conductor's close action -- fix a mistake in a
+    still-unsettled reservation (wrong stop, wrong passenger count, wrong
+    bus) before choosing how to close it. Only ever touches a PENDING
+    reservation; once it's been paid, rejected, or failed, editing it would
+    rewrite history a receipt already exists for, so this 400s instead.
+    Reuses NamastePayCheckoutCreateSerializer for validation (same shape a
+    reservation is created with), and recomputes `amount` from the new
+    passenger list since that's derived, not client-set.
+    """
+    permission_classes = [IsConductor]
+
+    def patch(self, request, reference_id):
+        try:
+            checkout = NamastePayCheckout.objects.get(reference_id=reference_id)
+        except NamastePayCheckout.DoesNotExist:
+            return api_response(success=False, message="Reservation not found.", status_code=404)
+
+        if checkout.status != NamastePayCheckout.Status.PENDING:
+            return api_response(
+                success=False,
+                message=f"This reservation has already been {checkout.status.lower()} and can't be edited.",
+                status_code=400,
+            )
+
+        serializer = NamastePayCheckoutCreateSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        if "route_id" in data:
+            checkout.route_id = data["route_id"]
+        if "from_stop_id" in data:
+            checkout.from_stop_id = data["from_stop_id"]
+        if "vehicle_id" in data:
+            checkout.vehicle_id = data["vehicle_id"]
+        if "passengers" in data and data["passengers"]:
+            checkout.passengers = [
+                {
+                    "ticket_type_id": str(p["ticket_type_id"]) if p.get("ticket_type_id") else None,
+                    "passenger_name": p.get("passenger_name", ""),
+                    "fare_paid": str(p["fare_paid"]),
+                    "to_stop_id": str(p["to_stop_id"]) if p.get("to_stop_id") else None,
+                }
+                for p in data["passengers"]
+            ]
+            checkout.amount = sum(p["fare_paid"] for p in data["passengers"])
+
+        checkout.save(update_fields=["route_id", "from_stop_id", "vehicle_id", "passengers", "amount"])
+        return api_response(data=NamastePayCheckoutSerializer(checkout).data, message="Reservation updated.")
 
 
 class IssueDailyPassView(generics.CreateAPIView):

@@ -207,6 +207,33 @@ async def count_operating_buses_for_route(route_id: str) -> int:
     return total
 
 
+async def list_operating_buses_for_route(route_id: str, schema: str) -> list[dict]:
+    """The actual buses a passenger/conductor can pick from for this route, on
+    this one already-resolved operator schema -- same fleet_vehicle.assigned_route_id
+    definition count_operating_buses_for_route above already uses for "serves this
+    route", just returning rows instead of a count. Scoped to one schema (not a
+    cross-schema fan-out like the count version) since by the time a ticket is
+    actually being generated, the operator has already been resolved."""
+    safe = _safe_schema(schema)
+    engine = get_engine()
+    async with engine.connect() as conn:
+        query = text(
+            f"""
+            SELECT id, bus_number, registration_no, capacity_seated, capacity_standing
+            FROM "{safe}".fleet_vehicle
+            WHERE assigned_route_id = :route_id
+              AND status NOT IN ('RETIRED', 'INACTIVE', 'BREAKDOWN')
+              AND is_deleted = false
+            ORDER BY bus_number
+            """
+        )
+        try:
+            result = await conn.execute(query, {"route_id": route_id})
+        except Exception:
+            return []
+        return [_row_to_dict(row) for row in result.fetchall()]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # apps.platform reads (shared "public" Postgres schema)
 # ─────────────────────────────────────────────────────────────────────────────

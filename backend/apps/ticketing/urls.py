@@ -30,4 +30,9 @@ urlpatterns = [
         views.TicketReservationValidateView.as_view(),
         name="reservation-validate",
     ),
+    path(
+        "reservations/<str:reference_id>/",
+        views.TicketReservationUpdateView.as_view(),
+        name="reservation-update",
+    ),
 ]
