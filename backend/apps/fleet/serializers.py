@@ -40,6 +40,22 @@ class VehicleSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source="category.name_en", read_only=True, default=None)
     owner_display_name = serializers.CharField(source="owner.name", read_only=True, default=None)
     active_maintenance_type = serializers.SerializerMethodField()
+    standing_driver_name = serializers.SerializerMethodField()
+    standing_conductor_name = serializers.SerializerMethodField()
+
+    def get_standing_driver_name(self, obj):
+        if not obj.standing_driver_id:
+            return None
+        from backend.apps.staff.models import Driver
+        driver = Driver.objects.filter(id=obj.standing_driver_id).values_list("full_name_en", flat=True).first()
+        return driver or None
+
+    def get_standing_conductor_name(self, obj):
+        if not obj.standing_conductor_id:
+            return None
+        from backend.apps.staff.models import Conductor
+        conductor = Conductor.objects.filter(id=obj.standing_conductor_id).values_list("full_name_en", flat=True).first()
+        return conductor or None
 
     def get_active_maintenance_type(self, obj):
         from backend.apps.maintenance.models import MaintenanceSchedule
@@ -78,6 +94,7 @@ class VehicleSerializer(serializers.ModelSerializer):
             "category", "category_code", "category_name",
             # operational
             "status", "assigned_route_id", "current_driver_id", "current_conductor_id",
+            "standing_driver_id", "standing_driver_name", "standing_conductor_id", "standing_conductor_name",
             "gps_device_id", "odometer_km",
             # insurance & fitness (write-only)
             "insurance_policy_no", "insurance_expiry_date",

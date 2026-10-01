@@ -75,6 +75,14 @@ class Vehicle(models.Model):
     assigned_route_id = models.UUIDField(null=True, blank=True)
     current_driver_id = models.UUIDField(null=True, blank=True)
     current_conductor_id = models.UUIDField(null=True, blank=True)
+    # The standing crew for this specific vehicle -- set once, used every day
+    # unless a dispatcher overrides it for a one-off allocation. References
+    # staff.Driver.id / staff.Conductor.id directly (not a linked User
+    # account), matching dispatch.DailyAllocation.driver_id/conductor_id's
+    # own convention exactly, so Dispatch's assign-bus form can auto-fill
+    # from these with no id translation needed.
+    standing_driver_id = models.UUIDField(null=True, blank=True)
+    standing_conductor_id = models.UUIDField(null=True, blank=True)
     gps_device_id = models.CharField(max_length=50, blank=True)
     odometer_km = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 

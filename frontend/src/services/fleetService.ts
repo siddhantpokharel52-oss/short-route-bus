@@ -31,6 +31,10 @@ export interface Vehicle {
   owner_display_name: string | null
   status: 'ACTIVE' | 'AVAILABLE' | 'ASSIGNED' | 'IN_SERVICE' | 'IN_MAINTENANCE' | 'INACTIVE' | 'RETIRED' | 'BREAKDOWN'
   assigned_route_id: string | null
+  standing_driver_id: string | null
+  standing_driver_name: string | null
+  standing_conductor_id: string | null
+  standing_conductor_name: string | null
   odometer_km: number
   is_available_for_trip: boolean
   active_maintenance_type: 'PERIODIC' | 'INSPECTION' | 'REPAIR' | 'EMERGENCY' | null

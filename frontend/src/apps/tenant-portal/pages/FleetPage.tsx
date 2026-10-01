@@ -41,6 +41,8 @@ interface VehicleForm {
   engine_capacity_cc: string
   // Operational
   assigned_route_id: string
+  standing_driver_id: string
+  standing_conductor_id: string
   // Insurance
   insurance_policy_no: string
   insurance_expiry_date: string
@@ -170,6 +172,28 @@ export default function FleetPage() {
     staleTime: 5 * 60 * 1000,
   })
 
+  // Standing driver/conductor dropdowns -- any staff Driver/Conductor is
+  // eligible here (unlike the Vehicle Group pickers, there's no login
+  // requirement for a vehicle's standing crew), same source Dispatch's own
+  // driver/conductor selects already use so the ids line up directly.
+  const { data: driverOptions = [] } = useQuery<Array<{ id: string; full_name_en: string }>>({
+    queryKey: ['drivers-dropdown-fleet'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/operator/drivers/', { params: { page_size: 500 } })
+      return data.data?.results ?? data.data ?? []
+    },
+    staleTime: 60_000,
+  })
+
+  const { data: conductorOptions = [] } = useQuery<Array<{ id: string; full_name_en: string }>>({
+    queryKey: ['conductors-dropdown-fleet'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/operator/conductors/', { params: { page_size: 500 } })
+      return data.data?.results ?? data.data ?? []
+    },
+    staleTime: 60_000,
+  })
+
   const { register, handleSubmit, reset, control, setError, trigger, formState: { errors } } = useForm<VehicleForm>({
     defaultValues: {
       vehicle_type: 'BUS',
@@ -226,6 +250,8 @@ export default function FleetPage() {
         fuel_type: form.fuel_type as Vehicle['fuel_type'],
         engine_capacity_cc: form.engine_capacity_cc ? Number(form.engine_capacity_cc) : undefined,
         assigned_route_id: form.assigned_route_id || undefined,
+        standing_driver_id: form.standing_driver_id || undefined,
+        standing_conductor_id: form.standing_conductor_id || undefined,
         insurance_policy_no: form.insurance_policy_no || undefined,
         insurance_expiry_date: form.insurance_expiry_date || undefined,
         fitness_cert_no: form.fitness_cert_no || undefined,
@@ -295,7 +321,7 @@ export default function FleetPage() {
     { label: t('fleet.sections.basicInfo'), icon: Bus, fields: ['category', 'owner', 'vehicle_type', 'make', 'model', 'year', 'color'] },
     { label: t('fleet.sections.vehicleId'), icon: Hash, fields: ['chassis_no', 'engine_no'] },
     { label: t('fleet.sections.capacitySpecs'), icon: Gauge, fields: ['capacity_seated', 'capacity_standing', 'fuel_type', 'engine_capacity_cc'] },
-    { label: t('fleet.sections.operational'), icon: Route, fields: ['assigned_route_id'] },
+    { label: t('fleet.sections.operational'), icon: Route, fields: ['assigned_route_id', 'standing_driver_id', 'standing_conductor_id'] },
     { label: t('fleet.sections.insurance'), icon: ShieldCheck, fields: ['insurance_policy_no', 'insurance_expiry_date', 'fitness_cert_no', 'fitness_expiry_date'] },
   ]
 
@@ -324,6 +350,8 @@ export default function FleetPage() {
       fuel_type: editPickerTarget.fuel_type,
       engine_capacity_cc: editPickerTarget.engine_capacity_cc != null ? String(editPickerTarget.engine_capacity_cc) : '',
       assigned_route_id: editPickerTarget.assigned_route_id ?? '',
+      standing_driver_id: editPickerTarget.standing_driver_id ?? '',
+      standing_conductor_id: editPickerTarget.standing_conductor_id ?? '',
       insurance_policy_no: insDoc?.doc_no ?? '',
       insurance_expiry_date: insDoc?.expiry_date ?? '',
       fitness_cert_no: fitDoc?.doc_no ?? '',
@@ -433,6 +461,8 @@ export default function FleetPage() {
     } else if (editSection === 3) {
       payload = {
         assigned_route_id: values.assigned_route_id || null,
+        standing_driver_id: values.standing_driver_id || null,
+        standing_conductor_id: values.standing_conductor_id || null,
         status: editStatus as Vehicle['status'],
         odometer_km: Number(editOdometer) || 0,
       }
@@ -699,6 +729,8 @@ export default function FleetPage() {
                   })()}
                 />
                 <DetailRow label={t('fleet.labels.odometer')} value={viewTarget.odometer_km != null ? `${viewTarget.odometer_km.toLocaleString()} km` : undefined} />
+                <DetailRow label={t('fleet.labels.standingDriver', { defaultValue: 'Standing Driver' })} value={viewTarget.standing_driver_name ?? undefined} />
+                <DetailRow label={t('fleet.labels.standingConductor', { defaultValue: 'Standing Conductor' })} value={viewTarget.standing_conductor_name ?? undefined} />
                 <div className="flex flex-col gap-0.5">
                   <span className="text-xs font-medium uppercase tracking-wide text-gray-400">{t('fleet.labels.availableForTrip')}</span>
                   <Badge variant={viewTarget.is_available_for_trip ? 'success' : 'warning'}>
@@ -901,7 +933,34 @@ export default function FleetPage() {
                   value={editOdometer}
                   onChange={(e) => setEditOdometer(e.target.value)}
                 />
+                <Controller
+                  name="standing_driver_id"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <SelectField label={t('fleet.labels.standingDriver', { defaultValue: 'Standing Driver' })} {...field}>
+                      <option value="">{t('fleet.noStandingDriver', { defaultValue: '— None —' })}</option>
+                      {driverOptions.map((d) => (
+                        <option key={d.id} value={d.id}>{d.full_name_en}</option>
+                      ))}
+                    </SelectField>
+                  )}
+                />
+                <Controller
+                  name="standing_conductor_id"
+                  control={editForm.control}
+                  render={({ field }) => (
+                    <SelectField label={t('fleet.labels.standingConductor', { defaultValue: 'Standing Conductor' })} {...field}>
+                      <option value="">{t('fleet.noStandingConductor', { defaultValue: '— None —' })}</option>
+                      {conductorOptions.map((c) => (
+                        <option key={c.id} value={c.id}>{c.full_name_en}</option>
+                      ))}
+                    </SelectField>
+                  )}
+                />
               </div>
+              <p className="mt-1.5 text-xs text-gray-500">
+                {t('fleet.standingCrewHint', { defaultValue: 'This crew auto-fills on Dispatch whenever this vehicle is assigned, but can still be changed for a single day there.' })}
+              </p>
             </>}
 
             {editSection === 4 && <>
@@ -1230,14 +1289,31 @@ export default function FleetPage() {
           {/* ── Operational Information ────────────────────────────────────── */}
           {currentStep === 3 && <>
           <Section icon={Route} title={t('fleet.sections.operational')} />
-          <SelectField label={t('fleet.labels.routeAssigned')} {...register('assigned_route_id')}>
-            <option value="">{t('fleet.notAssigned')}</option>
-            {(routes as { id: string; route_code?: string; name_en?: string }[]).map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.route_code ? `${r.route_code} — ` : ''}{r.name_en ?? r.id}
-              </option>
-            ))}
-          </SelectField>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <SelectField label={t('fleet.labels.routeAssigned')} {...register('assigned_route_id')}>
+              <option value="">{t('fleet.notAssigned')}</option>
+              {(routes as { id: string; route_code?: string; name_en?: string }[]).map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.route_code ? `${r.route_code} — ` : ''}{r.name_en ?? r.id}
+                </option>
+              ))}
+            </SelectField>
+            <SelectField label={t('fleet.labels.standingDriver', { defaultValue: 'Standing Driver' })} {...register('standing_driver_id')}>
+              <option value="">{t('fleet.noStandingDriver', { defaultValue: '— None —' })}</option>
+              {driverOptions.map((d) => (
+                <option key={d.id} value={d.id}>{d.full_name_en}</option>
+              ))}
+            </SelectField>
+            <SelectField label={t('fleet.labels.standingConductor', { defaultValue: 'Standing Conductor' })} {...register('standing_conductor_id')}>
+              <option value="">{t('fleet.noStandingConductor', { defaultValue: '— None —' })}</option>
+              {conductorOptions.map((c) => (
+                <option key={c.id} value={c.id}>{c.full_name_en}</option>
+              ))}
+            </SelectField>
+          </div>
+          <p className="mt-1.5 text-xs text-gray-500">
+            {t('fleet.standingCrewHint', { defaultValue: 'This crew auto-fills on Dispatch whenever this vehicle is assigned, but can still be changed for a single day there.' })}
+          </p>
           </>}
 
           {/* ── Insurance & Compliance ─────────────────────────────────────── */}

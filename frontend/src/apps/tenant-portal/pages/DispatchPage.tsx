@@ -441,6 +441,17 @@ export default function DispatchPage() {
     (v) => !allocatedVehicleIds.has(v.id)
   )
 
+  // Auto-fill driver/conductor from the selected vehicle's standing crew --
+  // still freely editable afterward for a one-off override that day, the
+  // standing pairing itself is only changed on the Fleet vehicle form.
+  const watchedVehicleId = assignForm.watch('vehicle_id')
+  const selectedVehicleForAssign = availableVehicles.find((v) => v.id === watchedVehicleId)
+  useEffect(() => {
+    assignForm.setValue('driver_id', selectedVehicleForAssign?.standing_driver_id ?? '')
+    assignForm.setValue('conductor_id', selectedVehicleForAssign?.standing_conductor_id ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedVehicleId])
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -885,6 +896,11 @@ export default function DispatchPage() {
               <div>
                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                   {t('dispatch.form.driver')}
+                  {selectedVehicleForAssign?.standing_driver_id && (
+                    <span className="ml-1.5 text-[10px] font-normal text-primary-600">
+                      {t('dispatch.form.autoFilled', { defaultValue: '(auto-filled from vehicle — editable)' })}
+                    </span>
+                  )}
                 </label>
                 <select
                   {...assignForm.register('driver_id')}
@@ -899,6 +915,11 @@ export default function DispatchPage() {
               <div>
                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                   {t('dispatch.form.conductor', { defaultValue: 'Conductor' })}
+                  {selectedVehicleForAssign?.standing_conductor_id && (
+                    <span className="ml-1.5 text-[10px] font-normal text-primary-600">
+                      {t('dispatch.form.autoFilled', { defaultValue: '(auto-filled from vehicle — editable)' })}
+                    </span>
+                  )}
                 </label>
                 <select
                   {...assignForm.register('conductor_id')}
