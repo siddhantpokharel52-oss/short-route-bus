@@ -20,6 +20,7 @@ export interface DailyAllocation {
   shift_start: string
   shift_end: string
   status: 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
+  is_recurring: boolean
   notes: string
   created_at: string
   created_by_id: string | null
@@ -33,6 +34,7 @@ export interface AllocationCreatePayload {
   conductor_id?: string | null
   shift_start?: string
   shift_end?: string
+  is_recurring?: boolean
   notes?: string
 }
 

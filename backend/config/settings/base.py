@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from datetime import timedelta
 from decouple import config, Csv
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -236,6 +237,15 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "UTC"
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+# DatabaseScheduler still honors a static CELERY_BEAT_SCHEDULE -- it syncs
+# these entries into its own PeriodicTask DB rows on first run, avoiding a
+# separate data migration to seed them.
+CELERY_BEAT_SCHEDULE = {
+    "dispatch-auto-complete-and-recur-shifts": {
+        "task": "dispatch.auto_complete_and_recur_shifts",
+        "schedule": crontab(minute="*/5"),
+    },
+}
 
 # Django Channels
 CHANNEL_LAYERS = {

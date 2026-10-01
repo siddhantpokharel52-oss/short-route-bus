@@ -21,6 +21,11 @@ class DailyAllocation(models.Model):
     conductor_id = models.UUIDField(null=True, blank=True)
     shift_start = models.TimeField(default="05:00")
     shift_end = models.TimeField(default="21:00")
+    # When set, a scheduled job auto-creates tomorrow's equivalent allocation
+    # (same vehicle/route/driver/conductor/shift times) once this one's
+    # shift_end passes and it's auto-completed -- see dispatch/tasks.py.
+    # Explicit opt-in so a one-off substitution never silently keeps repeating.
+    is_recurring = models.BooleanField(default=False)
     status = models.CharField(max_length=15, choices=Status.choices, default=Status.PENDING)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -52,6 +57,8 @@ class DispatchLog(models.Model):
         DELAY = "DELAY", "Report Delay"
         STATUS_UPDATE = "STATUS_UPDATE", "Status Update"
         GENERATE_SCHEDULE = "GENERATE_SCHEDULE", "Generate Daily Schedule"
+        AUTO_COMPLETE = "AUTO_COMPLETE", "Shift Auto-Completed"
+        AUTO_RECUR = "AUTO_RECUR", "Recurring Allocation Auto-Created"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     allocation = models.ForeignKey(

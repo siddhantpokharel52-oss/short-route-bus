@@ -47,6 +47,7 @@ interface AssignForm {
   conductor_id: string
   shift_start: string
   shift_end: string
+  is_recurring: boolean
 }
 
 interface GenerateForm {
@@ -292,6 +293,7 @@ export default function DispatchPage() {
       conductor_id: '',
       shift_start: '05:00',
       shift_end: '21:00',
+      is_recurring: false,
     },
   })
 
@@ -304,10 +306,11 @@ export default function DispatchPage() {
       conductor_id: d.conductor_id || null,
       shift_start: d.shift_start,
       shift_end: d.shift_end,
+      is_recurring: d.is_recurring,
     }),
     onSuccess: () => {
       toast.success('Bus assigned to route!')
-      assignForm.reset({ date: today, route_id: '', vehicle_id: '', driver_id: '', conductor_id: '', shift_start: '05:00', shift_end: '21:00' })
+      assignForm.reset({ date: today, route_id: '', vehicle_id: '', driver_id: '', conductor_id: '', shift_start: '05:00', shift_end: '21:00', is_recurring: false })
       qc.invalidateQueries({ queryKey: ['today-allocations'] })
       setActiveTab('allocations')
     },
@@ -573,7 +576,14 @@ export default function DispatchPage() {
                         {alloc.conductor_name || '—'}
                       </td>
                       <td className="px-4 py-3 text-xs font-mono text-gray-600 dark:text-gray-400">
-                        {formatShiftTime(alloc.shift_start, language)} – {formatShiftTime(alloc.shift_end, language)}
+                        <div className="flex items-center gap-1.5">
+                          <span>{formatShiftTime(alloc.shift_start, language)} – {formatShiftTime(alloc.shift_end, language)}</span>
+                          {alloc.is_recurring && (
+                            <span title={t('dispatch.form.repeatDaily', { defaultValue: 'Repeat this every day' })}>
+                              <RefreshCw className="h-3 w-3 text-primary-500" />
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <AllocationBadge status={alloc.status} />
@@ -958,6 +968,17 @@ export default function DispatchPage() {
                 />
               </div>
             </div>
+            <label className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-700 dark:border-gray-600 dark:text-gray-200">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-gray-300 text-primary-600"
+                {...assignForm.register('is_recurring')}
+              />
+              {t('dispatch.form.repeatDaily', { defaultValue: 'Repeat this every day' })}
+              <span className="text-xs text-gray-400">
+                {t('dispatch.form.repeatDailyHint', { defaultValue: '— once this shift ends, tomorrow\'s identical allocation is created automatically' })}
+              </span>
+            </label>
             <button
               type="submit"
               disabled={assignMutation.isPending}

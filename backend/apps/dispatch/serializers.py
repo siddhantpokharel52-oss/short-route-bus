@@ -56,7 +56,7 @@ class DailyAllocationSerializer(serializers.ModelSerializer):
             "id", "date", "route_id", "route_name",
             "vehicle_id", "vehicle_registration",
             "driver_id", "driver_name", "conductor_id", "conductor_name",
-            "shift_start", "shift_end", "status",
+            "shift_start", "shift_end", "status", "is_recurring",
             "notes", "created_at", "created_by_id",
         ]
         read_only_fields = [
