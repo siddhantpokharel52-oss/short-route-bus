@@ -330,7 +330,7 @@ class OwnerViewSet(ModelViewSet):
 class VehicleCategoryViewSet(ModelViewSet):
     serializer_class = VehicleCategorySerializer
     permission_classes = [IsFleetRole]
-    filterset_fields = ["body_class", "air_conditioned", "is_active"]
+    filterset_fields = ["body_class", "fuel_type", "air_conditioned", "is_active"]
     search_fields = ["code", "name_en", "name_ne"]
     ordering_fields = ["code", "seating_capacity", "created_at"]
 

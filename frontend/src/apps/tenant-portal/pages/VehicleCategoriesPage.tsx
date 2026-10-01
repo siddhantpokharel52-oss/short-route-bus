@@ -6,7 +6,7 @@
  */
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Layers, Pencil, Trash2, Snowflake } from 'lucide-react'
+import { Plus, Layers, Pencil, Trash2, Snowflake, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@components/shared/Button'
 import { Input } from '@components/shared/Input'
@@ -53,10 +53,17 @@ export default function VehicleCategoriesPage() {
   const [showForm, setShowForm] = useState(false)
   const [editTarget, setEditTarget] = useState<VehicleCategory | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<VehicleCategory | null>(null)
+  const [search, setSearch] = useState('')
+  const [bodyClassFilter, setBodyClassFilter] = useState('')
+  const [fuelTypeFilter, setFuelTypeFilter] = useState('')
 
   const { data: categories = [], isLoading } = useQuery({
-    queryKey: ['vehicle-categories'],
-    queryFn: () => vehicleCategoryService.list(),
+    queryKey: ['vehicle-categories', search, bodyClassFilter, fuelTypeFilter],
+    queryFn: () => vehicleCategoryService.list({
+      ...(search && { search }),
+      ...(bodyClassFilter && { body_class: bodyClassFilter }),
+      ...(fuelTypeFilter && { fuel_type: fuelTypeFilter }),
+    }),
   })
 
   const { register, handleSubmit, reset, control, setError, formState: { errors } } = useForm<CategoryForm>({
@@ -156,6 +163,47 @@ export default function VehicleCategoriesPage() {
           <p className="page-subtitle">Define the classes of bus your fleet falls into -- seats, AC, permit class</p>
         </div>
         <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openCreate}>Add Category</Button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <Input
+          placeholder="Search by code or name…"
+          leftAddon={<Search className="h-4 w-4" />}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="max-w-sm"
+        />
+        <select
+          value={bodyClassFilter}
+          onChange={(e) => setBodyClassFilter(e.target.value)}
+          className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+        >
+          <option value="">All Body Classes</option>
+          <option value="MICRO">Micro</option>
+          <option value="MINI">Mini</option>
+          <option value="STANDARD">Standard</option>
+          <option value="DELUXE">Deluxe</option>
+        </select>
+        <select
+          value={fuelTypeFilter}
+          onChange={(e) => setFuelTypeFilter(e.target.value)}
+          className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+        >
+          <option value="">All Fuel Types</option>
+          <option value="DIESEL">Diesel</option>
+          <option value="PETROL">Petrol</option>
+          <option value="CNG">CNG</option>
+          <option value="ELECTRIC">Electric</option>
+          <option value="HYBRID">Hybrid</option>
+        </select>
+        {(search || bodyClassFilter || fuelTypeFilter) && (
+          <button
+            onClick={() => { setSearch(''); setBodyClassFilter(''); setFuelTypeFilter('') }}
+            className="text-xs font-medium text-primary-600 hover:text-primary-700"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       <div className="card p-0 overflow-hidden">
