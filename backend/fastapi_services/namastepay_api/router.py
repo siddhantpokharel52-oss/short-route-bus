@@ -59,7 +59,10 @@ _STATUS_MESSAGES = {
             "reference_id": "CB-8F3A1B2C9D4E5F60",
             "route_name": "Sallaghari — Koteshwar Chowk",
             "route_code": "1212",
+            "vehicle_id": "9b1f2c3d-4e5f-6071-8293-a4b5c6d7e8f9",
             "bus_number": "Ba 2 Kha 1234",
+            "owner_id": "1a2b3c4d-5e6f-7081-9203-b4c5d6e7f809",
+            "conductor_id": "0f1e2d3c-4b5a-6978-8706-f5e4d3c2b1a0",
             "passenger_name": "Hari Prasad",
             "amount": "30.00",
             "status": "PENDING",
@@ -83,11 +86,15 @@ async def lookup_ticket_for_namastepay(reference_id: str):
     schema, checkout = found
 
     route = await tenant_db.fetch_route(str(checkout["route_id"])) if checkout.get("route_id") else None
-    bus_number = (
-        await tenant_db.fetch_vehicle_bus_number(schema, str(checkout["vehicle_id"]))
-        if checkout.get("vehicle_id")
-        else None
-    )
+    vehicle_id = str(checkout["vehicle_id"]) if checkout.get("vehicle_id") else None
+    bus_number = await tenant_db.fetch_vehicle_bus_number(schema, vehicle_id) if vehicle_id else None
+    # Reconciliation fields -- who's collecting this fare and which bus
+    # owner it belongs to. Both already known on our side by the time this
+    # is ever looked up (see NamastePayCheckout.conductor_id's own
+    # docstring); owner_id is one join away from the vehicle, same as every
+    # other "which owner does this bus belong to" lookup in this codebase.
+    owner_id = await tenant_db.fetch_vehicle_owner_id(schema, vehicle_id) if vehicle_id else None
+    conductor_id = str(checkout["conductor_id"]) if checkout.get("conductor_id") else None
 
     passengers = checkout.get("passengers") or []
     passenger_name = next((p.get("passenger_name") for p in passengers if p.get("passenger_name")), None) or "Passenger"
@@ -96,7 +103,10 @@ async def lookup_ticket_for_namastepay(reference_id: str):
         "reference_id": checkout["reference_id"],
         "route_name": route.get("name_en") if route else None,
         "route_code": route.get("route_code") if route else None,
+        "vehicle_id": vehicle_id,
         "bus_number": bus_number,
+        "owner_id": owner_id,
+        "conductor_id": conductor_id,
         "passenger_name": passenger_name,
         "amount": str(checkout["amount"]),
         "status": checkout["status"],

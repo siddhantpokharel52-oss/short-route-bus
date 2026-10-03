@@ -522,6 +522,7 @@ class NamastePayCheckoutCreateView(views.APIView):
             route_id=data.get("route_id"),
             from_stop_id=data.get("from_stop_id"),
             vehicle_id=vehicle_id,
+            conductor_id=request.user.id if is_conductor else None,
             passengers=[
                 {
                     "ticket_type_id": str(p["ticket_type_id"]) if p.get("ticket_type_id") else None,
@@ -747,7 +748,13 @@ class TicketReservationValidateView(views.APIView):
             return api_response(success=False, message=f"Could not reach NamastePay: {e}", status_code=502)
 
         checkout.checkout_id = result["checkout_id"]
-        checkout.save(update_fields=["checkout_id"])
+        # request.user is guaranteed a conductor here (IsConductor, above) --
+        # this is the one place a reservation first gets a NamastePay checkout
+        # at all, so this is the earliest point "who's collecting this fare"
+        # is known and can be recorded, before NamastePay's own merchant
+        # lookup ever gets called for it.
+        checkout.conductor_id = request.user.id
+        checkout.save(update_fields=["checkout_id", "conductor_id"])
         return api_response(
             data={
                 "checkout_id": result.get("checkout_id"),

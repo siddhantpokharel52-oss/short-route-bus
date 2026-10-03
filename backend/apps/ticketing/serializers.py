@@ -230,7 +230,7 @@ class NamastePayCheckoutSerializer(serializers.ModelSerializer):
         model = NamastePayCheckout
         fields = [
             "id", "checkout_id", "reference_id", "passenger_id",
-            "route_id", "from_stop_id", "vehicle_id", "amount", "return_to",
+            "route_id", "from_stop_id", "vehicle_id", "conductor_id", "amount", "return_to",
             "status", "booking", "created_at", "confirmed_at",
         ]
         read_only_fields = fields

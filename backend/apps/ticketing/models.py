@@ -189,6 +189,16 @@ class NamastePayCheckout(models.Model):
     # CB1 already established for Ticket.vehicle_id) -- auto-filled for a
     # conductor-initiated walk-in checkout (CB4) from their active allocation.
     vehicle_id = models.UUIDField(null=True, blank=True)
+    # Null for a pure self-service checkout (no conductor involved at all --
+    # CB9's original flow). Set the moment a conductor is the one actually
+    # driving this checkout into existence: either a walk-in checkout (CB4)
+    # or accepting a scanned/own reservation with decision="valid" (which is
+    # also when initiate_checkout() first runs for a reservation). Exists so
+    # the NamastePay merchant-lookup endpoint can expose who's collecting this
+    # fare and which bus it's for, for reconciliation against the bus owner --
+    # both already known on our side at this point, just never persisted here
+    # before.
+    conductor_id = models.UUIDField(null=True, blank=True)
     passengers = models.JSONField()
     amount = models.DecimalField(max_digits=9, decimal_places=2)
     # Null for a conductor-initiated walk-in checkout (CB4) -- there's no app on

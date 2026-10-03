@@ -1521,7 +1521,7 @@ async def find_namastepay_checkout_by_reference(reference_id: str) -> Optional[t
             query = text(
                 f"""
                 SELECT id, checkout_id, reference_id, passenger_id, route_id,
-                       from_stop_id, vehicle_id, amount, status, passengers
+                       from_stop_id, vehicle_id, conductor_id, amount, status, passengers
                 FROM "{safe}".ticketing_namastepaycheckout
                 WHERE reference_id = :reference_id
                 """
@@ -1558,3 +1558,24 @@ async def fetch_vehicle_bus_number(schema: str, vehicle_id: str) -> Optional[str
     if not row:
         return None
     return row.bus_number or row.registration_no
+
+
+# For the NamastePay merchant-lookup endpoint's reconciliation fields --
+# fleet.Vehicle.owner is nullable (an unlinked vehicle still works everywhere
+# else in this codebase), so a vehicle with no registered Owner correctly
+# returns None here rather than erroring.
+async def fetch_vehicle_owner_id(schema: str, vehicle_id: str) -> Optional[str]:
+    safe = _safe_schema(schema)
+    engine = get_engine()
+    async with engine.connect() as conn:
+        try:
+            result = await conn.execute(
+                text(f'SELECT owner_id FROM "{safe}".fleet_vehicle WHERE id = :vehicle_id'),
+                {"vehicle_id": vehicle_id},
+            )
+            row = result.first()
+        except Exception:
+            return None
+    if not row or not row.owner_id:
+        return None
+    return str(row.owner_id)
