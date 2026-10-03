@@ -1352,3 +1352,244 @@ that owns this key, upgrade the plan or wait for the monthly reset (or
 generate a fresh key on a different account for a quick unblock), then
 update `VITE_BAATO_API_KEY` in both `.env` files — production also needs a
 frontend rebuild afterward to bake in the new key.
+
+---
+
+## 14. Standing crew, recurring dispatch, NamastePay merchant-lookup docs, and a full live Super Admin verification — 2026-10-02/03 session
+
+### 14.1 Standing driver/conductor per vehicle, auto-filled on Dispatch (`633e5de4`)
+
+Driver/conductor allocation used to be re-picked by hand on every Dispatch
+assignment, even when the same vehicle runs with the same crew day after
+day. `fleet.Vehicle` gained `standing_driver_id`/`standing_conductor_id`
+(plus `current_driver_id`/`current_conductor_id` scaffolding), set once on
+the vehicle via Fleet's edit/create forms, referencing `staff.Driver.id`/
+`staff.Conductor.id` directly — the same convention
+`dispatch.DailyAllocation.driver_id`/`conductor_id` already use, so
+Dispatch's auto-fill needs no ID translation.
+
+On the Dispatch assign form, picking a vehicle now auto-fills its standing
+driver/conductor into the Driver/Conductor fields (a `useEffect` watching
+`vehicle_id`, hint text "(auto-filled from vehicle — editable)") — but
+both fields stay fully editable for a one-off substitution that day,
+exactly as the user specified ("mostly permanent... override through the
+roster"). No change is forced onto `DailyAllocation` itself; the standing
+crew lives on `Vehicle`, Dispatch just reads it as a default.
+
+### 14.2 Vehicle Categories: filter by body class, fuel type, name (`45957fb1`)
+
+`VehicleCategoryViewSet.filterset_fields` gained `fuel_type` alongside the
+existing `body_class`/`air_conditioned`/`is_active`. `VehicleCategoriesPage.tsx`
+gained a search box (name) plus Body Class (Micro/Mini/Standard/Deluxe) and
+Fuel Type (Diesel/Petrol/CNG/Electric/Hybrid) dropdowns, with a "Clear
+filters" link shown only when a filter is active.
+
+### 14.3 Recurring dispatch — auto-end shift, auto-create next day (`5535ff22`)
+
+The ask: a 5am–6pm dispatch should auto-complete when its shift ends, and
+if marked recurring, tomorrow's identical allocation should auto-appear
+without the dispatcher re-entering it. Resolved via `AskUserQuestion` into
+an explicit opt-in checkbox (not "every allocation recurs by default") and
+an automatic close exactly at `shift_end` (not a manual "end of day" batch
+job).
+
+- `DailyAllocation.is_recurring` (bool, default `False`); `DispatchLog`
+  gained `AUTO_COMPLETE`/`AUTO_RECUR` action types for the audit trail.
+- New `backend/apps/dispatch/tasks.py`, a Celery Beat job
+  (`dispatch.auto_complete_and_recur_shifts`, `crontab(minute="*/5")`,
+  registered in `CELERY_BEAT_SCHEDULE`) that loops every `ACTIVE` tenant
+  (same per-tenant `schema_context()` pattern as `analytics.tasks`) and,
+  for every PENDING/ACTIVE allocation whose `shift_end` has passed: frees
+  the vehicle, marks the allocation `COMPLETED`, logs `AUTO_COMPLETE` —
+  then, only if `is_recurring`, creates tomorrow's identical allocation
+  (same vehicle/driver/conductor/route/shift times), logging `AUTO_RECUR`.
+  A recur is skipped (logged, not silently dropped) if the vehicle is
+  already allocated tomorrow, or if the driver/conductor is already
+  allocated elsewhere tomorrow — never double-books a person or a bus.
+- Frontend: a "Repeat this every day" checkbox on the Dispatch assign
+  form; a `RefreshCw` icon (wrapped in `<span title=...>` — `LucideProps`
+  has no `title` prop directly) marks a recurring row in the allocations
+  table.
+- Verified the checkbox for real in the browser: `form_input` setting
+  `.checked = true` doesn't fire a real DOM event, so react-hook-form
+  never saw it (the payload silently sent `is_recurring: false` despite
+  the box visually appearing checked) — fixed by driving a genuine
+  `element.click()` via `javascript_tool` instead, confirmed via the
+  actual submitted payload afterward.
+
+### 14.4 Route-approval 403 — confirmed by design, not a bug (self-correction)
+
+Investigated a Company Admin's 403 on approving a route. An unscoped
+search (`grep def get_permissions`) initially matched a *different*
+viewset earlier in the same file and wrongly concluded Company Admin
+should be allowed. Re-scoped the search strictly inside `RouteViewSet`'s
+own class body: it has its **own** `get_permissions()` override requiring
+`IsSuperAdmin()` specifically for `approve`/`approve_stop`/
+`approve_all_stops`/`reject_stop`, with an explicit code comment — route
+approval is a platform-level quality/safety review, not a tenant's own
+call. **No bug here**; corrected the record after initially reporting it
+as broken.
+
+### 14.5 Full live verification: Super Admin → tenant → real ticket sale
+
+Asked directly: is everything Yatroo's app (passenger and conductor) needs
+actually working end-to-end today, in full, testable right now? Rather
+than re-reading code, ran it for real — Django's `test.Client` hitting
+real view/serializer/permission code (not curl) plus `httpx` from inside
+`kvbms-fastapi-1` (which has no `curl`), `unittest.mock.patch()` stubbing
+only the genuinely-external NamastePay call. Confirmed the full chain
+works: Super Admin creates a tenant (PENDING), activates it, a tenant admin
+logs in (Django requires `X-Tenant-Slug`; FastAPI's conductor login instead
+takes `tenant_schema` in the body — two different conventions on the two
+surfaces, both correct for their own auth path), drivers/conductors/fleet/
+fares get configured, a conductor issues a ticket, a passenger buys one
+self-service — producing correct, distinct e-tickets tagged with the right
+`conductor_id`/`passenger_id` on each path.
+
+Real required-field gaps found by trial (not bugs — just the actual
+required set, now known for next time): `/operator/drivers/` also needs
+`dob`/`citizenship_no`/`address`/`license_category`; `/operator/conductors/`
+also needs `citizenship_no`; the fare endpoint is `/platform/fare-matrix/`,
+not `/platform/fares/`, and needs `student_fare`/`senior_citizen_fare`/
+`child_fare` alongside `base_fare`/`peak_fare`; FastAPI's `fare_paid` must
+be sent as a **string**, not a number (`"30"`, not `30` — `422` otherwise).
+Test tenant teardown needed `FareMatrix`/`TicketType`/`Route`/`Stop` rows
+deleted before the `Tenant` row (PROTECT FKs), then the orphaned Postgres
+schema dropped manually (`Tenant.delete()` doesn't drop it).
+
+Also used this pass to answer the user's e-ticket questions directly: an
+e-ticket carries `ticket_uid`, route/stop names, fare, payment method,
+QR code, issuing conductor's name, and `paid_at`/`issued_at`. A conductor
+tells paid from unpaid purely from `Ticket` existing at all — every real
+`Ticket` row in this system is, by construction, already paid
+(`paid_at` set at creation); there is no "ticket exists but unpaid" state
+to display, by design (see §3's `NamastePayCheckout` reserve-then-settle
+pattern for the one place an unpaid *intent* exists, before a real Ticket
+is ever created).
+
+### 14.6 NamastePay's dynamic-QR lookup endpoint — confirmed already built, not missing
+
+The user asked for an endpoint NamastePay can call to render a dynamic QR
+(route, bus, amount, "pay once" guarantee) before a passenger pays, and
+specifically asked that it carry bus number, conductor_id, ticket_id,
+fare, and route. Checked: this endpoint already exists —
+`GET /public-api/v1/namastepay/tickets/{reference_id}/`
+(`backend/fastapi_services/namastepay_api/router.py`, built earlier in
+commit `42397f7e` for Payment System Design item CB4) — looked up by
+`NamastePayCheckout.reference_id` (format `CB-<16 hex>`), not
+`Ticket.ticket_uid`, specifically because at lookup time no `Ticket` exists
+yet for either case it serves (a passenger's own self-service checkout, or
+a conductor-initiated walk-in for a passenger with no CityBus account);
+`reference_id` is generated at checkout-creation time to be quoted
+externally as "the ticket ID." Dynamic-per-passenger is already
+structural: each checkout gets its own `reference_id`, so a second
+passenger always gets a different QR, never a shared/reusable one.
+
+This surfaced from two of my own mistaken "it's missing" claims, both
+corrected in this session:
+- First claim (missing entirely): I'd only grepped
+  `public_api/router.py`, not the separate `namastepay_api/` module it
+  lives in — both locally and against the live server's container.
+  Rechecking with a correctly-scoped recursive grep found it immediately;
+  a byte-for-byte comparison then confirmed the server's copy is an exact
+  match of what's already committed (`42397f7e`) — no server drift, no
+  uncommitted code, nothing missing. Corrected to the user explicitly.
+- Second claim: a screenshot later showed a "Public API — NamastePay
+  Payments" Swagger section with 3 *different* endpoints
+  (`namastepay-payments`-tagged — checkout-create/confirm/status, built
+  for CB9's actual payment flow) and the user asked why NamastePay
+  couldn't use those instead. Answer: those three are CityBus calling
+  *NamastePay's* API (initiate/enquire a checkout) — the reverse
+  direction, and for a different purpose (an in-app purchase) than what
+  NamastePay's own merchant terminal needs (a read-only lookup to decide
+  what to render *before* either side has done anything). The
+  `namastepay/tickets/{reference_id}/` endpoint — now split onto its own
+  doc, see §14.7 — is the one actually meant for them to call.
+
+The user then asked the right follow-up: the endpoint needs to carry
+`conductor_id` and a way to trace which bus/owner the fare belongs to, for
+reconciliation. Added (`f2b4b408`):
+- `NamastePayCheckout.conductor_id` (nullable — null for a pure
+  self-service checkout where no conductor is involved at all; set the
+  moment a conductor actually drives the checkout into existence, either a
+  walk-in checkout or accepting a scanned reservation).
+- `fetch_vehicle_owner_id()` in `tenant_db.py` — one join from
+  `fleet.Vehicle.owner_id`, same pattern as every other "which owner does
+  this bus belong to" lookup in the codebase.
+- The lookup endpoint's response now includes `vehicle_id`, `owner_id`,
+  and `conductor_id` alongside the existing route/bus/amount/status
+  fields — everything needed to post this fare against the right
+  owner/bus/conductor in a reconciliation report, all already known on
+  CityBus's own side, nothing new required from NamastePay.
+
+### 14.7 NamastePay's own, separate Swagger doc (`8595f2a2`, `67ab2c68`)
+
+User's ask: the one endpoint NamastePay actually needs should live on its
+own documentation page, not buried inside Yatroo's full Master API surface
+— cleaner for a partner who should see exactly one endpoint, nothing else.
+
+Built as `/namastepay-docs` (Swagger UI) + `/namastepay-openapi.json`
+(the schema it reads), both serving a real, separate, minimal OpenAPI doc
+containing only the NamastePay lookup endpoint. The real endpoint's actual
+URL/behavior is completely untouched — this only changes what shows up in
+documentation.
+
+Two non-obvious FastAPI/nginx gotchas hit and fixed while building this:
+- **`include_in_schema=False` double-gates.** Setting this flag on the
+  main app's `namastepay_router` inclusion (to hide it from Yatroo's main
+  docs) also silently empties out ANY custom `get_openapi()` call built
+  from that same route object — traced via `inspect.getsource()` on
+  FastAPI's own `get_openapi_path()`, which gates its whole per-route
+  schema-building logic on `if route.include_in_schema:`, not just the
+  main docs' own rendering. Fixed by building a second, throwaway
+  `APIRouter()` (`_namastepay_docs_router`) that re-includes the same
+  router at the same prefix *without* the flag, and generating the custom
+  schema from that throwaway router's `.routes` instead of the real app's
+  route table. The real endpoint stays correctly hidden from the main docs
+  and fully functional at its real URL.
+- **nginx's catch-all silently 404s new top-level paths.** The
+  `mobile-api.citybus.com.np` server block's `location /` unconditionally
+  rewrites any unmatched path to `http://fastapi/public-api/v1/` (a prefix
+  rewrite, not passthrough) — so the new `/namastepay-docs` and
+  `/namastepay-openapi.json` URLs 404'd via the wrong rewritten path even
+  after the FastAPI side was correctly deployed. Fixed with two explicit
+  `location = /exact-path { proxy_pass ...; }` blocks, matching the
+  existing pattern already used for `/docs`/`/openapi.json`/`/health`.
+
+### 14.8 Still open: `mobile-api.citybus.com.np` DNS, and a newly-found SSL cert gap
+
+**Same unresolved DNS issue as §13.7** — `mobile-api.citybus.com.np` still
+resolves to `103.170.75.51` (the wrong, third server), confirmed again
+this session; nothing has changed there since §13.7 was written. This
+remains the single blocker on NamastePay or Yatroo reaching the live
+endpoints by hostname.
+
+**New finding, worth re-checking §13.7's own claim:** while investigating
+an SSL certificate renewal (cert found expiring in 9 days; `certbot` isn't
+even installed on the production server, and the existing wildcard cert
+was almost certainly just copied over via a `letsencrypt_backup.tar.gz`
+found in the user's home directory — no working renewal mechanism exists
+at all), a `certbot --standalone` attempt for `citybus.com.np`/`www`/
+`mobile-api` failed because Let's Encrypt's own validators reached
+`103.170.75.51` for **all three** domains, including the bare
+`citybus.com.np` — directly contradicting §13.7's claim that
+`citybus.com.np` "now correctly resolves to `36.253.137.147`." Root cause
+traced to a leftover `/etc/hosts` override inside *my own sandbox*
+(`36.253.137.147 citybus.com.np` / `...mayurbus.citybus.com.np`) that had
+been silently fooling every `dig`/`curl` check run from this sandbox
+throughout this whole DNS saga, including whatever check §13.7 itself was
+based on. The user independently ran `dig citybus.com.np @8.8.8.8 / @1.1.1.1
+/ @9.9.9.9 +short` — all three public resolvers agree on `103.170.75.51`.
+**§13.7's "citybus.com.np now correctly resolves" claim should be treated
+as unconfirmed, not fixed** — the bare domain itself has likely never
+actually been pointed at the new server (`36.253.137.147`) in real public
+DNS at all, only inside this sandbox's own stale hosts file.
+
+Drafted a short plain-text message (`dns_update_plan.txt`, sent to the
+user, progressively simplified per request down to short plain points)
+for the user to forward to whoever manages DNS, listing the exact A
+records needing to change and citing the `dig` outputs plus Let's
+Encrypt's own failed validation as independent evidence. **Neither the
+DNS fix nor a working SSL certificate renewal was completed by the end of
+this session** — both need action from whoever controls
+`ns1.shangrilagroup.com.np`/`ns2.shangrilagroup.com.np`, not more code.
