@@ -1593,3 +1593,184 @@ Encrypt's own failed validation as independent evidence. **Neither the
 DNS fix nor a working SSL certificate renewal was completed by the end of
 this session** — both need action from whoever controls
 `ns1.shangrilagroup.com.np`/`ns2.shangrilagroup.com.np`, not more code.
+
+---
+
+## 15. Full Yatroo API reference with diagrams, the reservation/group/conductor-direct endpoints, and a scoped changes doc — 2026-10-03/05 session
+
+### 15.1 Built a comprehensive diagram-driven API reference for Yatroo
+
+User asked for a full document for Yatroo covering every endpoint, with a
+sequence diagram and an activity diagram per endpoint, plus "story"
+diagrams showing how endpoints chain into real journeys — explicitly
+no color, no dashed lines, shapes properly connected (i.e. not
+AI-generated-looking).
+
+Built a custom matplotlib-based diagram renderer (`render.py`, in the
+session scratchpad, not committed to the repo) rather than reaching for
+Mermaid/Graphviz defaults, specifically to satisfy the "no color, no
+dash" requirement — UML convention normally dashes lifelines and return
+arrows, which this renderer deliberately draws solid instead. Activity
+diagrams use a generic "spine with side-exit boxes" template (Yes
+continues down the spine, No branches to a side box describing that
+outcome) that automatically sizes every box to its own wrapped text, so
+nothing overflows regardless of label length.
+
+Produced as `docs/CityBus_Yatroo_Full_API_Reference_and_Diagrams.docx`
+(untracked, like every other Yatroo-facing `.docx` this session) — 18
+endpoints initially, each with Purpose/Auth/Request fields/Response
+JSON/Notes plus both diagrams, organized into 5 groups (Authentication,
+Trip Planning, Buying a Ticket, Managing Tickets, Conductor Mode), with
+4 "story" activity diagrams up front showing full passenger/conductor
+journeys end to end.
+
+**Real bug caught during review, not by the user**: several activity
+diagrams had their Yes/No branch wired backwards relative to the actual
+code behavior — e.g. "Checkout already CONFIRMED?" had its "skip the
+NamastePay call, reuse existing booking" exit attached to the **No**
+branch instead of **Yes**, which is backwards (this renderer's
+convention is always No → side-exit, Yes → continue down the spine, so
+a decision has to be *phrased* to match that direction or the diagram
+asserts the opposite of what the code does). Found and fixed this class
+of bug in `POST /tickets/namastepay/checkout/`'s return handler, the
+confirm-poll endpoint, and the cancel-ticket endpoint's two decisions —
+all were asserting the wrong condition before the fix. This is the kind
+of error that would actively mislead a partner implementing against the
+diagram rather than the prose, so it mattered to catch before sending.
+
+### 15.2 Added the reservation flow — a whole feature the first draft missed entirely
+
+User: "the conductor scans the e-ticket if the passenger does the
+reservation e-ticket, and the conductor will see the reservation
+e-ticket info" — this described `NamastePayCheckout`'s dual role as a
+pre-payment reservation (already built earlier this session, per §14.6),
+which the first draft of the reference doc had completely omitted.
+
+Used an Explore agent against the live code (not memory) since an
+earlier reservation-related recollection had already proven stale once
+this session — confirmed the real, current shape: `POST /tickets/reserve/`
+(create, no payment yet), `GET /tickets/reservations/{reference_id}/`
+(conductor scans and sees route/fare/passengers before deciding),
+`POST /tickets/reservations/{reference_id}/validate/` (three-way
+decision: `valid`/`cash`/`invalid` — a `cash` option that didn't exist
+in the original CB9 design and was only added later, confirmed via the
+agent's code trace rather than assumed), and
+`PATCH /tickets/reservations/{reference_id}/` (edit before settlement).
+Added all 4 as new §2.4, plus a new story diagram (§1.3) and renumbered
+the old §2.4/§2.5 to §2.5/§2.6 throughout, including every cross-reference.
+
+### 15.3 Added the group-ticket and conductor-direct endpoints
+
+User asked specifically for "conductor login ticket generation
+endpoints... passenger group ticket and ticket generation without the
+conductor involvement." Research (another Explore agent, verified
+against live code) confirmed two more real gaps:
+
+- **`POST /tickets/group/`** — a genuinely separate endpoint from the
+  single-ticket purchase, passenger-only (a conductor token gets a flat
+  403), creates one `Booking` + one `Ticket` per passenger atomically.
+  No `trip_qr_token` support — self-service only. Added as new §2.3.4.
+- **`POST /tickets/` conductor-direct (cash) issuance** — already
+  existed in code as "Scenario C" but the *original* reference doc (from
+  an earlier session) had it flagged as "context only — not something
+  your app calls," which was simply wrong for a real Collector app.
+  Corrected and promoted to a fully-documented endpoint (new §2.6.1,
+  bumping the other four conductor endpoints down one).
+
+**Real caveat found during this research, not previously known**: the
+`ticket_type` convenience string (STUDENT/SENIOR/CHILD) is silently
+**dropped** on the conductor-direct path specifically — stripped
+unconditionally before the payload reaches Django, no error, no
+resolution. A conductor's device wanting a concession fare has to
+resolve the real `ticket_type_id` UUID itself (via `GET /fares/`) and
+send that directly as an undeclared extra field. Documented prominently
+as an "IMPORTANT" note rather than buried, since this would otherwise be
+a silent, hard-to-debug integration bug on Yatroo's side.
+
+Also confirmed and documented: there is **no conductor-facing group
+endpoint** — a conductor selling several cash tickets together has to
+call the conductor-direct endpoint once per passenger.
+
+### 15.4 NamastePay's own payment app — a real client-side gotcha
+
+User: "the namastey pay has it's own app for payment." Added an
+"IMPORTANT" note to `POST /tickets/namastepay/checkout/`: since
+NamastePay has a dedicated payment app (not just a hosted web checkout),
+`payment_url` must be opened via the platform's normal external-link
+mechanism (Android `ACTION_VIEW` intent, iOS `SFSafariViewController`/
+`ASWebAuthenticationSession`, or the system browser) — **never** an
+embedded in-app WebView, which cannot hand off to another installed app.
+Flagged explicitly as unverified against a real device with the
+NamastePay app installed, since no real NamastePay credentials exist to
+test with.
+
+### 15.5 Per-endpoint errors, status tags, and a separate scoped changes doc
+
+Yatroo's own message (forwarded by the user): *"hamilai change bhayeko
+ra thapiyeko API ko documentation provide garna sakinchha. Yesma
+endpoint reference, parameters, ani aaba aaune json payload ra errors
+bhayo bhane... review"* — i.e. they want endpoint reference, parameters,
+JSON payload, and errors, scoped to what's new/changed.
+
+Built two things:
+1. **`docs/CityBus_API_Changes_for_Yatroo_Review.docx`** (new, untracked)
+   — a short, 9-page delta doc: a 1-page summary table (NEW/CLARIFIED/
+   NEW FIELD/STATUS UPDATE) to triage against, then full endpoint
+   reference + parameters + JSON payload + errors for exactly the 8
+   things that changed since the last full reference (dated 2026-09-24)
+   — the group endpoint, the 4 reservation endpoints, the corrected
+   conductor-direct endpoint, `child_fare` on `GET /fares/`, and the
+   `ticket_type` fix's status. Does not repeat anything unchanged.
+2. Retrofitted the **full** reference doc so it satisfies the same
+   four-part ask on its own: added an "Errors specific to this endpoint"
+   bullet list to all 24 endpoints (previously only a single generic
+   5-row status table existed at the end), and tagged the 6 new/changed
+   endpoints directly in their headings (`[NEW]`, `[CLARIFIED]`) plus
+   inline `[NEW FIELD]`/`[STATUS UPDATE]` notes — so Yatroo can review
+   from either document without the two falling out of sync.
+
+**Honesty note worth keeping**: the `ticket_type` STUDENT/SENIOR/
+SENIOR_CITIZEN/CHILD fix (commit `8276081a`, confirmed merged to
+`main` via `git merge-base --is-ancestor`) was explicitly **not**
+claimed as live in production in either document — flagged as
+"merged to main, production deployment status not independently
+re-confirmed" rather than assumed, since this session did no live check
+against the production server for this specific fix.
+
+### 15.6 Filled every remaining missing response payload
+
+Final pass: found 6 of the 24 endpoints in the full reference had no
+JSON response example at all (only a request field table) —
+`GET .../timetable/`, `PATCH .../reservations/{id}/`, and all four
+"Managing Tickets" endpoints (ticket lookup, eticket, my tickets,
+cancel). Verified the real timetable response shape via a targeted
+Explore agent against the actual FastAPI route (`get_route_timetable`,
+`backend/fastapi_services/public_api/router.py:1079`) rather than
+guessing field names — confirmed `day_type`/`slots[]` with
+`timetable_id`/`departure_time`/`arrival_time`/`frequency_minutes`/
+`tenant_schema` per slot, matching the route's own already-written
+Swagger example exactly. The other 5 reused already-verified `Ticket`/
+reservation field shapes from earlier in this same session. The one
+deliberate non-fix: `GET /tickets/namastepay/return/` still has no JSON
+payload shown — correct, since it's a browser redirect, not a JSON
+response; noted explicitly rather than invented.
+
+User pointed at a separately-saved copy of the reference doc at
+`~/Documents/Full-API-Ref.docx` (confirmed identical in structure/
+content to the committed version — just saved under a different
+name/location, no manual edits found) and asked for the payloads there
+specifically; edited that exact file path directly rather than only the
+repo copy, to avoid leaving the user with two diverged versions.
+
+### 15.7 Still open
+
+- **`CityBus_Yatroo_Full_API_Reference_and_Diagrams.docx`** and
+  **`CityBus_API_Changes_for_Yatroo_Review.docx`** are both untracked,
+  per this session's established convention for Yatroo-facing docs — not
+  committed/pushed unless asked.
+- Same DNS/SSL blockers as §14.8 — entirely unrelated to this
+  documentation work, still unresolved, still the reason none of this
+  is reachable by Yatroo or NamastePay at the documented hostname yet.
+- The `ticket_type` fix's live-production status (§15.5) genuinely needs
+  an independent check against the production server before telling
+  Yatroo it's safe to test with STUDENT/SENIOR/CHILD.
