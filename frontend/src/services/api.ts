@@ -111,6 +111,15 @@ apiClient.interceptors.response.use(
       toast.error('Server error. Please try again later.')
     }
 
+    // Prefer the backend's own message over Axios's generic
+    // "Request failed with status code NNN" -- every existing
+    // `onError: (err) => toast.error(err.message)` call site across the
+    // app benefits from this without needing its own fix.
+    const backendMessage = error.response?.data?.message
+    if (backendMessage) {
+      error.message = backendMessage
+    }
+
     return Promise.reject(error)
   }
 )
