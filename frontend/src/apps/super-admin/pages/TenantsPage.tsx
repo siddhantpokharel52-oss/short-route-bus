@@ -342,48 +342,49 @@ export default function TenantsPage() {
       </div>
 
       {/* Create modal */}
-      <Modal open={showCreate} onClose={() => { setShowCreate(false); reset(); setPanVatFile(null) }} title={t('platform:tenants.addNew')} size="md">
+      <Modal open={showCreate} onClose={() => { setShowCreate(false); reset(); setPanVatFile(null) }} title={t('platform:tenants.addNew')} size="full">
         <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-4 p-6">
-          <Input label={t('platform:tenants.createModal.companyName')} required error={errors.name?.message}
-            {...register('name', { required: t('platform:tenants.createModal.required') })} />
-          <div>
-            <Input
-              label={t('platform:tenants.subdomain')}
-              required
-              placeholder="top"
-              error={errors.subdomain?.message}
-              {...register('subdomain', {
-                required: t('platform:tenants.createModal.required'),
-                pattern: {
-                  value: /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/,
-                  message: 'Only lowercase letters, numbers, and hyphens — no dots or ports.',
-                },
-                onChange: (e) => {
-                  e.target.value = sanitizeSubdomain(e.target.value)
-                },
-              })}
-            />
-            {previewLoginUrl && !errors.subdomain && (
-              <p className="mt-1.5 text-xs text-gray-500">
-                Login URL:{' '}
-                <span className="font-mono font-medium text-primary-600">{previewLoginUrl}</span>
-              </p>
-            )}
-          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Input label={t('platform:tenants.createModal.companyName')} required error={errors.name?.message}
+              {...register('name', { required: t('platform:tenants.createModal.required') })} />
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Plan Type</label>
-            <select
-              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-              {...register('plan_type', { required: true })}
-            >
-              <option value="BASIC">Basic</option>
-              <option value="STANDARD">Standard</option>
-              <option value="ENTERPRISE">Enterprise</option>
-            </select>
-          </div>
+            <div>
+              <Input
+                label={t('platform:tenants.subdomain')}
+                required
+                placeholder="top"
+                error={errors.subdomain?.message}
+                {...register('subdomain', {
+                  required: t('platform:tenants.createModal.required'),
+                  pattern: {
+                    value: /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/,
+                    message: 'Only lowercase letters, numbers, and hyphens — no dots or ports.',
+                  },
+                  onChange: (e) => {
+                    e.target.value = sanitizeSubdomain(e.target.value)
+                  },
+                })}
+              />
+              {previewLoginUrl && !errors.subdomain && (
+                <p className="mt-1.5 text-xs text-gray-500">
+                  Login URL:{' '}
+                  <span className="font-mono font-medium text-primary-600">{previewLoginUrl}</span>
+                </p>
+              )}
+            </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Plan Type</label>
+              <select
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                {...register('plan_type', { required: true })}
+              >
+                <option value="BASIC">Basic</option>
+                <option value="STANDARD">Standard</option>
+                <option value="ENTERPRISE">Enterprise</option>
+              </select>
+            </div>
+
             <Input
               label={t('platform:tenants.createModal.contactNumber')}
               type="tel"
@@ -401,13 +402,6 @@ export default function TenantsPage() {
                 validate: (v) => isValidEmail(v) || EMAIL_VALIDATION_MESSAGE,
               })}
             />
-            <div className="sm:col-span-2">
-              <Input
-                label={t('platform:tenants.createModal.companyAddress')}
-                placeholder={t('platform:tenants.createModal.addressHint')}
-                {...register('address')}
-              />
-            </div>
             <Input
               label={t('platform:tenants.createModal.panVat')}
               required
@@ -415,6 +409,14 @@ export default function TenantsPage() {
               error={errors.pan_vat_number?.message}
               {...register('pan_vat_number', { required: t('platform:tenants.createModal.required') })}
             />
+
+            <div className="sm:col-span-2 lg:col-span-2">
+              <Input
+                label={t('platform:tenants.createModal.companyAddress')}
+                placeholder={t('platform:tenants.createModal.addressHint')}
+                {...register('address')}
+              />
+            </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 PAN/VAT Document
@@ -435,7 +437,7 @@ export default function TenantsPage() {
               <p className="text-sm font-semibold text-blue-800">{t('platform:tenants.createModal.adminSectionTitle')}</p>
             </div>
             <p className="mb-3 text-xs text-blue-600">{t('platform:tenants.createModal.adminSectionHint')}</p>
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Input label={t('platform:tenants.createModal.adminFullName')} placeholder={t('platform:tenants.createModal.adminFullNameHint')} {...register('admin_full_name')} />
               <Input
                 label={t('platform:tenants.createModal.adminEmail')} type="email" placeholder="admin@sajha.com.np"
