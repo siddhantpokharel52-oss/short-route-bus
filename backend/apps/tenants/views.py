@@ -196,8 +196,24 @@ class TenantDocumentViewSet(ModelViewSet):
         return TenantDocument.objects.filter(tenant_id=self.kwargs["tenant_pk"])
 
     def perform_create(self, serializer):
+        from backend.apps.users.models import User
+
         tenant = Tenant.objects.get(pk=self.kwargs["tenant_pk"])
-        serializer.save(tenant=tenant)
+        # This endpoint is already IsSuperAdmin-only end to end, so a
+        # document reaching here was already reviewed by the super admin
+        # before upload -- there is no separate "unverified" state for
+        # them to leave it in. Checked explicitly (not just relying on the
+        # class-level permission) so this stays correct even if the
+        # permission class is ever loosened later.
+        if self.request.user.role == User.Role.SUPER_ADMIN:
+            serializer.save(
+                tenant=tenant,
+                verified=True,
+                verified_by=self.request.user,
+                verified_at=timezone.now(),
+            )
+        else:
+            serializer.save(tenant=tenant)
 
     @action(detail=True, methods=["post"])
     def verify(self, request, tenant_pk=None, pk=None):
