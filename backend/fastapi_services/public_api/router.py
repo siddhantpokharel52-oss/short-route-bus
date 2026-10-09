@@ -115,8 +115,8 @@ class CollectorLoginRequest(BaseModel):
         "tenant_schema": "mayurbus", "phone": "9800000000", "password": "CorrectHorseBattery1!",
     }})
     tenant_schema: Optional[str] = Field(None, description="Required — which bus company's collector is logging in. Unlike every other call in this API, there is no JWT yet to carry it.")
-    phone: Optional[str] = Field(None, description="The collector's own phone, as set by their tenant. Required unless email is given instead.")
-    email: Optional[str] = Field(None, description="Alternative to phone, for any non-collector account that might use this same endpoint.")
+    phone: Optional[str] = Field(None, description="The collector's own phone, as set by their tenant. Required.")
+    email: Optional[str] = Field(None, description="Optional -- not used by this endpoint's own checks, only forwarded to Django's login serializer.")
     password: Optional[str] = Field(None, description="Required.")
 
 
@@ -429,15 +429,23 @@ async def collector_login(payload: CollectorLoginRequest = Body(default_factory=
     `tenant_schema` is required in the body: unlike every other call in this
     API, there is no JWT yet to carry it, and phone numbers are only
     guaranteed unique within one tenant, not globally — so the caller must
-    say which bus company's collector is logging in. `email` also works
-    here instead of `phone`, for any non-collector account that might use
-    this same endpoint."""
+    say which bus company's collector is logging in. `phone` is required
+    too (not just preferred) -- this endpoint exists for the Collector
+    sign-in screen specifically, which only ever collects a phone number.
+    `email` is still accepted in the body and still forwarded to Django's
+    own login serializer (which does support email+password for other
+    roles), but it's never required here."""
     payload = payload.model_dump(exclude_none=True)
     tenant_schema = (payload.get("tenant_schema") or "").strip()
     if not tenant_schema:
         return _error("tenant_schema is required.", 400)
-    if not payload.get("phone") and not payload.get("email"):
-        return _error("phone or email is required.", 400)
+    # phone is the only identifier the real Collector sign-in screen ever
+    # collects (see its own UI: Bus company / Phone number / Password, no
+    # email field) -- required here, not just "preferred", so a malformed
+    # request fails with a clear "phone is required" instead of silently
+    # falling through to Django's own ambiguous "Invalid credentials."
+    if not payload.get("phone"):
+        return _error("phone is required.", 400)
     if not payload.get("password"):
         return _error("password is required.", 400)
 

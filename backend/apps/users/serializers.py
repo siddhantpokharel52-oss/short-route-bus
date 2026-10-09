@@ -17,6 +17,21 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         self.fields[self.username_field].required = False
         self.fields["phone"] = serializers.CharField(required=False)
 
+    def to_internal_value(self, data):
+        # Resolve phone -> email *before* the base serializer's own
+        # required-field check runs, so a phone-only login can never hit a
+        # "this field is required" error on email -- mutating .required in
+        # __init__ above is correct but is the only thing standing between a
+        # phone-only request and that error; this is a second, independent
+        # guarantee that doesn't depend on that field state at all. Any
+        # dict-like body works (QueryDict for form data, plain dict for
+        # JSON) -- .copy() on either returns a mutable copy.
+        phone = (data.get("phone") or "").strip() if hasattr(data, "get") else ""
+        if phone and not (data.get(self.username_field) or "").strip():
+            data = data.copy()
+            data[self.username_field] = phone  # placeholder; validate() below does the real phone->user lookup and overwrites this with the real email
+        return super().to_internal_value(data)
+
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
