@@ -2301,22 +2301,23 @@ async def my_reservations(user: dict = Depends(get_current_user)):
     }}}}},
 )
 async def get_reservation(reference_id: str, user: dict = Depends(get_current_user)):
-    """Looked up by a conductor scanning/typing the passenger's reservation code
-    (before deciding whether to validate it), or by the reservation's own passenger
-    checking its status themselves -- route, fare, passenger count, and current
-    status (PENDING/REJECTED/CONFIRMED/FAILED) either way. Read directly from
-    tenant_db (same cross-schema lookup CB4's pay-by-ID screen already uses) rather
-    than round-tripping to Django, since nothing needs to be mutated here."""
+    """Conductor-only: scans/types the passenger's reservation code and sees what
+    it's for — route, fare, passenger count, and its current status (PENDING/
+    REJECTED/CONFIRMED/FAILED) — before deciding whether to validate it. A
+    passenger checking their own reservation's status uses GET
+    /tickets/reservations/mine/ above instead, not this one by reference_id. Read
+    directly from tenant_db (same cross-schema lookup CB4's pay-by-ID screen
+    already uses) rather than round-tripping to Django, since nothing needs to be
+    mutated here."""
+    if user.get("role") != CONDUCTOR_ROLE:
+        raise HTTPException(status_code=403, detail="Only a conductor token can look up a reservation.")
+
     found = await tenant_db.find_namastepay_checkout_by_reference(reference_id)
     if not found:
         return _error("Reservation not found.", 404)
     schema, reservation = found
-
-    role = user.get("role")
-    is_owner = role == PASSENGER_ROLE and str(reservation.get("passenger_id")) == str(user.get("user_id"))
-    is_issuing_tenant_conductor = role == CONDUCTOR_ROLE and schema == user.get("tenant_schema")
-    if not (is_owner or is_issuing_tenant_conductor):
-        return _error("You are not authorized to view this reservation.", 403)
+    if schema != user.get("tenant_schema"):
+        return _error("This reservation was not created for your tenant.", 403)
 
     return _ok(data=_serialize_reservation(reservation))
 
