@@ -2246,6 +2246,41 @@ async def reserve_ticket(
 
 
 @router.get(
+    "/tickets/reservations/mine/",
+    tags=["Public API — Reservations"],
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": [{
+            "reference_id": "CB-D26E1AC50012472E",
+            "checkout_id": None,
+            "route_id": "134e0299-e705-4008-910e-edae38c3c312",
+            "from_stop_id": "d1c11c52-4923-49d7-8c5b-f8d1dd59d8e2",
+            "amount": "30.00",
+            "status": "PENDING",
+            "passengers": [
+                {"fare_paid": "30.00", "to_stop_id": "503626a1-bd20-42a1-be55-4b1518e4eaaa", "passenger_name": "", "ticket_type_id": None},
+            ],
+        }],
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
+async def my_reservations(user: dict = Depends(get_current_user)):
+    """The calling passenger's own pending/past reservations, across every operator --
+    the reservation equivalent of GET /tickets/my/, since a reservation is a
+    NamastePayCheckout row (see reserve_ticket() above), not a Ticket, so it never
+    shows up there. Registered above GET /tickets/reservations/{reference_id}/ (not
+    below it) so "mine" is matched as this static route, not as a reference_id value
+    -- FastAPI/Starlette matches path routes in registration order, not
+    static-before-dynamic automatically."""
+    passenger_id = user.get("user_id")
+    if not passenger_id:
+        return _error("Invalid token.", 401)
+    reservations = await tenant_db.find_namastepay_checkouts_for_passenger(passenger_id)
+    return _ok(data=[_serialize_reservation(r) for r in reservations])
+
+
+@router.get(
     "/tickets/reservations/{reference_id}/",
     tags=["Public API — Reservations"],
     responses={200: {"content": {"application/json": {"example": {
@@ -2266,20 +2301,22 @@ async def reserve_ticket(
     }}}}},
 )
 async def get_reservation(reference_id: str, user: dict = Depends(get_current_user)):
-    """Conductor scans/types the passenger's reservation code and sees what it's
-    for — route, fare, passenger count, and its current status (PENDING/REJECTED/
-    CONFIRMED/FAILED) — before deciding whether to validate it. Read directly from
+    """Looked up by a conductor scanning/typing the passenger's reservation code
+    (before deciding whether to validate it), or by the reservation's own passenger
+    checking its status themselves -- route, fare, passenger count, and current
+    status (PENDING/REJECTED/CONFIRMED/FAILED) either way. Read directly from
     tenant_db (same cross-schema lookup CB4's pay-by-ID screen already uses) rather
     than round-tripping to Django, since nothing needs to be mutated here."""
-    if user.get("role") != CONDUCTOR_ROLE:
-        raise HTTPException(status_code=403, detail="Only a conductor token can look up a reservation.")
-
     found = await tenant_db.find_namastepay_checkout_by_reference(reference_id)
     if not found:
         return _error("Reservation not found.", 404)
     schema, reservation = found
-    if schema != user.get("tenant_schema"):
-        return _error("This reservation was not created for your tenant.", 403)
+
+    role = user.get("role")
+    is_owner = role == PASSENGER_ROLE and str(reservation.get("passenger_id")) == str(user.get("user_id"))
+    is_issuing_tenant_conductor = role == CONDUCTOR_ROLE and schema == user.get("tenant_schema")
+    if not (is_owner or is_issuing_tenant_conductor):
+        return _error("You are not authorized to view this reservation.", 403)
 
     return _ok(data=_serialize_reservation(reservation))
 

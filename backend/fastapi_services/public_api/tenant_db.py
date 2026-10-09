@@ -1585,6 +1585,37 @@ async def find_namastepay_checkout_by_reference(reference_id: str) -> Optional[t
     return None
 
 
+# Same cross-schema fan-out as find_namastepay_checkout_by_reference above, but for
+# "every reservation this passenger has open" rather than one lookup by reference_id
+# -- a passenger's own GET /tickets/reservations/mine/ (router.py), the reservation
+# equivalent of find_tickets_for_passenger's already-issued-tickets list.
+async def find_namastepay_checkouts_for_passenger(passenger_id: str) -> list[dict]:
+    schemas = await list_tenant_schemas()
+    engine = get_engine()
+    out: list[dict] = []
+    async with engine.connect() as conn:
+        for schema in schemas:
+            safe = _safe_schema(schema)
+            query = text(
+                f"""
+                SELECT id, checkout_id, reference_id, passenger_id, route_id,
+                       from_stop_id, vehicle_id, conductor_id, amount, status, passengers, created_at
+                FROM "{safe}".ticketing_namastepaycheckout
+                WHERE passenger_id = :passenger_id
+                """
+            )
+            try:
+                result = await conn.execute(query, {"passenger_id": passenger_id})
+            except Exception:
+                continue
+            for row in result.fetchall():
+                d = _row_to_dict(row)
+                d["tenant_schema"] = schema
+                out.append(d)
+    out.sort(key=lambda r: r["created_at"], reverse=True)
+    return out
+
+
 # Mirrors apps.fleet.models.Vehicle.bus_number (table fleet_vehicle, tenant-scoped) —
 # CB4's own "display bus number" need. Deliberately a separate query from
 # fetch_vehicle_for_eticket above (which selects registration_no/owner_name for an
