@@ -2517,6 +2517,67 @@ async def my_tickets(
     return _ok(data=[_serialize_ticket(t) for t in tickets])
 
 
+@router.get(
+    "/tickets/issued/",
+    tags=["Public API — Tickets"],
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": [{
+            "id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+            "ticket_uid": "TKT-A1B2C3D4E5F6",
+            "route_id": "826b8836-8621-44a0-82f2-96aaee86f728",
+            "route_code": "6767",
+            "route_name": "Balkhu — Kamal Pokhari",
+            "vehicle_id": "8924bdb4-6953-4e8a-bdce-b7c7e8c7e8dc",
+            "bus_number": "Bus 26",
+            "passenger_name": "Hari Prasad",
+            "issued_at": "2026-09-21T08:00:00Z",
+            "fare_paid": "25.00",
+            "payment_method": "CASH",
+            "status": "VALID",
+            "from_stop_name": "Balkhu",
+            "to_stop_name": "Kamal Pokhari",
+        }],
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
+async def my_issued_tickets(
+    user: dict = Depends(get_current_user),
+    since: Optional[str] = Query(
+        None, description="ISO 8601 timestamp — only tickets issued strictly after this"
+    ),
+):
+    """The calling conductor's own issuance history -- every ticket they've personally
+    issued (`Ticket.conductor_id` = their own user_id), most recent first, within their
+    own tenant only (a conductor never issues outside their own tenant, so this is a
+    single-schema lookup -- see GET /tickets/my/ above for the cross-tenant passenger
+    equivalent, which this intentionally does NOT reuse: a conductor's own issued-tickets
+    list and a passenger's owned-tickets list are different questions that happen to
+    share a table). `403` if the caller isn't a conductor."""
+    if user.get("role") != CONDUCTOR_ROLE:
+        raise HTTPException(status_code=403, detail="Only a conductor can list their own issued tickets.")
+    schema = user.get("tenant_schema")
+    conductor_id = user.get("user_id")
+    if not schema or not conductor_id:
+        raise HTTPException(status_code=400, detail="This conductor account has no tenant assigned.")
+
+    since_dt = None
+    if since is not None:
+        try:
+            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+        except ValueError:
+            return _error("`since` must be a valid ISO 8601 timestamp.", 400)
+
+    tickets = await tenant_db.find_tickets_for_conductor(schema, conductor_id, since=since_dt)
+    await tenant_db.enrich_stop_names(tickets)
+    await tenant_db.enrich_payment_references(tickets)
+    await tenant_db.enrich_passenger_details(tickets)
+    await tenant_db.enrich_booking_and_vehicle(tickets)
+    await tenant_db.enrich_route_names(tickets)
+    return _ok(data=[_serialize_ticket(t) for t in tickets])
+
+
 def _media_url(path: Optional[str], domain: Optional[str]) -> Optional[str]:
     if not path or not domain:
         return None

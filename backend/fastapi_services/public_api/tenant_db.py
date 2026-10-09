@@ -880,6 +880,35 @@ async def find_tickets_for_passenger(passenger_id: str, since: Optional[datetime
     return out
 
 
+# A conductor's own tenant_schema comes straight from their JWT (unlike a
+# passenger, who has no fixed tenant and so needs find_tickets_for_passenger's
+# full cross-schema scan above) -- a conductor only ever issues tickets in
+# their own tenant, so this only ever touches one schema.
+async def find_tickets_for_conductor(tenant_schema: str, conductor_id: str, since: Optional[datetime] = None) -> list[dict]:
+    """Every ticket this conductor has issued (Ticket.conductor_id = their user_id),
+    most recent first. `since` narrows to tickets issued strictly after it, same
+    polling use as find_tickets_for_passenger's own `since`."""
+    engine = get_engine()
+    safe = _safe_schema(tenant_schema)
+    query_text = (
+        f'SELECT {_TICKET_COLUMNS} FROM "{safe}".ticketing_ticket '
+        'WHERE conductor_id = :conductor_id AND is_deleted = false'
+    )
+    params: dict[str, Any] = {"conductor_id": conductor_id}
+    if since:
+        query_text += " AND issued_at > :since"
+        params["since"] = since
+    query_text += " ORDER BY issued_at DESC"
+    async with engine.connect() as conn:
+        result = await conn.execute(text(query_text), params)
+    out = []
+    for r in result.fetchall():
+        d = _row_to_dict(r)
+        d["tenant_schema"] = tenant_schema
+        out.append(d)
+    return out
+
+
 # Mirrors apps.platform.models.Stop (table platform_stop) — only id/name_en
 # are needed here; keep this narrow even if Stop gains more columns later.
 async def enrich_stop_names(tickets: list[dict]) -> None:
