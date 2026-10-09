@@ -367,6 +367,31 @@ async def _proxy_to_django(
         return await client.request(method, url, headers=headers, json=json_body)
 
 
+@router.get(
+    "/companies/",
+    tags=["Public API — Auth"],
+    responses={200: {"content": {"application/json": {"example": {
+        "success": True,
+        "data": [
+            {"schema_name": "mayurbus", "name": "Mayur Yatayat"},
+            {"schema_name": "sajha", "name": "Sajha Yatayat"},
+        ],
+        "message": "Success",
+        "errors": None,
+    }}}}},
+)
+async def list_companies():
+    """The bus-company picker for `POST /auth/login/` below -- a collector's
+    phone number is only guaranteed unique within their own tenant, not
+    globally, so the login screen needs this list to let the user say which
+    company they're signing in to before `tenant_schema` can be sent.
+    Unauthenticated by design, same as login itself (there's no JWT yet).
+    Only ACTIVE tenants -- a PENDING/SUSPENDED one has no real conductors to
+    log in as yet."""
+    companies = await tenant_db.list_active_bus_companies()
+    return _ok(data=companies)
+
+
 @router.post(
     "/auth/login/",
     tags=["Public API — Auth"],

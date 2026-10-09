@@ -120,6 +120,24 @@ async def list_tenant_schemas() -> list[str]:
         return [row[0] for row in result.fetchall()]
 
 
+# Mirrors apps.tenants.models.Tenant's `name`/`status` columns. Status=ACTIVE
+# only -- a PENDING/SUSPENDED tenant has no business appearing in a collector
+# login screen's bus-company picker (see router.py's list_bus_companies()).
+async def list_active_bus_companies() -> list[dict]:
+    """(schema_name, name) for every tenant a collector could plausibly log into."""
+    engine = get_engine()
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                "SELECT schema_name, name FROM tenants_tenant "
+                "WHERE schema_name != :public AND status = 'ACTIVE' "
+                "ORDER BY name"
+            ),
+            {"public": PUBLIC_SCHEMA},
+        )
+        return [{"schema_name": row[0], "name": row[1]} for row in result.fetchall()]
+
+
 # Mirrors apps.tenants.models.Tenant + Domain (tables tenants_tenant,
 # tenants_domain — Domain.tenant is the FK column tenant_id). Keep this SELECT
 # in sync if either model's fields (schema_name, domain, is_primary) change.
