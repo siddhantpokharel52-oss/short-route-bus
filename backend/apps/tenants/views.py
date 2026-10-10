@@ -62,6 +62,22 @@ class TenantViewSet(ModelViewSet):
             status_code=status.HTTP_201_CREATED,
         )
 
+    def perform_destroy(self, instance):
+        from django.db import transaction
+        from backend.apps.users.models import User
+
+        with transaction.atomic():
+            # tenant_schema on User is a bare string, not a foreign key, so
+            # Django's own cascade-delete never touches these -- without this,
+            # a deleted tenant's admin stays active, pointing at a schema that
+            # (after the line below) no longer even exists.
+            User.objects.filter(tenant_schema=instance.schema_name).delete()
+            # force_drop=True bypasses django-tenants' auto_drop_schema=False
+            # default -- without it, this call only deletes the public-schema
+            # Tenant row and silently leaves the entire Postgres schema (every
+            # vehicle/route/booking/etc. the tenant ever had) behind forever.
+            instance.delete(force_drop=True)
+
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance)

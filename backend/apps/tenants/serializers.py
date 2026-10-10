@@ -56,10 +56,22 @@ class TenantSerializer(serializers.ModelSerializer):
                 validate_password(admin_password)
             except DjangoValidationError as e:
                 raise serializers.ValidationError({"admin_password": list(e.messages)})
+        if admin_email:
+            from backend.apps.users.models import User
+            if User.objects.filter(email=admin_email).exists():
+                # Caught here, before any creation starts, specifically so this
+                # never reaches create() as an uncaught IntegrityError on the
+                # LAST step (admin user creation) -- by then the schema, domain,
+                # RBAC/COA seed, and BusCompany row would already exist with no
+                # way back, leaving an orphaned, half-provisioned tenant behind.
+                raise serializers.ValidationError(
+                    {"admin_email": f"A user with email '{admin_email}' already exists."}
+                )
         return data
 
     def create(self, validated_data):
         from django.core.management import call_command
+        from django.db import transaction
         from backend.apps.users.models import User
 
         subdomain = validated_data.pop("subdomain")
@@ -68,57 +80,59 @@ class TenantSerializer(serializers.ModelSerializer):
         admin_full_name = validated_data.pop("admin_full_name", "").strip()
 
         schema_name = subdomain.lower().replace("-", "_").replace(" ", "_")
-        tenant = Tenant(schema_name=schema_name, **validated_data)
-        tenant.save()  # creates the PostgreSQL schema via auto_create_schema = True
-        Domain.objects.create(
-            tenant=tenant,
-            domain=f"{subdomain}.{settings.TENANT_BASE_DOMAIN}",
-            is_primary=True,
-        )
 
-        # Seed the RBAC permission catalogue into the new tenant's schema —
-        # without this, the Roles & Permissions page has nothing to list or
-        # assign until someone manually runs seed_permissions for this tenant.
-        call_command("seed_permissions", schema=schema_name)
-
-        # Seed the standard Chart of Accounts -- without this, every journal
-        # entry silently drops its lines (the posting account code can't be
-        # found), so Journal Entries/Reports show real entries with NPR 0.00
-        # everywhere instead of an error, which is much harder to notice.
-        call_command("seed_coa", schema=schema_name)
-
-        # Pokhara QA report: without this, Settings -> Company Information
-        # showed the literal placeholder "Default Company" and every contact
-        # field blank on first login -- BusCompanyView.get_object() lazily
-        # creates that row with hardcoded defaults the first time anyone
-        # GETs it, never with the name/contact info already given right here
-        # at onboarding. Seed it for real instead of leaving that to chance.
-        from django_tenants.utils import schema_context
-        from backend.apps.staff.models import BusCompany
-        with schema_context(schema_name):
-            BusCompany.objects.create(
-                company_name=tenant.name,
-                registration_no=tenant.pan_vat_number,
-                address=tenant.address,
-                contact_phone=tenant.contact_phone,
-                contact_email=tenant.contact_email,
-                tax_pan=tenant.pan_vat_number,
+        with transaction.atomic():
+            tenant = Tenant(schema_name=schema_name, **validated_data)
+            tenant.save()  # creates the PostgreSQL schema via auto_create_schema = True
+            Domain.objects.create(
+                tenant=tenant,
+                domain=f"{subdomain}.{settings.TENANT_BASE_DOMAIN}",
+                is_primary=True,
             )
 
-        # Create a COMPANY_ADMIN user in the public schema for this tenant
-        if admin_email:
-            user = User(
-                email=admin_email,
-                full_name_en=admin_full_name or f"{tenant.name} Admin",
-                role=User.Role.COMPANY_ADMIN,
-                tenant_schema=schema_name,
-                is_active=True,
-            )
-            user.set_password(admin_password)
-            user.save()
-            tenant._created_admin = {"email": admin_email, "password": admin_password}
-        else:
-            tenant._created_admin = None
+            # Seed the RBAC permission catalogue into the new tenant's schema —
+            # without this, the Roles & Permissions page has nothing to list or
+            # assign until someone manually runs seed_permissions for this tenant.
+            call_command("seed_permissions", schema=schema_name)
+
+            # Seed the standard Chart of Accounts -- without this, every journal
+            # entry silently drops its lines (the posting account code can't be
+            # found), so Journal Entries/Reports show real entries with NPR 0.00
+            # everywhere instead of an error, which is much harder to notice.
+            call_command("seed_coa", schema=schema_name)
+
+            # Pokhara QA report: without this, Settings -> Company Information
+            # showed the literal placeholder "Default Company" and every contact
+            # field blank on first login -- BusCompanyView.get_object() lazily
+            # creates that row with hardcoded defaults the first time anyone
+            # GETs it, never with the name/contact info already given right here
+            # at onboarding. Seed it for real instead of leaving that to chance.
+            from django_tenants.utils import schema_context
+            from backend.apps.staff.models import BusCompany
+            with schema_context(schema_name):
+                BusCompany.objects.create(
+                    company_name=tenant.name,
+                    registration_no=tenant.pan_vat_number,
+                    address=tenant.address,
+                    contact_phone=tenant.contact_phone,
+                    contact_email=tenant.contact_email,
+                    tax_pan=tenant.pan_vat_number,
+                )
+
+            # Create a COMPANY_ADMIN user in the public schema for this tenant
+            if admin_email:
+                user = User(
+                    email=admin_email,
+                    full_name_en=admin_full_name or f"{tenant.name} Admin",
+                    role=User.Role.COMPANY_ADMIN,
+                    tenant_schema=schema_name,
+                    is_active=True,
+                )
+                user.set_password(admin_password)
+                user.save()
+                tenant._created_admin = {"email": admin_email, "password": admin_password}
+            else:
+                tenant._created_admin = None
 
         return tenant
 

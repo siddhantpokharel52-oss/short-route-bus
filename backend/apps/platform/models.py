@@ -365,7 +365,11 @@ class FareMatrix(models.Model):
     route = models.ForeignKey(Route, null=True, blank=True, on_delete=models.CASCADE, related_name="fares")
     zone_from = models.CharField(max_length=50, blank=True)
     zone_to = models.CharField(max_length=50, blank=True)
-    ticket_type = models.ForeignKey(TicketType, on_delete=models.PROTECT, related_name="fares")
+    # CASCADE, not PROTECT -- a fare entry for a ticket type that no longer
+    # exists is meaningless. TicketType.tenant already CASCADEs on tenant
+    # delete; leaving this as PROTECT just meant that fix never actually
+    # unblocked tenant deletion for any tenant with fares configured.
+    ticket_type = models.ForeignKey(TicketType, on_delete=models.CASCADE, related_name="fares")
     base_fare = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
     peak_fare = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
     student_fare = models.DecimalField(max_digits=8, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
