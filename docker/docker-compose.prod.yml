@@ -135,6 +135,7 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /etc/ssl/citybus-wildcard:/etc/ssl/citybus-wildcard:ro
       - ./certbot-webroot:/var/www/certbot:ro
       - static_files:/app/staticfiles:ro
       - media_files:/app/media:ro
